@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CareNest — Food & allergies</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body data-page="food">
+    <div class="app detail-app">
+      <nav class="detail-nav">
+        <a class="back-btn" href="index.html" aria-label="Back to childcare information">
+          <img src="assets/back.svg" alt="" width="30" height="30" />
+        </a>
+        <h1>Food & allergies</h1>
+      </nav>
+
+      <section class="panel" aria-labelledby="dietary-heading">
+        <h2 class="panel-title" id="dietary-heading">Dietary restrictions</h2>
+        <div class="card">
+          <div class="restriction-list" id="restriction-list"></div>
+          <aside class="care-note">
+            <h3>Care note</h3>
+            <p id="care-note-body"></p>
+          </aside>
+        </div>
+      </section>
+    </div>
+
+    <script src="js/data.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>

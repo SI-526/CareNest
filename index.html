@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CareNest — Childcare information</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body data-page="home">
+    <div class="app">
+      <header class="sitter-header" id="sitter-header"></header>
+
+      <main class="page-main">
+        <div class="main-column">
+          <section class="panel" aria-labelledby="shift-heading">
+            <div class="panel-header">
+              <h2 class="panel-title" id="shift-heading">Your Next Shift</h2>
+            </div>
+            <div class="card shift-card" id="shift-card"></div>
+          </section>
+
+          <section class="panel" aria-labelledby="schedule-heading">
+            <div class="panel-header">
+              <h2 class="panel-title" id="schedule-heading">Today’s Schedule</h2>
+            </div>
+            <div class="card">
+              <ul class="schedule-list" id="schedule-list"></ul>
+            </div>
+          </section>
+        </div>
+
+        <aside class="side-column">
+          <section class="panel contacts-panel" aria-labelledby="contacts-heading">
+            <h2 class="panel-title" id="contacts-heading">Your Contacts</h2>
+            <div class="contacts-list" id="contacts-list"></div>
+          </section>
+
+          <section class="panel" aria-labelledby="know-heading">
+            <div class="panel-header">
+              <h2 class="panel-title" id="know-heading">Good to Know</h2>
+              <a class="panel-link" href="food-allergies.html">View all</a>
+            </div>
+            <div class="know-grid" id="know-grid"></div>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <div
+      class="modal-overlay"
+      id="activity-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+      aria-hidden="true"
+    >
+      <div class="modal">
+        <button
+          type="button"
+          class="back-btn"
+          data-close-modal
+          aria-label="Close activity details"
+        >
+          <img src="assets/back.svg" alt="" width="30" height="30" />
+        </button>
+
+        <div class="modal-summary">
+          <div class="modal-summary-meta">
+            <span data-modal-time></span>
+            <span data-modal-date></span>
+          </div>
+          <h2 id="modal-title" data-modal-title></h2>
+        </div>
+
+        <img
+          class="modal-map"
+          data-modal-map
+          alt="Map of activity location"
+          hidden
+        />
+
+        <div class="modal-location" data-modal-location hidden>
+          <img src="assets/location.svg" alt="" width="16" height="16" />
+          <p data-modal-location-text></p>
+        </div>
+
+        <p class="modal-detail" data-modal-detail hidden></p>
+
+        <div class="care-note modal-care" data-modal-care hidden>
+          <h3>Care note</h3>
+          <p data-modal-care-body></p>
+        </div>
+      </div>
+    </div>
+
+    <script src="js/data.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>
