@@ -4,7 +4,9 @@
 
   const page = document.body.dataset.page;
   let pendingCompleteItem = null;
+  let pendingPhotoFile = null;
   let photoObjectUrl = null;
+  let cameraStream = null;
 
   if (page === "home") {
     initHome();
@@ -215,8 +217,12 @@
     if (!overlay) return;
 
     const closeBtn = overlay.querySelector("[data-close-complete]");
-    const trigger = document.getElementById("complete-photo-trigger");
+    const uploadBtn = document.getElementById("complete-photo-upload");
+    const cameraBtn = document.getElementById("complete-photo-camera-btn");
     const input = document.getElementById("complete-photo-input");
+    const cameraInput = document.getElementById("complete-photo-camera-input");
+    const captureBtn = document.getElementById("complete-photo-capture");
+    const cancelCameraBtn = document.getElementById("complete-photo-camera-cancel");
     const sendBtn = document.getElementById("complete-send-btn");
 
     closeBtn.addEventListener("click", closeCompleteModal);
@@ -224,8 +230,16 @@
       if (e.target === overlay) closeCompleteModal();
     });
 
-    trigger.addEventListener("click", () => input.click());
+    uploadBtn.addEventListener("click", () => {
+      stopCamera();
+      restorePhotoPreview();
+      input.click();
+    });
+    cameraBtn.addEventListener("click", startCamera);
+    captureBtn.addEventListener("click", captureCameraPhoto);
+    cancelCameraBtn.addEventListener("click", cancelCamera);
     input.addEventListener("change", handlePhotoSelected);
+    cameraInput.addEventListener("change", handlePhotoSelected);
     sendBtn.addEventListener("click", submitComplete);
 
     document.addEventListener("keydown", (e) => {
@@ -283,9 +297,14 @@
 
   function resetPhotoUpload() {
     const input = document.getElementById("complete-photo-input");
+    const cameraInput = document.getElementById("complete-photo-camera-input");
     const preview = document.getElementById("complete-photo-preview");
-    const empty = document.getElementById("complete-photo-empty");
+    const stage = document.getElementById("complete-photo-stage");
     const error = document.getElementById("complete-photo-error");
+    const cameraError = document.getElementById("complete-photo-camera-error");
+
+    stopCamera();
+    pendingPhotoFile = null;
 
     if (photoObjectUrl) {
       URL.revokeObjectURL(photoObjectUrl);
@@ -293,40 +312,176 @@
     }
 
     if (input) input.value = "";
+    if (cameraInput) cameraInput.value = "";
     if (preview) {
       preview.hidden = true;
       preview.removeAttribute("src");
       preview.alt = "";
     }
-    if (empty) empty.hidden = false;
-    if (error) error.hidden = true;
+    if (stage) stage.hidden = true;
+    if (error) {
+      error.hidden = true;
+      error.textContent = "Please add a photo before sending.";
+    }
+    if (cameraError) cameraError.hidden = true;
+
+    const choices = document.getElementById("complete-photo-choices");
+    if (choices) choices.hidden = false;
   }
 
   function handlePhotoSelected(e) {
     const file = e.target.files && e.target.files[0];
-    const preview = document.getElementById("complete-photo-preview");
-    const empty = document.getElementById("complete-photo-empty");
-    const error = document.getElementById("complete-photo-error");
-    if (!file || !preview) return;
+    if (!file) return;
 
+    const otherId =
+      e.target.id === "complete-photo-input"
+        ? "complete-photo-camera-input"
+        : "complete-photo-input";
+    const other = document.getElementById(otherId);
+    if (other) other.value = "";
+
+    stopCamera();
+    setPendingPhoto(file);
+  }
+
+  function setPendingPhoto(file) {
+    const preview = document.getElementById("complete-photo-preview");
+    const stage = document.getElementById("complete-photo-stage");
+    const error = document.getElementById("complete-photo-error");
+    const cameraError = document.getElementById("complete-photo-camera-error");
+    if (!file || !preview || !stage) return;
+
+    pendingPhotoFile = file;
     if (photoObjectUrl) URL.revokeObjectURL(photoObjectUrl);
     photoObjectUrl = URL.createObjectURL(file);
     preview.src = photoObjectUrl;
-    preview.alt = "Uploaded task photo";
+    preview.alt = "Task photo";
     preview.hidden = false;
-    if (empty) empty.hidden = true;
+    stage.hidden = false;
     if (error) error.hidden = true;
+    if (cameraError) cameraError.hidden = true;
+  }
+
+  function restorePhotoPreview() {
+    const preview = document.getElementById("complete-photo-preview");
+    const stage = document.getElementById("complete-photo-stage");
+    const video = document.getElementById("complete-photo-video");
+    if (video) video.hidden = true;
+    if (pendingPhotoFile && preview && preview.getAttribute("src")) {
+      preview.hidden = false;
+      if (stage) stage.hidden = false;
+      return;
+    }
+    if (preview) preview.hidden = true;
+    if (stage) stage.hidden = true;
+  }
+
+  function stopCamera() {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+      cameraStream = null;
+    }
+
+    const video = document.getElementById("complete-photo-video");
+    if (video) {
+      video.pause();
+      video.srcObject = null;
+      video.hidden = true;
+    }
+
+    const cameraActions = document.getElementById("complete-photo-camera-actions");
+    const choices = document.getElementById("complete-photo-choices");
+    if (cameraActions) cameraActions.hidden = true;
+    if (choices) choices.hidden = false;
+  }
+
+  function startCamera() {
+    const cameraError = document.getElementById("complete-photo-camera-error");
+    const error = document.getElementById("complete-photo-error");
+    if (error) error.hidden = true;
+    if (cameraError) cameraError.hidden = true;
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      document.getElementById("complete-photo-camera-input").click();
+      return;
+    }
+
+    stopCamera();
+    navigator.mediaDevices
+      .getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      })
+      .then((stream) => {
+        cameraStream = stream;
+        const video = document.getElementById("complete-photo-video");
+        const preview = document.getElementById("complete-photo-preview");
+        const stage = document.getElementById("complete-photo-stage");
+        const choices = document.getElementById("complete-photo-choices");
+        const cameraActions = document.getElementById(
+          "complete-photo-camera-actions"
+        );
+        video.srcObject = stream;
+        video.hidden = false;
+        if (preview) preview.hidden = true;
+        if (stage) stage.hidden = false;
+        if (choices) choices.hidden = true;
+        if (cameraActions) cameraActions.hidden = false;
+        document.getElementById("complete-photo-capture").focus();
+      })
+      .catch(() => {
+        restorePhotoPreview();
+        if (cameraError) cameraError.hidden = false;
+        document.getElementById("complete-photo-upload").focus();
+      });
+  }
+
+  function cancelCamera() {
+    stopCamera();
+    restorePhotoPreview();
+  }
+
+  function captureCameraPhoto() {
+    const video = document.getElementById("complete-photo-video");
+    if (!video || !video.videoWidth) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return;
+        const file = new File([blob], "task-photo.jpg", { type: "image/jpeg" });
+        stopCamera();
+        setPendingPhoto(file);
+      },
+      "image/jpeg",
+      0.92
+    );
   }
 
   function submitComplete() {
-    const input = document.getElementById("complete-photo-input");
     const error = document.getElementById("complete-photo-error");
     const note = document.getElementById("complete-note").value.trim();
-    const file = input && input.files && input.files[0];
+
+    if (cameraStream) {
+      if (error) {
+        error.textContent = "Capture the photo before sending.";
+        error.hidden = false;
+      }
+      document.getElementById("complete-photo-capture").focus();
+      return;
+    }
+
+    const file = pendingPhotoFile;
 
     if (!file) {
-      if (error) error.hidden = false;
-      document.getElementById("complete-photo-trigger").focus();
+      if (error) {
+        error.textContent = "Please add a photo before sending.";
+        error.hidden = false;
+      }
+      document.getElementById("complete-photo-upload").focus();
       return;
     }
 

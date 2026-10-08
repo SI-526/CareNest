@@ -145,28 +145,72 @@
             type="file"
             id="complete-photo-input"
             accept="image/*"
+            hidden
+          />
+          <input
+            type="file"
+            id="complete-photo-camera-input"
+            accept="image/*"
             capture="environment"
             hidden
           />
-          <button
-            type="button"
-            class="photo-upload-trigger"
-            id="complete-photo-trigger"
-            aria-label="Upload a photo of the completed task"
-          >
+
+          <div class="photo-preview-frame" id="complete-photo-stage" hidden>
             <img
               class="photo-preview"
               id="complete-photo-preview"
-              src="assets/upload-placeholder.png"
               alt=""
               hidden
             />
-            <span class="photo-upload-placeholder" id="complete-photo-empty">
-              Tap to upload a photo
-            </span>
-          </button>
+            <video
+              class="photo-preview"
+              id="complete-photo-video"
+              autoplay
+              playsinline
+              muted
+              hidden
+            ></video>
+          </div>
+
+          <div class="photo-source-actions" id="complete-photo-choices">
+            <button
+              type="button"
+              class="photo-source-btn"
+              id="complete-photo-upload"
+            >
+              Upload a photo
+            </button>
+            <button
+              type="button"
+              class="photo-source-btn"
+              id="complete-photo-camera-btn"
+            >
+              Take a photo
+            </button>
+          </div>
+
+          <div
+            class="photo-source-actions"
+            id="complete-photo-camera-actions"
+            hidden
+          >
+            <button type="button" class="primary-btn" id="complete-photo-capture">
+              Capture photo
+            </button>
+            <button
+              type="button"
+              class="photo-source-btn"
+              id="complete-photo-camera-cancel"
+            >
+              Cancel
+            </button>
+          </div>
+
           <p class="photo-upload-error" id="complete-photo-error" hidden>
             Please add a photo before sending.
+          </p>
+          <p class="photo-upload-error" id="complete-photo-camera-error" hidden>
+            Camera isn't available. Upload a photo instead.
           </p>
         </div>
 
