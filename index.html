@@ -78,6 +78,19 @@
           <h2 id="modal-title" data-modal-title></h2>
         </div>
 
+        <div class="submitted-photo-frame modal-photo" data-modal-photo-wrap hidden>
+          <img
+            class="submitted-photo"
+            data-modal-photo
+            alt=""
+          />
+        </div>
+
+        <div class="submitted-note" data-modal-note-wrap hidden>
+          <h3 class="complete-note-label">Note to parent</h3>
+          <p class="submitted-note-text" data-modal-note></p>
+        </div>
+
         <img
           class="modal-map"
           data-modal-map
@@ -96,6 +109,80 @@
           <h3>Care note</h3>
           <p data-modal-care-body></p>
         </div>
+      </div>
+    </div>
+
+    <div
+      class="modal-overlay"
+      id="complete-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="complete-modal-heading"
+      aria-hidden="true"
+    >
+      <div class="modal complete-modal">
+        <button
+          type="button"
+          class="back-btn"
+          data-close-complete
+          aria-label="Cancel and go back"
+        >
+          <img src="assets/back.svg" alt="" width="30" height="30" />
+        </button>
+
+        <h2 class="complete-heading" id="complete-modal-heading">
+          Submit a photo of the completed task
+        </h2>
+
+        <div class="modal-summary complete-task-summary">
+          <p class="complete-task-time" data-complete-time></p>
+          <p class="complete-task-title" data-complete-title></p>
+          <p class="complete-task-detail" data-complete-detail></p>
+        </div>
+
+        <div class="photo-upload">
+          <input
+            type="file"
+            id="complete-photo-input"
+            accept="image/*"
+            capture="environment"
+            hidden
+          />
+          <button
+            type="button"
+            class="photo-upload-trigger"
+            id="complete-photo-trigger"
+            aria-label="Upload a photo of the completed task"
+          >
+            <img
+              class="photo-preview"
+              id="complete-photo-preview"
+              src="assets/upload-placeholder.png"
+              alt=""
+              hidden
+            />
+            <span class="photo-upload-placeholder" id="complete-photo-empty">
+              Tap to upload a photo
+            </span>
+          </button>
+          <p class="photo-upload-error" id="complete-photo-error" hidden>
+            Please add a photo before sending.
+          </p>
+        </div>
+
+        <label class="complete-note-label" for="complete-note">
+          Add a note to the parent:
+        </label>
+        <textarea
+          class="complete-note"
+          id="complete-note"
+          rows="3"
+          placeholder=""
+        ></textarea>
+
+        <button type="button" class="primary-btn" id="complete-send-btn">
+          Send to Mary
+        </button>
       </div>
     </div>
 

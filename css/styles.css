@@ -302,10 +302,11 @@ button {
 
 .schedule-item {
   display: flex;
-  gap: 24px;
+  gap: 8px;
   align-items: center;
   flex: 1;
   min-width: 0;
+  width: 100%;
   padding: 4px 0;
   text-align: left;
   border-radius: var(--radius-sm);
@@ -342,9 +343,17 @@ button {
 .schedule-body {
   flex: 1;
   min-width: 0;
+  margin-left: 16px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.schedule-trailing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .schedule-title {
@@ -391,6 +400,7 @@ button {
   align-items: center;
   justify-content: center;
   align-self: stretch;
+  gap: 8px;
 }
 
 .check-icon,
@@ -772,7 +782,8 @@ button {
 .modal-map[hidden],
 .modal-location[hidden],
 .modal-detail[hidden],
-.modal-care[hidden] {
+.modal-care[hidden],
+.modal-photo[hidden] {
   display: none !important;
 }
 
@@ -808,6 +819,217 @@ button {
 
 .modal .care-note {
   margin-top: 0;
+}
+
+/* Complete / photo submit modal */
+.complete-modal {
+  gap: 16px;
+}
+
+.complete-heading {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  color: var(--blue);
+}
+
+.complete-task-summary {
+  gap: 6px;
+}
+
+.complete-task-time {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-snug);
+  color: var(--blue);
+}
+
+.complete-task-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  color: var(--blue);
+}
+
+.complete-task-detail {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-snug);
+  color: #8c8c8c;
+}
+
+.complete-task-detail:empty {
+  display: none;
+}
+
+.photo-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.photo-upload-trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 160px;
+  padding: 0;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.photo-upload-trigger:hover,
+.photo-upload-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(129, 148, 214, 0.35);
+}
+
+.photo-upload-placeholder {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--grey);
+  padding: 16px;
+  text-align: center;
+}
+
+.photo-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-preview[hidden],
+.photo-upload-placeholder[hidden],
+.photo-upload-error[hidden] {
+  display: none !important;
+}
+
+.photo-upload-error {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: #b42318;
+}
+
+.complete-note-label {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  color: var(--blue);
+}
+
+.complete-note {
+  width: 100%;
+  min-height: 68px;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--card);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-snug);
+  color: var(--blue);
+  resize: vertical;
+}
+
+.complete-note:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(129, 148, 214, 0.35);
+}
+
+.primary-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 10px 6px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #ffffff;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.primary-btn:hover,
+.primary-btn:focus-visible {
+  opacity: 0.92;
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.primary-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Submitted photo thumbnail on a completed schedule item */
+.photo-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.submitted-photo-frame {
+  width: 100%;
+  height: 160px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.submitted-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.submitted-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.submitted-note[hidden] {
+  display: none !important;
+}
+
+.submitted-note-text {
+  margin: 0;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-normal);
+  color: var(--grey);
 }
 
 body.modal-open {

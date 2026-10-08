@@ -17,6 +17,7 @@ window.CareNestData = {
     {
       id: "mary",
       name: "Mary Ann Thomas",
+      firstName: "Mary",
       phone: "588 - 909 - 3489",
       phoneHref: "tel:5889093489",
       avatar: "assets/mary.png",
@@ -32,7 +33,7 @@ window.CareNestData = {
       location: null,
       map: null,
       careNote: null,
-      completed: true,
+      completed: false,
     },
     {
       id: "playground",
