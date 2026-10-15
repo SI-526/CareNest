@@ -58,7 +58,8 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 | `message_reads` | Which messages a user has seen | Each user, for themselves; private |
 | `photo_saves` | A parent's saved-photo album | Each parent, for themselves; private |
 | `concept_flags` | **Concept only**: the demo "child seems off" alert on a photo; nothing analyses photos | Parents set and clear; members read |
-| Storage `photos` | Private bucket, 5 MB, JPEG/PNG/WebP, at `<household_id>/<visit_id>/<uuid>.<jpg\|png\|webp>` | Members upload into an open, in-window shift of their household (max 200 objects per shift); members read; no overwrite |
+| `removed_photos` | Every Storage path a parent removed (internal) | Nobody directly; only `remove_photo` and `remove_all_photos`. Clients cannot read it |
+| Storage `photos` | Private bucket, 5 MB, JPEG/PNG/WebP, at `<household_id>/<visit_id>/<uuid>.<jpg\|png\|webp>` | Members upload into an open, in-window shift of their household (at most 2 photos per active task + 10 per shift); members read photos that were not removed; no overwrite |
 
 ## Data and risk boundaries
 
@@ -143,22 +144,38 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   done by them, no proof message). Each shift gets one moment prompt (`visits.moment_at`, chosen
   by the database at a random time from 30 minutes after the start to 30 minutes before the usual
   end, using the usual shift length parsed from the plan's schedule label such as "3:00pm -
-  7:00pm"; 30 minutes to 3 hours when the label is not understood). A parent can call
+  7:00pm", "3-7pm", "9am to 1pm", "15:00–19:00", or "9-5", which means 9am-5pm; "10pm-6am" is
+  overnight; 30 minutes to 3 hours when the label is not understood, including labels with
+  non-ASCII digits such as "３-７pm": an odd label never blocks starting a shift). A parent can call
   `trigger_moment_now(visit)` on an open, in-window shift with no moment yet to move it to 1-5
-  minutes from now (demo). Only a sitter posts the moment, once; it is `late` if posted more
-  than 2 minutes after the prompt.
-- Uploads: at most 200 objects per shift folder, and never at a path a message already uses.
+  minutes from now (demo). Only a sitter posts the moment, once; its photo must have been
+  uploaded at or after the prompt (Storage's server-set `created_at`), otherwise
+  `moment_photo_too_early`; it is `late` if posted more than 2 minutes after the prompt.
+- Uploads: at most **2 photos per active (not archived) task of the plan + 10** per shift folder
+  (every object in the folder counts, used or not, until it is deleted). Over the cap the upload
+  fails with `photo_limit_reached` (the app shows "Photo limit reached for this shift."); deleting
+  an unused photo frees room. Never at a path a message uses or a parent removed.
 - Photo removal: a parent may remove any photo in the family space. `remove_photo(message)`
   clears the message's photo, records `photo_removed_by`/`photo_removed_at` ("Photo removed by
-  Mary"; the message, its task check, and the history stay), deletes every parent's save of it
-  and its concept flag, and returns the path; the client then deletes the object with the Storage
-  API. Saves and flags cannot be added to a removed photo.
+  Mary"; the message, its task check, and the history stay), records the path in
+  `removed_photos`, deletes every parent's save of it and its concept flag, and returns the path;
+  the client then deletes the object with the Storage API. From the moment of removal, before the
+  object is deleted, nobody can download it or sign a URL for it, nobody can upload to that path
+  again, and it cannot be attached to a proof or moment again (`photo_removed`). Saves and flags
+  cannot be added to a removed photo, including one racing the removal (a trigger locks the
+  message and re-checks; `photo_removed`).
 - Photo deletion: a photo no message uses can be deleted by its uploader (whether or not the
-  shift is open) or by any parent. Database cascades do not remove Storage objects, so deleting
-  an account is three client steps: `start_account_deletion()` (returns the households where you
-  are the only parent and, for one hour, lets you, and only you while still the only parent,
-  delete their photos), remove every object under each `<household_id>/` folder with the Storage
-  API, then `delete_my_account()`.
+  shift is open) or by any parent; a removed photo only by a parent (the read policy shows it
+  to a parent only inside a Storage delete request, using `storage.operation()`). Database
+  cascades do not remove Storage objects, so deleting an account is three client steps:
+  1. `remove_all_photos()`: in every family space where you are the only parent (the ones
+     `delete_my_account()` deletes), removes every photo exactly as `remove_photo` does, and
+     returns every Storage path in those family spaces' shift folders (removed and unused). For
+     a sitter, or a parent with a co-parent, it does nothing and returns an empty list.
+  2. `storage.from('photos').remove(paths)` with the returned list.
+  3. `delete_my_account()`.
+  If the client stops after step 1, the family space stays, with every photo marked "Photo
+  removed by …" and no message pointing at a missing photo.
 - Orphaned photos (issue #7, P1): a photo is readable only while its path's shift still exists in
   that household, so photos of a deleted shift or family space are hidden from everyone (and so
   cannot be deleted by clients either). But abandoned uploads in a shift that still exists (never
