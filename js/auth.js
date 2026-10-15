@@ -59,13 +59,30 @@
   //   carenest:demo:v1          ?demo=1 (starts empty; the sample family comes from js/data.js)
   //   carenest:v1:<user id>     a signed-in account
   // Nothing is readable until the guard picks a key (signed-out visitors get none). Signing out,
-  // or the guard finding no family space, removes that account's key.
+  // or the guard finding no family space, removes that account's key. Only one account can be
+  // signed in per browser, so with no session at all every carenest:v1:* key is an orphan and
+  // is removed (signed out elsewhere, or supabase-js dropped the session after a failed refresh).
   const DEMO_STORE_KEY = "carenest:demo:v1";
   const DEMO_FLAG = "carenest:demo";
+  const USER_STORE_PREFIX = "carenest:v1:";
   let storeKey = null;
+  // Set while this tab signs out or deletes the account itself, so the auth listener below
+  // leaves the redirect to that flow.
+  let endingSession = false;
 
   function userStoreKey(userId) {
-    return `carenest:v1:${userId}`;
+    return `${USER_STORE_PREFIX}${userId}`;
+  }
+
+  // No session in this browser: every account's device data left behind is an orphan.
+  function clearOrphanedUserData() {
+    try {
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith(USER_STORE_PREFIX))
+        .forEach((key) => localStorage.removeItem(key));
+    } catch (e) {
+      /* storage unavailable: nothing to clear */
+    }
   }
 
   function clearUserData(userId) {
@@ -99,10 +116,16 @@
     }
   }
 
-  // Ends this tab's demo mode (sign-in, invite, onboarding, and "Exit demo" call this).
+  // Ends this tab's demo mode (sign-in, invite, onboarding, and "Exit demo" call this) and
+  // removes the demo's device data so it doesn't carry over to the next demo visitor.
   function clearDemo() {
     try {
       sessionStorage.removeItem(DEMO_FLAG);
+    } catch (e) {
+      /* storage unavailable */
+    }
+    try {
+      localStorage.removeItem(DEMO_STORE_KEY);
     } catch (e) {
       /* storage unavailable */
     }
@@ -140,7 +163,10 @@
   async function loadContext() {
     if (!client) throw new Error("sign-in unavailable");
     const { data: sessionData } = await client.auth.getSession();
-    if (!sessionData.session) return null;
+    if (!sessionData.session) {
+      clearOrphanedUserData();
+      return null;
+    }
 
     const [userResult, rosterResult] = await Promise.all([
       client.auth.getUser(),
@@ -154,8 +180,8 @@
     if (userResult.error || !userResult.data.user) {
       const status = userResult.error && userResult.error.status;
       if (!userResult.error || status === 401 || status === 403 || status === 404) {
-        clearUserData(sessionData.session.user && sessionData.session.user.id);
         await client.auth.signOut({ scope: "local" });
+        clearOrphanedUserData();
         return null;
       }
       throw userResult.error;
@@ -234,6 +260,7 @@
       return go("onboarding.html");
     }
     storeKey = userStoreKey(ctx.user.id);
+    watchSession(ctx.user.id);
 
     const allowed = PAGE_ROLES[page] || [];
     if (!allowed.includes(ctx.role)) return go(HOME[ctx.role]);
@@ -250,6 +277,23 @@
     mountChrome(ctx);
     reveal();
     return ctx;
+  }
+
+  // storeKey is fixed for the life of the page, so follow sign-in changes (including those from
+  // other tabs, which supabase-js relays) and stop writing the moment this account is no longer
+  // the one signed in. INITIAL_SESSION and TOKEN_REFRESHED for the same user change nothing.
+  function watchSession(loadedUserId) {
+    client.auth.onAuthStateChange((event, session) => {
+      const userId = session && session.user ? session.user.id : null;
+      if (event !== "SIGNED_OUT" && userId === loadedUserId) return;
+      storeKey = null; // js/store.js now refuses writes
+      if (endingSession) return; // this tab's own sign-out/delete redirects itself
+      // Navigate outside the auth callback so supabase-js finishes its own bookkeeping first.
+      setTimeout(() => {
+        if (event === "SIGNED_OUT" || !userId) window.location.replace("signin.html");
+        else window.location.reload();
+      }, 0);
+    });
   }
 
   // Signed out: "Demo mode ... Sign in". Signed in: the account stays signed in underneath, so
@@ -325,8 +369,16 @@
       document.body.appendChild(accountDialog);
       accountDialog.addEventListener("close", () => opener.focus());
       accountDialog.querySelector("[data-sign-out]").addEventListener("click", async (e) => {
-        e.currentTarget.disabled = true;
-        await signOut();
+        const button = e.currentTarget;
+        const errorEl = accountDialog.querySelector("[data-account-error]");
+        button.disabled = true;
+        errorEl.hidden = true;
+        const { error } = await signOut();
+        if (error) {
+          errorEl.textContent = friendlyError(error);
+          errorEl.hidden = false;
+          button.disabled = false;
+        }
       });
       accountDialog
         .querySelector("[data-delete-account]")
@@ -335,21 +387,37 @@
     accountDialog.showModal();
   }
 
-  // Signs out and removes this account's device data (photos, messages) from this browser.
+  // Signs out, then removes this account's device data (photos, messages, check-offs) from this
+  // browser. The data is removed only once sign-out succeeded; on error it is kept and the
+  // error is returned for the caller to show. Resolves { error }.
   async function endSession() {
-    if (!client) return;
+    if (!client) return { error: null };
+    let userId = null;
     try {
       const { data } = await client.auth.getSession();
-      clearUserData(data.session && data.session.user && data.session.user.id);
+      userId = data.session && data.session.user && data.session.user.id;
     } catch (e) {
-      /* no session to clear */
+      /* no session: nothing of ours to clear */
     }
-    await client.auth.signOut();
+    endingSession = true;
+    let error = null;
+    try {
+      ({ error } = await client.auth.signOut());
+    } catch (e) {
+      error = e;
+    }
+    endingSession = false;
+    if (error) return { error };
+    storeKey = null;
+    clearUserData(userId);
+    return { error: null };
   }
 
+  // Resolves { error } only on failure; on success the page navigates to sign-in.
   async function signOut() {
-    await endSession();
-    window.location.replace("signin.html");
+    const { error } = await endSession();
+    if (error) return { error };
+    return go("signin.html");
   }
 
   async function deleteAccount(ctx) {
@@ -367,14 +435,17 @@
     });
     if (!ok) return;
     const errorEl = accountDialog && accountDialog.querySelector("[data-account-error]");
+    endingSession = true;
     const { error } = await client.rpc("delete_my_account");
     if (error) {
+      endingSession = false;
       if (errorEl) {
         errorEl.textContent = friendlyError(error);
         errorEl.hidden = false;
       }
       return;
     }
+    storeKey = null;
     // This browser's own copies (every carenest:* key: photos, messages, demo data) go too.
     try {
       Object.keys(localStorage)

@@ -31,7 +31,10 @@
     auth.reveal();
   })();
 
-  document.getElementById("onboarding-signout").addEventListener("click", () => auth.signOut());
+  document.getElementById("onboarding-signout").addEventListener("click", async () => {
+    const { error } = await auth.signOut();
+    if (error) showError(auth.friendlyError(error));
+  });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();

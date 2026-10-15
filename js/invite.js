@@ -84,7 +84,8 @@
       auth.go("index.html");
     });
     card.querySelector("[data-switch]").addEventListener("click", async () => {
-      await auth.endSession();
+      const { error } = await auth.endSession();
+      if (error) return showProblem(auth.friendlyError(error));
       render();
     });
   }
