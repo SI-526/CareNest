@@ -1592,6 +1592,14 @@ body.modal-open {
   border-radius: var(--radius-sm);
 }
 
+/* Two dates (a shift still open from an earlier day): a small heading per date */
+.day-notes-group-title {
+  margin: 4px 0 6px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--grey);
+}
+
 .day-note-summary {
   display: flex;
   flex-wrap: wrap;

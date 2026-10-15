@@ -238,7 +238,11 @@
     const dayNotesDateEl = document.getElementById("day-notes-date");
     dayNotesDateEl.value = localToday();
 
+    // Only the latest request may fill the list: a slow answer for a date the parent has since
+    // moved away from must never show under the newer date. Returns false for a stale answer.
+    let dayNotesSeq = 0;
     async function loadDayNotes() {
+      const seq = ++dayNotesSeq;
       const order = (r) => DAY_NOTE_CATEGORIES.findIndex((c) => c.value === r.category);
       const { data, error } = await client
         .from("day_notes")
@@ -246,16 +250,17 @@
         .eq("household_id", householdId)
         .eq("note_date", dayNotesDateEl.value || localToday())
         .order("created_at", { ascending: true });
+      if (seq !== dayNotesSeq) return false; // a newer load is on its way
       state.dayNotesError = error ? friendly(error) : null;
       state.dayNotes = error
         ? []
         : data.slice().sort((a, b) => order(a) - order(b) || String(a.created_at).localeCompare(String(b.created_at)));
+      return true;
     }
 
     dayNotesDateEl.addEventListener("change", async () => {
       if (!dayNotesDateEl.value) dayNotesDateEl.value = localToday();
-      await loadDayNotes();
-      renderList("day-notes");
+      if (await loadDayNotes()) renderList("day-notes");
     });
 
     async function load() {
@@ -393,7 +398,7 @@
     function openEditor(key, row, opener) {
       const config = listConfig(key);
       editing = { key, row, opener };
-      document.getElementById("edit-title").textContent = `${row ? "Edit" : "Add"} ${config.noun}`;
+      document.getElementById("edit-dialog-title").textContent = `${row ? "Edit" : "Add"} ${config.noun}`;
       editFields.innerHTML = config.fields.map((f) => fieldHtml(f, row ? row[f.name] : "")).join("");
       show(editError, "");
       dialog.showModal();

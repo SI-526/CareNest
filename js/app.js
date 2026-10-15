@@ -96,7 +96,9 @@
   // ---------- Important today (day notes) ----------
   // Parent-written notes for the session's date: the LOCAL calendar date the open shift started
   // on, or today's local date when no shift is open (never the UTC date: an evening shift in the
-  // US would lose its notes at UTC midnight). Signed in, they come from public.day_notes and
+  // US would lose its notes at UTC midnight). When the open shift started on an earlier local date
+  // (an overnight shift past midnight, or a shift nobody ended), the notes for today AND the
+  // shift's start date are shown, under "Today" and that date, today first. Signed in, they come from public.day_notes and
   // refresh live; in demo mode they are the sample notes in js/data.js. A load failure only
   // affects this section.
   const DAY_NOTE_CATEGORIES = [
@@ -152,37 +154,76 @@
 
     const live = Boolean(ctx && !ctx.demo && ctx.client && ctx.household && !shift.demo);
     let shownIds = new Set();
-    let shownDate = null;
+    let shownDates = "";
     let reloadTimer = null;
+    let midnightTimer = null;
 
-    function sessionDate() {
+    // The dates to show, today first: [today], or [today, start date] while a shift that started
+    // on an earlier local date is still open.
+    function sessionDates() {
+      const today = localDateKey(Date.now());
       const st = shift.state;
-      if (st && st.active && st.visit && st.visit.startedAt) return localDateKey(st.visit.startedAt);
-      return localDateKey(Date.now());
+      if (st && st.active && st.visit && st.visit.startedAt) {
+        const start = localDateKey(st.visit.startedAt);
+        return start < today ? [today, start] : [start];
+      }
+      return [today];
     }
 
-    function render(notes, date) {
-      shownDate = date;
-      if (dateEl) {
-        dateEl.textContent = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-        });
-      }
+    function dateLabel(date) {
+      return new Date(`${date}T12:00:00`).toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+    }
+
+    // notes: each with `date` (YYYY-MM-DD). One date renders a flat list; two render a sub-heading
+    // per date that has notes ("Today", then the shift's start date).
+    function render(notes, dates) {
+      shownDates = dates.join(",");
+      if (dateEl) dateEl.textContent = dateLabel(dates[0]);
       // Keep notes the sitter opened open across live refreshes.
       const open = new Set(
         Array.from(listEl.querySelectorAll("details[open]")).map((el) => el.dataset.noteId)
       );
-      const sorted = sortDayNotes(notes);
-      shownIds = new Set(sorted.map((n) => n.id));
-      listEl.innerHTML = sorted.map(dayNoteHtml).join("");
+      const groups = dates
+        .map((date) => ({
+          date,
+          notes: sortDayNotes(dates.length === 1 ? notes : notes.filter((n) => n.date === date)),
+        }))
+        .filter((g) => g.notes.length);
+      const count = groups.reduce((sum, g) => sum + g.notes.length, 0);
+      shownIds = new Set(groups.flatMap((g) => g.notes.map((n) => n.id)));
+      listEl.innerHTML =
+        dates.length === 1
+          ? groups.map((g) => g.notes.map(dayNoteHtml).join("")).join("")
+          : groups
+              .map(
+                (g) => `<li class="day-notes-group">
+      <h3 class="day-notes-group-title">${escapeHtml(g.date === dates[0] ? "Today" : dateLabel(g.date))}</h3>
+      <ul class="day-notes-list">${g.notes.map(dayNoteHtml).join("")}</ul>
+    </li>`
+              )
+              .join("");
       listEl.querySelectorAll("details[data-note-id]").forEach((el) => {
         if (open.has(el.dataset.noteId)) el.open = true;
       });
-      listEl.hidden = !sorted.length;
-      statusEl.textContent = sorted.length ? "" : "No special updates for today.";
-      statusEl.hidden = Boolean(sorted.length);
+      listEl.hidden = !count;
+      statusEl.textContent = count ? "" : "No special updates for today.";
+      statusEl.hidden = Boolean(count);
+    }
+
+    // Timers do not notice the date changing: re-check just after each local midnight. A
+    // background tab may fire late; the visibilitychange reload below covers that.
+    function armMidnight(onMidnight) {
+      clearTimeout(midnightTimer);
+      const next = new Date();
+      next.setHours(24, 0, 5, 0);
+      midnightTimer = setTimeout(() => {
+        onMidnight();
+        armMidnight(onMidnight);
+      }, Math.max(1000, next.getTime() - Date.now()));
     }
 
     function showError() {
@@ -194,7 +235,9 @@
     }
 
     if (!live) {
-      render(data.dayNotes || [], localDateKey(Date.now()));
+      const renderDemo = () => render(data.dayNotes || [], [localDateKey(Date.now())]);
+      renderDemo();
+      armMidnight(renderDemo);
       return;
     }
 
@@ -202,25 +245,26 @@
     const householdId = ctx.household.id;
 
     async function load() {
-      const date = sessionDate();
+      const dates = sessionDates();
       try {
         const { data: rows, error } = await client
           .from("day_notes")
-          .select("id, category, title, detail, created_at, updated_at")
+          .select("id, note_date, category, title, detail, created_at, updated_at")
           .eq("household_id", householdId)
-          .eq("note_date", date)
+          .in("note_date", dates)
           .order("created_at", { ascending: true });
         if (error) throw error;
         render(
           (rows || []).map((r) => ({
             id: r.id,
+            date: r.note_date,
             category: r.category,
             title: r.title,
             detail: r.detail || "",
             createdAt: Date.parse(r.created_at),
             updatedAt: Date.parse(r.updated_at),
           })),
-          date
+          dates
         );
       } catch (error) {
         console.warn("CareNest: day notes failed to load", error);
@@ -247,10 +291,11 @@
         if (payload.old && shownIds.has(payload.old.id)) scheduleReload();
       })
       .subscribe();
-    // A shift starting or ending (or the clock passing midnight) can change the session date.
+    // A shift starting or ending, or the clock passing local midnight, can change the dates.
     shift.subscribe(() => {
-      if (sessionDate() !== shownDate) scheduleReload();
+      if (sessionDates().join(",") !== shownDates) scheduleReload();
     });
+    armMidnight(scheduleReload);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") scheduleReload();
     });

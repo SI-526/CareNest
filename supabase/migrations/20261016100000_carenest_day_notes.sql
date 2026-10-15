@@ -51,6 +51,9 @@ create policy "Parents can delete day notes"
 -- Stamps authorship and edit time, whatever the client sends. On insert the note is new
 -- (updated_at = created_at, no editor). On update the original author and time are kept, and
 -- the editor and time move only when the content changes, so "Updated" cannot be forged.
+-- A NULL author or editor is let through on update: that is the `on delete set null` FK action
+-- when the auth user is deleted (writing the old id back would violate the FK and fail the
+-- account deletion). Clients cannot send it: authenticated has no UPDATE grant on those columns.
 create function public.stamp_day_note()
 returns trigger
 language plpgsql
@@ -66,7 +69,7 @@ begin
   end if;
 
   new.household_id := old.household_id;
-  new.created_by := old.created_by;
+  new.created_by := case when new.created_by is null then null else old.created_by end;
   new.created_at := old.created_at;
   if new.note_date is distinct from old.note_date
      or new.category is distinct from old.category
@@ -75,7 +78,7 @@ begin
     new.updated_by := auth.uid();
     new.updated_at := now();
   else
-    new.updated_by := old.updated_by;
+    new.updated_by := case when new.updated_by is null then null else old.updated_by end;
     new.updated_at := old.updated_at;
   end if;
   return new;

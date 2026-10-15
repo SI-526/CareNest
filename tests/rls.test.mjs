@@ -129,7 +129,7 @@ const tables = [
   "message_reads",
   "photo_saves",
   "concept_flags",
-  // 20261016000000_carenest_day_notes.sql; tested in "day notes: ...".
+  // 20261016100000_carenest_day_notes.sql; tested in "day notes: ...".
   "day_notes",
 ];
 
@@ -729,6 +729,81 @@ test("day notes: parents write, members read, and the database stamps who edited
   const removed = await p.from("day_notes").delete().eq("id", plain.data.id).select("id");
   assert.ifError(removed.error);
   assert.equal(removed.data.length, 1);
+});
+
+test("deleting an account that wrote or edited a day note keeps the note without their name", async () => {
+  // The app has one parent per family space; a second parent is attached with the admin client
+  // so the household outlives the deleted author (the `on delete set null` path).
+  const parent = await signUp("parent-d");
+  const coParent = await signUp("coparent-d");
+  const h = await parent.client.rpc("create_household", {
+    household_name: "Family D",
+    acknowledged: true,
+  });
+  assert.ifError(h.error);
+  createdHouseholdIds.push(h.data);
+  assert.ifError(
+    (
+      await admin.from("household_members").insert({
+        household_id: h.data,
+        user_id: coParent.id,
+        role: "parent",
+        email: coParent.email,
+        display_name: "Co-parent D",
+      })
+    ).error,
+  );
+
+  // The co-parent writes and then edits one note (author and editor), and edits the parent's note
+  // (editor only).
+  const note = (extra) =>
+    Object.assign({ household_id: h.data, note_date: isoDate(0), category: "other" }, extra);
+  const own = await coParent.client.from("day_notes").insert(note({ title: "Mine" })).select("*").single();
+  assert.ifError(own.error);
+  const ownEdited = await coParent.client
+    .from("day_notes")
+    .update({ detail: "Edited" })
+    .eq("id", own.data.id)
+    .select("*")
+    .single();
+  assert.ifError(ownEdited.error);
+  assert.equal(ownEdited.data.created_by, coParent.id);
+  assert.equal(ownEdited.data.updated_by, coParent.id);
+  const theirs = await parent.client.from("day_notes").insert(note({ title: "Parent's" })).select("*").single();
+  assert.ifError(theirs.error);
+  const theirsEdited = await coParent.client
+    .from("day_notes")
+    .update({ detail: "Edited by co-parent" })
+    .eq("id", theirs.data.id)
+    .select("*")
+    .single();
+  assert.ifError(theirsEdited.error);
+  assert.equal(theirsEdited.data.updated_by, coParent.id);
+
+  const deleted = await admin.auth.admin.deleteUser(coParent.id);
+  assert.ifError(deleted.error);
+
+  const { data: notes, error } = await admin
+    .from("day_notes")
+    .select("id, title, detail, created_by, created_at, updated_by, updated_at")
+    .eq("household_id", h.data);
+  assert.ifError(error);
+  const byId = Object.fromEntries(notes.map((n) => [n.id, n]));
+  assert.equal(notes.length, 2, "both notes survive the account deletion");
+  assert.equal(byId[own.data.id].created_by, null);
+  assert.equal(byId[own.data.id].updated_by, null);
+  assert.equal(byId[own.data.id].detail, "Edited");
+  assert.equal(byId[own.data.id].updated_at, ownEdited.data.updated_at, "still marked Updated, same time");
+  assert.equal(byId[own.data.id].created_at, own.data.created_at);
+  assert.equal(byId[theirs.data.id].created_by, parent.id);
+  assert.equal(byId[theirs.data.id].updated_by, null);
+  assert.equal(byId[theirs.data.id].updated_at, theirsEdited.data.updated_at);
+
+  // The remaining parent still cannot write authorship back.
+  assertPermissionDenied(
+    await parent.client.from("day_notes").update({ created_by: null }).eq("id", theirs.data.id).select(),
+    "parent cleared created_by",
+  );
 });
 
 test("caretaker can start a shift, check tasks, and write the handoff", async () => {
