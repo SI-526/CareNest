@@ -116,10 +116,15 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 | `invites` | Email-bound invites (token hash, 7-day expiry) | Created by `create_invite`; parents revoke |
 | `care_items` | Preferences, where things are, instructions, emergency steps, food/allergies (with severity) | Parents |
 | `contacts` | People and places to call (including the hospital, with address) | Parents |
-| `plans`, `tasks` | The child's day (one plan per family space): ordered tasks with time, detail, location, care note | Parents |
-| `visits` | One babysitting shift per plan per date (yesterday, today, or tomorrow); start, handoff note, current end | Members start and write the note (dates in the window only); any member can `end_visit` and `reopen_visit` |
-| `task_checks` | Which tasks are done in a shift, by whom, and when (`checked_at`) | Members, while the shift is open and dated yesterday, today, or tomorrow |
+| `plans`, `tasks` | The child's day (one plan per family space): ordered tasks with time, detail, location, care note, usual hours | Parents; archived tasks are frozen |
+| `visits` | One babysitting shift per plan per date (yesterday, today, or tomorrow); start, handoff note, current end, moment time | Members start and write the note (dates in the window only); any member can `end_visit` and `reopen_visit` |
+| `task_checks` | Which tasks are done in a shift, by whom, and when (`checked_at`) | Only `complete_task` (photo required for caretakers, optional for parents), while the shift is open and in the window; members uncheck |
 | `shift_events` | Append-only shift history: ends, reopens, and unchecks of original-shift tasks after a reopen, with who, which task, and when | Nobody directly; only `end_visit`, `reopen_visit`, and the uncheck trigger write it. Members read |
+| `messages` | Chat, task proofs (photo, note, tag), and moments (photo, `late`); replies to a photo | Members post chat; sitters post the shift's moment; proofs only via `complete_task`. Sender, role, time, and `late` are set by the database. Clients never edit or delete; a parent can remove a photo with `remove_photo` (the message stays, marked "Photo removed by …") |
+| `message_reads` | Which messages a user has seen | Each user, for themselves; private |
+| `photo_saves` | A parent's saved-photo album | Each parent, for themselves; private |
+| `concept_flags` | **Concept only**: the demo "child seems off" alert on a photo; nothing analyses photos | Parents set and clear; members read |
+| Storage `photos` | Private bucket, 5 MB, JPEG/PNG/WebP, at `<household_id>/<visit_id>/<uuid>.<jpg\|png\|webp>` | Members upload into an open, in-window shift of their household (max 200 objects per shift); members read; no overwrite |
 
 ## Data and risk boundaries
 
@@ -178,19 +183,58 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   was checked after the reopen, or before any end, is not logged. Checks removed because a task,
   plan, shift, or family space was deleted are not unchecks and are not logged. If the task is
   later deleted, its `unchecked` events stay with no task (`task_id` null).
-- A task check that races `end_visit` can land just after the end: each statement checks
-  `ended_at` against its own snapshot. That is harmless for checks, but T3's photo lock must not
-  rely on the same plain predicate: it must re-check `ended_at` under a row lock on the visit
-  (`select ... for share`) or in a trigger.
+- Task checks cannot race `end_visit`: a `BEFORE INSERT` trigger on `task_checks` locks the visit
+  (`for share`, which waits for `end_visit`'s `for update`) and re-checks the end and the date
+  window for every signed-in insert, whatever path made it; `complete_task` also takes the same
+  lock. Two-session tests cover both RPC paths and a raw insert.
+- Each check stores a snapshot of the task as it was when it was checked (`task_title`,
+  `task_time_of_day`, `task_detail`, `task_location`, `task_care_note`), filled by the database.
+  **Frontend: past shifts render the snapshot, not the live task.** Archived tasks are frozen
+  (parents cannot edit them) and `archived_at` is stamped by the database and never changes back.
+- Correction to a comment in the first migration (frozen): members cannot delete a task, a plan
+  with shifts, or a visit, so no member action cascades checks away except `delete_my_account`
+  removing a sole parent's whole family space. The service role can still delete visits.
 - `delete_my_account` deletes every family space where you are the only parent (cascading all
   care info, contacts, plans, tasks, shifts, checks, and invites), removes your other
   memberships, and deletes your sign-in account. When a caretaker deletes their account, checks,
   notes, and shift-history entries they made stay in the family's history without their name
   (the user column becomes null, shown as a former member).
+- Photos (T3a): the `photos` bucket is private (no public URLs). Members of the household in the
+  path's first folder read; a member uploads only into an open shift of their household whose
+  date is in the start window; nobody overwrites or moves a photo. A task is completed only with
+  `complete_task(visit, task, photo_path, note, tag)`, which writes the check and the proof
+  message together; proofs and moments re-check the shift under a share lock on the visit, so
+  they cannot slip in after a concurrent `end_visit`. Chat stays open after a shift ends.
+  Caretakers must attach a photo to complete a task; parents may check off without one (shown as
+  done by them, no proof message). Each shift gets one moment prompt (`visits.moment_at`, chosen
+  by the database at a random time from 30 minutes after the start to 30 minutes before the usual
+  end, using the usual shift length parsed from the plan's schedule label such as "3:00pm -
+  7:00pm"; 30 minutes to 3 hours when the label is not understood). A parent can call
+  `trigger_moment_now(visit)` on an open, in-window shift with no moment yet to move it to 1-5
+  minutes from now (demo). Only a sitter posts the moment, once; it is `late` if posted more
+  than 2 minutes after the prompt.
+- Uploads: at most 200 objects per shift folder, and never at a path a message already uses.
+- Photo removal: a parent may remove any photo in the family space. `remove_photo(message)`
+  clears the message's photo, records `photo_removed_by`/`photo_removed_at` ("Photo removed by
+  Mary"; the message, its task check, and the history stay), deletes every parent's save of it
+  and its concept flag, and returns the path; the client then deletes the object with the Storage
+  API. Saves and flags cannot be added to a removed photo.
+- Photo deletion: a photo no message uses can be deleted by its uploader (whether or not the
+  shift is open) or by any parent. Database cascades do not remove Storage objects, so deleting
+  an account is three client steps: `start_account_deletion()` (returns the households where you
+  are the only parent and, for one hour, lets you, and only you while still the only parent,
+  delete their photos), remove every object under each `<household_id>/` folder with the Storage
+  API, then `delete_my_account()`.
+- Orphaned photos (issue #7, P1): a photo is readable only while its path's shift still exists in
+  that household, so photos of a deleted shift or family space are hidden from everyone (and so
+  cannot be deleted by clients either). But abandoned uploads in a shift that still exists (never
+  attached to a proof or moment) stay readable by the family's members, and every orphan stays
+  stored, until a cleanup job exists.
 - Known limitation (same as Carekeeper): Supabase Realtime does not apply RLS to DELETE events,
   so a signed-in user subscribed to `task_checks` also receives the primary keys (two random
   UUIDs, no content) of unchecks in other family spaces. The same applies to `visits` and
-  `shift_events` rows removed when a family space or plan is deleted (one random UUID each).
+  `shift_events` rows removed when a family space or plan is deleted (one random UUID each), and
+  to `messages` (one random UUID each; clients never delete messages, so only cascades emit them).
   Clients must ignore events for shifts they are not showing.
 
 ## Deploying to a hosted Supabase project

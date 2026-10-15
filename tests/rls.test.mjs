@@ -87,6 +87,24 @@ function isoDate(offsetDays) {
   return date.toISOString().slice(0, 10);
 }
 
+// Since T3a a task is checked only through complete_task(), which needs a photo uploaded into the
+// shift's folder of the private `photos` bucket. Direct task_checks inserts are refused.
+const TINY_JPEG = new Blob([Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9])], {
+  type: "image/jpeg",
+});
+async function completeTask(user, householdId, targetVisitId, taskId) {
+  const path = `${householdId}/${targetVisitId}/${randomUUID()}.jpg`;
+  const up = await user.client.storage
+    .from("photos")
+    .upload(path, TINY_JPEG, { contentType: "image/jpeg" });
+  assert.ifError(up.error);
+  return user.client.rpc("complete_task", {
+    target_visit_id: targetVisitId,
+    target_task_id: taskId,
+    proof_photo_path: path,
+  });
+}
+
 // Multi-row inserts whose rows set different columns. supabase-js defaults to defaultToNull:
 // true, which makes PostgREST send NULL for a column a row omits (and NOT NULL columns with a
 // default then fail). defaultToNull: false sends `Prefer: missing=default`, so omitted columns
@@ -106,6 +124,11 @@ const tables = [
   "visits",
   "task_checks",
   "shift_events",
+  // T3a (20261015000000_carenest_photos_messages.sql); tested in photos.test.mjs.
+  "messages",
+  "message_reads",
+  "photo_saves",
+  "concept_flags",
 ];
 
 const rpcs = [
@@ -144,6 +167,17 @@ before(async () => {
 });
 
 after(async () => {
+  // Database cascades do not remove Storage objects: remove the photos this run uploaded.
+  for (const householdId of createdHouseholdIds) {
+    const { data: visits } = await admin.storage.from("photos").list(householdId);
+    for (const folder of visits ?? []) {
+      const { data: files } = await admin.storage
+        .from("photos")
+        .list(`${householdId}/${folder.name}`, { limit: 1000 });
+      const paths = (files ?? []).map((f) => `${householdId}/${folder.name}/${f.name}`);
+      if (paths.length) await admin.storage.from("photos").remove(paths);
+    }
+  }
   if (createdHouseholdIds.length) {
     await admin.from("households").delete().in("id", createdHouseholdIds);
   }
@@ -617,10 +651,16 @@ test("caretaker can start a shift, check tasks, and write the handoff", async ()
     "checked_at cannot be chosen by the client",
   );
 
+  assertPermissionDenied(
+    await c.from("task_checks").insert({ visit_id: visitId, task_id: taskIds[0] }).select(),
+    "task_checks are inserted only by complete_task",
+  );
+  assert.ifError((await completeTask(caretaker, householdA, visitId, taskIds[0])).error);
   const check = await c
     .from("task_checks")
-    .insert({ visit_id: visitId, task_id: taskIds[0] })
-    .select()
+    .select("checked_by")
+    .eq("visit_id", visitId)
+    .eq("task_id", taskIds[0])
     .single();
   assert.ifError(check.error);
   assert.equal(check.data.checked_by, caretaker.id);
@@ -647,9 +687,7 @@ test("caretaker can start a shift, check tasks, and write the handoff", async ()
     .select("*", { count: "exact", head: true })
     .eq("visit_id", visitId);
   assert.equal(earlyEvents, 0, "an uncheck before the shift ever ended is not logged");
-  assert.ifError(
-    (await c.from("task_checks").insert({ visit_id: visitId, task_id: taskIds[0] })).error,
-  );
+  assert.ifError((await completeTask(caretaker, householdA, visitId, taskIds[0])).error);
 
   const handoff = await c
     .from("visits")
@@ -804,9 +842,7 @@ test("any member can reopen an ended shift in the start window, and every end an
 
   // Open again: the caretaker checks another task (a backfill), then ends the shift again.
   const c = caretaker.client;
-  assert.ifError(
-    (await c.from("task_checks").insert({ visit_id: visitId, task_id: taskIds[1] })).error,
-  );
+  assert.ifError((await completeTask(caretaker, householdA, visitId, taskIds[1])).error);
   assert.ifError((await c.rpc("end_visit", { target_visit_id: visitId })).error);
   assertDenied(
     await c.from("task_checks").delete().eq("visit_id", visitId).select(),
@@ -906,11 +942,11 @@ test("unchecking an original-shift task after a reopen is logged; later checks a
   assert.ifError(visit.error);
   const id = visit.data.id;
   for (const task of t.slice(0, 4)) {
-    assert.ifError((await s.from("task_checks").insert({ visit_id: id, task_id: task })).error);
+    assert.ifError((await completeTask(fam.sitter, fam.householdId, id, task)).error);
   }
   assert.ifError((await s.rpc("end_visit", { target_visit_id: id })).error);
   assert.ifError((await p.rpc("reopen_visit", { target_visit_id: id })).error);
-  assert.ifError((await s.from("task_checks").insert({ visit_id: id, task_id: t[4] })).error);
+  assert.ifError((await completeTask(fam.sitter, fam.householdId, id, t[4])).error);
 
   const uncheck = (user, task) =>
     user.client.from("task_checks").delete().eq("visit_id", id).eq("task_id", task).select();
@@ -1004,7 +1040,7 @@ test("re-checking a task after a reopen and unchecking it after a second reopen 
   const rpc = (name) => s.rpc(name, { target_visit_id: id });
   assert.ifError((await rpc("end_visit")).error);
   assert.ifError((await rpc("reopen_visit")).error);
-  assert.ifError((await s.from("task_checks").insert({ visit_id: id, task_id: x })).error);
+  assert.ifError((await completeTask(fam.sitter, fam.householdId, id, x)).error);
   assert.ifError((await rpc("end_visit")).error);
   assert.ifError((await rpc("reopen_visit")).error);
   const unchecked = await s.from("task_checks").delete().eq("visit_id", id).eq("task_id", x).select();
@@ -1025,7 +1061,7 @@ test("a parent archives a task: its past checks and history stay, and it cannot 
   const visit = await s.from("visits").insert({ plan_id: fam.planId }).select().single();
   assert.ifError(visit.error);
   const id = visit.data.id;
-  assert.ifError((await s.from("task_checks").insert({ visit_id: id, task_id: t0 })).error);
+  assert.ifError((await completeTask(fam.sitter, fam.householdId, id, t0)).error);
   assert.ifError((await s.rpc("end_visit", { target_visit_id: id })).error);
 
   // A caretaker cannot archive (or delete) a task.
@@ -1065,13 +1101,40 @@ test("a parent archives a task: its past checks and history stay, and it cannot 
   // After a reopen, the archived task cannot be checked; an active task can.
   assert.ifError((await s.rpc("reopen_visit", { target_visit_id: id })).error);
   assert.ifError((await s.from("task_checks").delete().eq("visit_id", id).eq("task_id", t0)).error);
-  assertDenied(
+  assertPermissionDenied(
     await s.from("task_checks").insert({ visit_id: id, task_id: t0 }).select(),
-    "check on an archived task",
+    "direct check on an archived task",
   );
-  const active = await s.from("task_checks").insert({ visit_id: id, task_id: t1 }).select();
+  assertRpcError(await completeTask(fam.sitter, fam.householdId, id, t0), "task_archived");
+  assertRpcError(
+    await p.rpc("complete_task", { target_visit_id: id, target_task_id: t0 }),
+    "task_archived",
+  );
+  const active = await completeTask(fam.sitter, fam.householdId, id, t1);
   assert.ifError(active.error);
-  assert.equal(active.data.length, 1);
+  assert.ok(active.data, "the proof message id");
+
+  // Archived tasks are frozen: a parent cannot relabel one (past shifts keep their wording) or
+  // un-archive it (re-create the task instead). Active tasks stay editable.
+  const before = (await admin.from("tasks").select("*").eq("id", t0).single()).data;
+  assertDenied(await p.from("tasks").update({ title: "Renamed" }).eq("id", t0).select(), "relabel");
+  assertDenied(await p.from("tasks").update({ archived_at: null }).eq("id", t0).select(), "un-archive");
+  assertDenied(
+    await p.from("tasks").update({ archived_at: new Date().toISOString() }).eq("id", t0).select(),
+    "re-archive (moves archived_at)",
+  );
+  const after = (await admin.from("tasks").select("*").eq("id", t0).single()).data;
+  assert.deepEqual(after, before, "the archived task is unchanged");
+  const renamed = await p.from("tasks").update({ title: "Renamed" }).eq("id", t1).select();
+  assert.equal(renamed.data?.length, 1, "an active task is still editable");
+  // archived_at is stamped by the database, not back-dated by the client.
+  const { data: stamped } = await admin.from("tasks").select("archived_at").eq("id", t0).single();
+  assert.ok(Date.parse(stamped.archived_at) > Date.now() - 10 * 60_000, "archived_at is the server's time");
+  const backdated = await p.from("tasks").insert({ plan_id: fam.planId, title: "Old", archived_at: "2000-01-01T00:00:00Z" }).select().single();
+  assert.ifError(backdated.error);
+  assert.ok(Date.parse(backdated.data.archived_at) > Date.now() - 10 * 60_000, "a client cannot back-date archived_at");
+  const serviceUnarchive = await admin.from("tasks").update({ archived_at: null }).eq("id", t0).select();
+  assert.match(serviceUnarchive.error?.message ?? "", /task_archived/, "nobody un-archives, not even the service role");
 
   // Even the service role cannot delete a task that still has checks: the foreign key no longer
   // cascades, so history cannot be erased by deleting a task.
@@ -1095,7 +1158,7 @@ test("an uncheck that races end_visit is refused once the shift has ended", asyn
   const visit = await s.from("visits").insert({ plan_id: fam.planId }).select().single();
   assert.ifError(visit.error);
   const id = visit.data.id;
-  assert.ifError((await s.from("task_checks").insert({ visit_id: id, task_id: task })).error);
+  assert.ifError((await completeTask(fam.sitter, fam.householdId, id, task)).error);
 
   // Session 1 (psql, as the parent): end the shift and hold the transaction open.
   const marker = `race-${randomUUID()}`;
@@ -1125,6 +1188,138 @@ test("an uncheck that races end_visit is refused once the shift has ended", asyn
   assert.equal(count, 1, "the check survived on the ended shift");
   const { data: ended } = await admin.from("visits").select("ended_at").eq("id", id).single();
   assert.ok(ended.ended_at);
+});
+
+test("a check-off that races end_visit is refused once the shift has ended (photo or not)", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this two-session test needs a direct database connection");
+    return;
+  }
+  const fam = await newFamily("checkrace", 2);
+  const s = fam.sitter.client;
+  const visit = await s.from("visits").insert({ plan_id: fam.planId }).select().single();
+  assert.ifError(visit.error);
+  const id = visit.data.id;
+  const path = `${fam.householdId}/${id}/${randomUUID()}.jpg`;
+  assert.ifError(
+    (await s.storage.from("photos").upload(path, TINY_JPEG, { contentType: "image/jpeg" })).error,
+  );
+
+  // Every path that creates a task check: a sitter with a photo, a parent without one, and a
+  // raw insert as a signed-in user (psql as the table owner with the sitter's claims: no RPC
+  // lock, so only the task_checks_lock_visit trigger stands in the way).
+  const refusedWith = (code) => (result) => assertRpcError(result, code);
+  const attempts = [
+    ["sitter with a photo", fam.parent, () =>
+      s.rpc("complete_task", { target_visit_id: id, target_task_id: fam.taskIds[0], proof_photo_path: path }),
+      refusedWith("visit_ended")],
+    ["parent without a photo", fam.sitter, () =>
+      fam.parent.client.rpc("complete_task", { target_visit_id: id, target_task_id: fam.taskIds[1] }),
+      refusedWith("visit_ended")],
+    ["raw insert (trigger only)", fam.parent, () =>
+      spawnPsql(`
+        begin;
+        select set_config('request.jwt.claims', '${JSON.stringify({ sub: uuid(fam.sitter.id), role: "authenticated" })}', true);
+        insert into public.task_checks (visit_id, task_id, checked_by)
+        values ('${uuid(id)}', '${uuid(fam.taskIds[0])}', '${uuid(fam.sitter.id)}');
+        commit;`),
+      (exitCode) => assert.notEqual(exitCode, 0, "the raw insert failed (psql prints visit_ended)")],
+  ];
+  for (const [label, ender, attempt, expectRefused] of attempts) {
+    // Session 1 (psql): another member ends the shift and holds the transaction open.
+    const marker = `checkrace-${randomUUID()}`;
+    const claims = JSON.stringify({ sub: uuid(ender.id), role: "authenticated" });
+    const session = spawnPsql(`
+      begin;
+      set local role authenticated;
+      select set_config('request.jwt.claims', '${claims}', true);
+      select public.end_visit('${uuid(id)}');
+      select pg_sleep(4) /* ${marker} */;
+      commit;`);
+    await waitFor(() =>
+      psqlQuery(`select count(*) from pg_stat_activity where state = 'active' and query like '%${marker}%' and query not like '%pg_stat_activity%'`) === "1",
+    );
+    // Session 2 (through the API): the RPC waits on the visit's share lock, then sees the end.
+    const raced = await attempt();
+    assert.equal(await session, 0, `${label}: session 1 committed`);
+    expectRefused(raced);
+    const { count } = await admin
+      .from("task_checks")
+      .select("*", { count: "exact", head: true })
+      .eq("visit_id", id);
+    assert.equal(count, 0, `${label}: no check landed on the ended shift`);
+    assert.ifError((await s.rpc("reopen_visit", { target_visit_id: id })).error);
+  }
+  const { count: proofs } = await admin
+    .from("messages")
+    .select("*", { count: "exact", head: true })
+    .eq("visit_id", id);
+  assert.equal(proofs, 0, "no proof message landed either");
+});
+
+test("parents may check off without a photo; caretakers must send one", async () => {
+  const fam = await newFamily("nophoto", 2);
+  const visit = await fam.sitter.client.from("visits").insert({ plan_id: fam.planId }).select().single();
+  assert.ifError(visit.error);
+  const id = visit.data.id;
+  assert.ifError(
+    (await fam.parent.client
+      .from("tasks")
+      .update({ time_of_day: "15:00", detail: "Apple slices", location: "Kitchen" })
+      .eq("id", fam.taskIds[0])).error,
+  );
+  assertRpcError(
+    await fam.sitter.client.rpc("complete_task", { target_visit_id: id, target_task_id: fam.taskIds[0] }),
+    "photo_required",
+  );
+  const done = await fam.parent.client.rpc("complete_task", {
+    target_visit_id: id,
+    target_task_id: fam.taskIds[0],
+  });
+  assert.ifError(done.error);
+  assert.equal(done.data, null, "no proof message without a photo");
+  const { data: check } = await fam.sitter.client
+    .from("task_checks")
+    .select("checked_by")
+    .eq("visit_id", id)
+    .eq("task_id", fam.taskIds[0])
+    .single();
+  assert.equal(check.checked_by, fam.parent.id, "shown as done by the parent");
+
+  // The check keeps a snapshot of the task as it was; later edits do not rewrite past shifts.
+  assert.ifError(
+    (await fam.parent.client
+      .from("tasks")
+      .update({ title: "Renamed", time_of_day: "16:30", detail: "Crackers", location: "Garden" })
+      .eq("id", fam.taskIds[0])).error,
+  );
+  const { data: snap } = await fam.sitter.client
+    .from("task_checks")
+    .select("task_title, task_time_of_day, task_detail, task_location")
+    .eq("visit_id", id)
+    .eq("task_id", fam.taskIds[0])
+    .single();
+  assert.deepEqual(snap, {
+    task_title: "Task 0",
+    task_time_of_day: "15:00:00",
+    task_detail: "Apple slices",
+    task_location: "Kitchen",
+  });
+  // Nobody writes the snapshot directly (no INSERT or UPDATE privilege on task_checks).
+  assertPermissionDenied(
+    await fam.parent.client.from("task_checks").update({ task_title: "Forged" }).eq("visit_id", id).select(),
+    "snapshot is not client-writable",
+  );
+  const { count } = await admin.from("messages").select("*", { count: "exact", head: true }).eq("visit_id", id);
+  assert.equal(count, 0);
+  assertRpcError(
+    await fam.parent.client.rpc("complete_task", { target_visit_id: id, target_task_id: fam.taskIds[0] }),
+    "task_already_done",
+  );
+  // A parent with a photo still writes a proof.
+  const withPhoto = await completeTask(fam.parent, fam.householdId, id, fam.taskIds[1]);
+  assert.ifError(withPhoto.error);
+  assert.ok(withPhoto.data);
 });
 
 test("a shift dated outside yesterday..tomorrow (UTC) is read-only, under any session time zone", async () => {
@@ -1163,8 +1358,11 @@ test("a shift dated outside yesterday..tomorrow (UTC) is read-only, under any se
     ["Etc/GMT-14 (UTC+14)", await inTimeZone(fam.sitter, "Etc/GMT-14")],
     ["Etc/GMT+12 (UTC-12)", await inTimeZone(fam.sitter, "Etc/GMT+12")],
   ];
-  const check = (user, offset, task) =>
-    user.client.from("task_checks").insert({ visit_id: visitOn[offset], task_id: task }).select();
+  // Out of the window the RPC refuses before it looks for a photo (uploads are refused there
+  // too); in the window a check goes through complete_task with an uploaded photo.
+  const checkOld = (user, offset, task) =>
+    user.client.rpc("complete_task", { target_visit_id: visitOn[offset], target_task_id: task });
+  const check = (user, offset, task) => completeTask(user, fam.householdId, visitOn[offset], task);
   const uncheck = (user, offset) =>
     user.client.from("task_checks").delete().eq("visit_id", visitOn[offset]).select();
   const rpc = (user, name, offset) => user.client.rpc(name, { target_visit_id: visitOn[offset] });
@@ -1172,7 +1370,7 @@ test("a shift dated outside yesterday..tomorrow (UTC) is read-only, under any se
   for (const [label, user] of members) {
     // Out of the window: no check, no uncheck, no handoff note, even though nobody ended it.
     for (const offset of [-3, -2, 2]) {
-      assertDenied(await check(user, offset, t1), `${label}: check ${offset} days away`);
+      assertRpcError(await checkOld(user, offset, t1), "visit_too_old");
       assertDenied(await uncheck(user, offset), `${label}: uncheck ${offset} days away`);
       assertDenied(
         await user.client
@@ -1186,8 +1384,7 @@ test("a shift dated outside yesterday..tomorrow (UTC) is read-only, under any se
     // In the window: check and uncheck work.
     for (const offset of [-1, 1]) {
       const checked = await check(user, offset, t0);
-      assert.ifError(checked.error);
-      assert.equal(checked.data.length, 1, `${label}: check ${offset} days away`);
+      assert.ifError(checked.error, `${label}: check ${offset} days away`);
       assert.equal((await uncheck(user, offset)).data?.length, 1, `${label}: uncheck ${offset}`);
     }
   }
@@ -1308,7 +1505,8 @@ test("delete_my_account removes the sole parent's household data and account", a
     .single();
   assert.ifError(open.error);
   assert.ifError(
-    (await a.from("task_checks").insert({ visit_id: open.data.id, task_id: taskIds[0] })).error,
+    (await a.rpc("complete_task", { target_visit_id: open.data.id, target_task_id: taskIds[0] }))
+      .error,
   );
   assert.ifError((await a.rpc("end_visit", { target_visit_id: open.data.id })).error);
   assert.ifError((await a.rpc("reopen_visit", { target_visit_id: open.data.id })).error);
@@ -1386,10 +1584,7 @@ test("a caretaker deleting their account keeps the family's history without thei
     .single();
   const visit = await sitter.client.from("visits").insert({ plan_id: plan.data.id }).select().single();
   assert.ifError(visit.error);
-  assert.ifError(
-    (await sitter.client.from("task_checks").insert({ visit_id: visit.data.id, task_id: task.data.id }))
-      .error,
-  );
+  assert.ifError((await completeTask(sitter, h.data, visit.data.id, task.data.id)).error);
   assert.ifError((await sitter.client.rpc("end_visit", { target_visit_id: visit.data.id })).error);
   assert.ifError((await sitter.client.rpc("reopen_visit", { target_visit_id: visit.data.id })).error);
   assert.ifError((await parent.client.rpc("end_visit", { target_visit_id: visit.data.id })).error);
