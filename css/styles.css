@@ -1857,3 +1857,360 @@ body.modal-open {
   flex-direction: column;
   gap: 8px;
 }
+
+/* ---------- U2: parent home, live alerts, replies, album ---------- */
+.parent-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.parent-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.parent-child-avatar {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.parent-greeting {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--grey);
+}
+
+.parent-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+}
+
+.parent-title:focus {
+  outline: none;
+}
+
+/* Live "new photo" alert: sticky, non-blocking */
+.new-photo-banner {
+  position: sticky;
+  top: 8px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 8px 10px 14px;
+  border-radius: var(--radius);
+  background: var(--blue);
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(0, 50, 78, 0.2);
+  animation: moment-in 0.3s ease-out;
+}
+
+.new-photo-banner[hidden] {
+  display: none;
+}
+
+.new-photo-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.new-photo-link {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.new-photo-link:focus-visible,
+.new-photo-dismiss:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.new-photo-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: 50%;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+/* Shift status + schedule progress */
+.day-status[hidden] {
+  display: none;
+}
+
+.day-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.day-status-meta {
+  min-width: 0;
+}
+
+.day-status-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+}
+
+.status-pill {
+  flex: 0 0 auto;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.status-pill.is-active {
+  background: #e3f5e9;
+  color: #1e6b3a;
+}
+
+.status-pill.is-ended {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.day-progress-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.day-progress-count {
+  color: var(--grey);
+}
+
+.day-progress {
+  width: 100%;
+  height: 8px;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(0, 50, 78, 0.12);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.day-progress::-webkit-progress-bar {
+  background: rgba(0, 50, 78, 0.12);
+  border-radius: 999px;
+}
+
+.day-progress::-webkit-progress-value {
+  background: var(--blue);
+  border-radius: 999px;
+}
+
+.day-progress::-moz-progress-bar {
+  background: var(--blue);
+  border-radius: 999px;
+}
+
+/* Photo feed */
+.feed-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.feed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.feed-card {
+  width: 100%;
+  scroll-margin-top: 80px;
+}
+
+.feed-card:focus {
+  outline: none;
+}
+
+.feed-card:focus-visible {
+  box-shadow: 0 0 0 3px rgba(129, 148, 214, 0.55);
+}
+
+.feed-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.feed-card [hidden] {
+  display: none !important;
+}
+
+.new-badge {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #ffffff;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.concept-alert {
+  padding: 8px 10px;
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-sm);
+  background: #fffbea;
+}
+
+.concept-label {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #7a5b00;
+}
+
+.concept-text {
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.feed-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.feed-actions .photo-source-btn,
+.feed-actions .primary-btn {
+  min-height: 44px;
+}
+
+.feed-album-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.text-btn {
+  min-height: 44px;
+  padding: 0 4px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.text-btn:focus-visible {
+  outline: 2px solid var(--map-border);
+  outline-offset: 2px;
+}
+
+.feed-status {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: #1e6b3a;
+}
+
+.feed-status.is-error {
+  color: var(--danger);
+}
+
+.feed-reply-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.feed-reply-label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.feed-replies {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0 0;
+  border-top: 1px solid #e8eaf0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.feed-reply {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.feed-reply.is-parent {
+  background: #eaf0ff;
+}
+
+.feed-reply-body {
+  margin: 0;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* Reply reference inside a chat bubble (Messages) */
+.msg-reply-ref {
+  display: block;
+  margin-bottom: 4px;
+  padding-left: 8px;
+  border-left: 3px solid currentColor;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  opacity: 0.85;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.msg-reply-ref:focus-visible {
+  outline: 2px solid var(--map-border);
+  outline-offset: 2px;
+}
+
+.dev-link {
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .new-photo-banner {
+    animation: none;
+  }
+}
+
+.album-chip {
+  align-self: center;
+}

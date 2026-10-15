@@ -14,7 +14,9 @@
   }
 
   function emptyState() {
-    return { completions: {}, messages: [], shift: null };
+    // reads/saves/insights are keyed by message id; each value is shaped like a future row
+    // (message_reads, saved_photos, photo_insights).
+    return { completions: {}, messages: [], shift: null, reads: {}, saves: {}, insights: {} };
   }
 
   function read() {
@@ -75,6 +77,12 @@
 
   function isPhotoDataUrl(value) {
     return typeof value === "string" && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(value);
+  }
+
+  function isPhotoMessage(state, id) {
+    return state.messages.some(
+      (m) => m.id === id && (m.kind === "task_proof" || m.kind === "moment")
+    );
   }
 
   const api = {
@@ -146,11 +154,16 @@
       return read().messages;
     },
 
-    sendChat(body, sender = "sitter") {
+    // replyTo = id of the task_proof/moment message being replied to (a reply_to FK).
+    sendChat(body, sender = "sitter", replyTo = null) {
       const text = String(body || "").trim();
       if (!text) return null;
       const state = read();
       const message = { id: newId(), kind: "chat", body: text, sender, sentAt: Date.now() };
+      if (replyTo) {
+        if (!isPhotoMessage(state, replyTo)) throw new Error("That photo is no longer available.");
+        message.replyTo = replyTo;
+      }
       state.messages.push(message);
       write(state);
       return message;
@@ -189,6 +202,66 @@
       state.messages.push(message);
       write(state);
       return message;
+    },
+
+    // Parent read receipts: messageId -> { messageId, reader, seenAt }.
+    getReads() {
+      return read().reads;
+    },
+
+    markSeen(messageIds, reader = "parent") {
+      const state = read();
+      const seenAt = Date.now();
+      let changed = false;
+      messageIds.forEach((id) => {
+        if (state.reads[id] || !isPhotoMessage(state, id)) return;
+        state.reads[id] = { messageId: id, reader, seenAt };
+        changed = true;
+      });
+      if (changed) write(state);
+    },
+
+    // Parent album: messageId -> { messageId, savedBy, savedAt }.
+    getSaves() {
+      return read().saves;
+    },
+
+    savePhoto(messageId, savedBy = "parent") {
+      const state = read();
+      if (!isPhotoMessage(state, messageId)) throw new Error("That photo is no longer available.");
+      state.saves[messageId] = { messageId, savedBy, savedAt: Date.now() };
+      write(state);
+    },
+
+    unsavePhoto(messageId) {
+      const state = read();
+      if (!state.saves[messageId]) return;
+      delete state.saves[messageId];
+      write(state);
+    },
+
+    // Concept-only "insight" on a photo. source is always "concept_demo": nothing analyses
+    // the image; a demo control sets the text by hand.
+    getInsights() {
+      return read().insights;
+    },
+
+    setConceptAlert(messageId, text) {
+      const state = read();
+      if (!isPhotoMessage(state, messageId)) return;
+      state.insights[messageId] = {
+        messageId,
+        text: String(text),
+        source: "concept_demo",
+        createdAt: Date.now(),
+      };
+      write(state);
+    },
+
+    clearConceptAlerts() {
+      const state = read();
+      state.insights = {};
+      write(state);
     },
 
     // Dev-only helpers (UI shows them on localhost only).
