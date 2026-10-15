@@ -37,6 +37,8 @@
   // ponytail: the gallery shows the newest 500 photos; past that, paginate (load older on scroll).
   const GALLERY_LIMIT = 500;
   const FORMER = "a former member";
+  // Demo photos live in localStorage (about 5 MB), so they are stored smaller than real ones.
+  const DEMO_PHOTO_SIDE = 640;
 
   // Server error codes (raise exception '<code>') -> what to tell the person.
   const ERRORS = {
@@ -689,7 +691,13 @@
         const { data: path, error } = await client.rpc("remove_photo", { target_message_id: messageId });
         if (error) throw error;
         if (path) {
-          const { error: removeError } = await client.storage.from("photos").remove([path]);
+          // A failed delete keeps the photo's slot in the shift's upload cap, so retry once.
+          // ponytail: one retry; the orphan cleanup job (#7) catches what still slips through.
+          let { error: removeError } = await client.storage.from("photos").remove([path]);
+          if (removeError) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            ({ error: removeError } = await client.storage.from("photos").remove([path]));
+          }
           if (removeError) console.warn("CareNest: photo bytes not removed yet", removeError);
           photoCache.delete(path);
           blobCache.delete(path);
@@ -873,7 +881,7 @@
         store.reopenShift();
       },
       async completeTask({ taskId, file, note, tag }) {
-        const photoDataUrl = await store.downscaleImage(file);
+        const photoDataUrl = await store.downscaleImage(file, DEMO_PHOTO_SIDE, 0.7);
         store.completeTask({ taskId, photoDataUrl, note, tag });
       },
       async uncheckTask(taskId) {
@@ -888,7 +896,7 @@
         return { late: Boolean(message.late) };
       },
       async postPhoto({ file, body }) {
-        const photoDataUrl = await store.downscaleImage(file);
+        const photoDataUrl = await store.downscaleImage(file, DEMO_PHOTO_SIDE, 0.7);
         store.postPhoto({ photoDataUrl, body });
       },
       async triggerMomentNow() {
