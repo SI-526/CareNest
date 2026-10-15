@@ -11,9 +11,29 @@
   let returnFocusEl = null;
 
   const SHIFT_LOCKED_TEXT = "This shift has ended. Photos can't be added after a shift.";
-  const isDevHost = ["localhost", "127.0.0.1", "[::1]", ""].includes(
-    window.location.hostname
-  );
+  const isDevHost =
+    ["localhost", "127.0.0.1", "[::1]", ""].includes(window.location.hostname) ||
+    demoFlag();
+  // Until real accounts exist, the parent side is the same app opened as parent.html or
+  // messages.html?as=parent (a second tab in the same browser stays in sync via the store).
+  const role =
+    page === "parent" ||
+    (page === "messages" && new URLSearchParams(window.location.search).get("as") === "parent")
+      ? "parent"
+      : "sitter";
+  if (role === "parent") document.body.dataset.role = "parent";
+
+  // ?demo=1 turns on the demo/dev controls for this browser tab (e.g. on the deployed site).
+  function demoFlag() {
+    try {
+      if (new URLSearchParams(window.location.search).has("demo")) {
+        sessionStorage.setItem("carenest:demo", "1");
+      }
+      return sessionStorage.getItem("carenest:demo") === "1";
+    } catch (e) {
+      return false;
+    }
+  }
 
   if (page === "home") {
     initHome();
@@ -837,6 +857,7 @@
     box.innerHTML = `
       <h2 class="panel-title" id="dev-tools-heading">Dev tools (localhost only)</h2>
       <div class="dev-tools-actions">
+        <a class="photo-source-btn dev-link" href="parent.html" target="_blank" rel="noopener">Open parent view<span class="visually-hidden"> (opens in a new tab)</span></a>
         <button type="button" class="photo-source-btn" data-dev="moment">Trigger moment now</button>
         <button type="button" class="photo-source-btn" data-dev="reset">Start a new shift (clears data)</button>
       </div>`;
@@ -869,15 +890,23 @@
     return `<p class="msg-meta">${escapeHtml(senderName(message.sender))} · <time datetime="${iso}">${escapeHtml(formatTime(message.sentAt))}</time></p>`;
   }
 
-  function renderMessage(message, completions) {
-    const side = message.sender === "sitter" ? "is-mine" : "is-theirs";
+  // Label for a task_proof/moment message, e.g. "Snack" or "Moment".
+  function photoTitle(message) {
+    if (!message) return "Photo";
+    if (message.kind === "moment") return "Moment";
+    const task = data.schedule.find((s) => s.id === message.taskId);
+    return task ? task.title : "Task";
+  }
+
+  function renderMessage(message, completions, byId) {
+    const side = message.sender === role ? "is-mine" : "is-theirs";
 
     if (message.kind === "task_proof") {
       const task = data.schedule.find((s) => s.id === message.taskId);
       const completion = completions[message.taskId];
       const title = task ? task.title : "Task";
       return `
-        <li class="msg ${side}">
+        <li class="msg ${side}" id="msg-${escapeHtml(message.id)}">
           <article class="msg-card proof-card" aria-label="Task completed: ${escapeHtml(title)}">
             <p class="msg-card-kicker">
               <img src="assets/check.svg" alt="" width="16" height="16" />
@@ -894,7 +923,7 @@
 
     if (message.kind === "moment") {
       return `
-        <li class="msg ${side}">
+        <li class="msg ${side}" id="msg-${escapeHtml(message.id)}">
           <article class="msg-card moment-card" aria-label="Moment${message.late ? ", late" : ""}">
             <p class="msg-card-kicker">
               Moment
@@ -907,9 +936,13 @@
         </li>`;
     }
 
+    const replyRef = message.replyTo
+      ? `<a class="msg-reply-ref" href="#msg-${escapeHtml(message.replyTo)}">Reply to ${escapeHtml(photoTitle(byId && byId[message.replyTo]))} photo</a>`
+      : "";
     return `
       <li class="msg ${side}">
         <div class="msg-bubble">
+          ${replyRef}
           <p class="msg-body">${escapeHtml(message.body)}</p>
         </div>
         ${messageMeta(message)}
@@ -922,7 +955,9 @@
     const input = document.getElementById("message-input");
     const error = document.getElementById("message-error");
     const title = document.getElementById("messages-title");
-    const parentName = parentFirstName();
+    // The other person in the thread, from the viewer's side.
+    const parentName = role === "parent" ? data.babysitter.name : parentFirstName();
+    if (role === "parent") renderParentNav("messages");
     if (title) title.textContent = `Messages with ${parentName}`;
     if (input) input.placeholder = `Message ${parentName}`;
     const label = document.querySelector('label[for="message-input"]');
@@ -932,11 +967,15 @@
     const render = () => {
       const messages = store.getMessages();
       const completions = store.getCompletions();
+      const byId = {};
+      messages.forEach((m) => {
+        byId[m.id] = m;
+      });
       list.innerHTML = messages.length
-        ? messages.map((m) => renderMessage(m, completions)).join("")
+        ? messages.map((m) => renderMessage(m, completions, byId)).join("")
         : `<li class="empty-state msg-empty"><p>No messages yet. Say hi to ${escapeHtml(parentName)}!</p></li>`;
       const lock = document.getElementById("messages-locked");
-      if (lock) lock.hidden = store.isShiftActive();
+      if (lock) lock.hidden = role === "parent" || store.isShiftActive();
       if (messages.length !== lastCount) {
         lastCount = messages.length;
         const last = list.lastElementChild;
@@ -948,7 +987,7 @@
       e.preventDefault();
       error.hidden = true;
       try {
-        const sent = store.sendChat(input.value);
+        const sent = store.sendChat(input.value, role);
         if (!sent) {
           error.textContent = "Type a message first.";
           error.hidden = false;
@@ -1068,6 +1107,56 @@
     document.body.classList.remove("modal-open");
     if (wasOpen && restoreFocus) restoreFocusAfterModal();
   }
+
+  // A function (not a const) because initMessages runs before this line is reached.
+  function parentNavItems() {
+    return [
+    {
+      id: "today",
+      href: "parent.html#today",
+      label: "Today",
+      icon: '<path d="m12 3 9 7.5V21h-6v-6H9v6H3v-10.5L12 3Z" />',
+    },
+    {
+      id: "album",
+      href: "parent.html#album",
+      label: "Album",
+      icon: '<path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2ZM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5Z" />',
+    },
+    {
+      id: "messages",
+      href: "messages.html?as=parent",
+      label: "Messages",
+      icon: '<path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8.4L4.6 21.2A1 1 0 0 1 3 20.4V5a2 2 0 0 1 1-2Zm3 6a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 7 9Zm5 0a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 12 9Zm5 0a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 17 9Z" />',
+    },
+  ];
+  }
+
+  // Parent-side primary nav (static markup only).
+  function renderParentNav(current) {
+    const nav = document.querySelector(".primary-nav");
+    if (!nav) return;
+    nav.setAttribute("aria-label", "Parent navigation");
+    nav.innerHTML = parentNavItems().map(
+      (item) => `
+        <a class="nav-item" href="${item.href}" data-nav="${item.id}"${item.id === current ? ' aria-current="page"' : ""}>
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">${item.icon}</svg>
+          <span>${item.label}</span>
+        </a>`
+    ).join("");
+  }
+
+  // Shared helpers for js/parent.js.
+  window.CareNestUI = {
+    escapeHtml,
+    announce,
+    formatTime,
+    senderName,
+    photoTitle,
+    photoImg,
+    renderParentNav,
+    isDevHost,
+  };
 
   function escapeHtml(str) {
     return String(str)

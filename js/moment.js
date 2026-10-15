@@ -5,6 +5,7 @@
   const data = window.CareNestData;
   const page = document.body.dataset.page;
   if (!store || !data || (page !== "home" && page !== "messages")) return;
+  if (document.body.dataset.role === "parent") return; // moments are the sitter's prompt
   if (!document.createElement("dialog").showModal) return;
 
   const parent = (data.contacts && data.contacts[0] && data.contacts[0].firstName) || "the parent";
