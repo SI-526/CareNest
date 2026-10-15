@@ -65,8 +65,7 @@ create table public.care_logs (
 
 create index care_logs_visit_id_idx on public.care_logs (visit_id, created_at);
 create index care_logs_task_id_idx on public.care_logs (task_id);
--- RLS filters every read by household_id (is_member), and the app reads a household's logs in
--- time order.
+-- Supports the ON DELETE CASCADE from households and household-scoped reads in time order.
 create index care_logs_household_id_idx on public.care_logs (household_id, created_at);
 
 -- ---------------------------------------------------------------------------
