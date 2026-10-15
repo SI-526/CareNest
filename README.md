@@ -68,14 +68,21 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   a schema-scoped revoke cannot remove, so the migration additionally revokes that globally for
   functions created by `postgres`: any function a later migration adds, in any schema, must be
   granted explicitly to be callable.
+- **Note for T3 and later migrations:** every function created by `postgres` in a later migration
+  is NOT executable by `anon` or `authenticated` until it is explicitly granted
+  (`grant execute on function ... to authenticated`). This also covers helpers used in column
+  defaults, `CHECK` constraints, RLS or storage policies, and functions from extensions created
+  by `postgres`. The migration author must add the grant; a missing grant fails closed with
+  `42501` (permission denied).
 - Households, memberships, and invites are created only through `SECURITY DEFINER` functions with
   a fixed empty `search_path`. Creating a family space requires an explicit risk acknowledgement,
   stored as `households.risk_acknowledged_at`.
 - Invite links carry a random 256-bit token. Only its SHA-256 hash is stored. Accepting requires
   the signed-in account's verified email to match the invite; invites expire after 7 days, can be
   revoked, are single-use, and a new invite to the same address revokes the previous one.
-- A shift can only be started for yesterday, today, or tomorrow (database date, UTC on
-  Supabase), so a client cannot claim a plan's far-off dates. It ends through `end_visit`, which
+- A shift can only be started for yesterday, today, or tomorrow (the database's
+  UTC date, `(now() at time zone 'utc')::date`, which ignores the client-settable session time
+  zone), so a client cannot claim a plan's far-off dates. It ends through `end_visit`, which
   records who ended it and when. After that its task checks are frozen; the handoff note stays
   editable. A parent (not a caretaker) can reopen an ended shift with `reopen_visit`, which
   clears the end so tasks can be checked again (for example, if the sitter ended it by mistake).

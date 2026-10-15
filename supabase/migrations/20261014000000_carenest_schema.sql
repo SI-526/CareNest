@@ -125,7 +125,7 @@ create index tasks_plan_id_idx on public.tasks (plan_id);
 create table public.visits (
   id uuid primary key default gen_random_uuid(),
   plan_id uuid not null references public.plans (id) on delete cascade,
-  visit_date date not null default current_date,
+  visit_date date not null default (now() at time zone 'utc')::date,
   started_by uuid default auth.uid() references auth.users (id) on delete set null,
   started_at timestamptz not null default now(),
   ended_by uuid references auth.users (id) on delete set null,
@@ -347,7 +347,8 @@ create policy "Members can start visits"
   on public.visits for insert to authenticated
   with check (
     started_by = (select auth.uid())
-    and visit_date between current_date - 1 and current_date + 1
+    and visit_date between (now() at time zone 'utc')::date - 1
+                       and (now() at time zone 'utc')::date + 1
     and exists (
       select 1 from public.plans p
       where p.id = visits.plan_id and public.is_member(p.household_id)

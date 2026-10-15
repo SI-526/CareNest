@@ -75,9 +75,16 @@ function assertPermissionDenied(result, message) {
   );
 }
 
-// A calendar date `offsetDays` from today (UTC, the database's time zone on Supabase).
+// The database's UTC date, read once in before(). Test dates derive from it (not the JS clock),
+// so the suite cannot disagree with the visits insert policy near 00:00 UTC.
+let dbToday;
+
+// A calendar date `offsetDays` from the database's UTC date, as YYYY-MM-DD.
 function isoDate(offsetDays) {
-  return new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
+  assert.ok(dbToday, "dbToday is read in before()");
+  const date = new Date(`${dbToday}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
 }
 
 const DEMO_HOUSEHOLD_ID = "00000000-0000-4000-8000-00000000c0de";
@@ -119,6 +126,9 @@ let visitId;
 let parentVisitId;
 
 before(async () => {
+  const [row] = localSql("select ((now() at time zone 'utc')::date)::text as today");
+  dbToday = String(row.today).slice(0, 10);
+  assert.match(dbToday, /^\d{4}-\d{2}-\d{2}$/);
   parentA = await signUp("parent-a");
   parentB = await signUp("parent-b");
   caretaker = await signUp("caretaker");
@@ -555,8 +565,11 @@ test("caretaker can start a shift, check tasks, and write the handoff", async ()
     .select();
   assert.ok(forgedEnd.error, "ended_at cannot be set when starting a shift");
 
-  // A shift can only be started for yesterday, today, or tomorrow.
-  for (const offset of [-2, 2, 365]) {
+  // A shift can only be started for yesterday, today, or tomorrow (database UTC date). The
+  // refusal checks use ±3 days so they hold even if the date rolls over mid-suite.
+  // Visit dates used on planA in this suite: 0 (caretaker), -1 (parent), +1 (refused after
+  // removal), so no two can collide on unique (plan_id, visit_date).
+  for (const offset of [-3, 3, 365]) {
     const outOfRange = await c
       .from("visits")
       .insert({ plan_id: planA.id, visit_date: isoDate(offset) })
