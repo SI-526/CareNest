@@ -3,6 +3,8 @@
 // households.risk_acknowledged_at); the child's name and age are then saved on the new row.
 (function () {
   const auth = window.CareNestAuth;
+  // Creating a family space is real-account work, so it ends this tab's ?demo=1 mode.
+  auth.clearDemo();
   const form = document.getElementById("onboarding-form");
   const errorEl = document.getElementById("onboarding-error");
   const submit = document.getElementById("onboarding-submit");

@@ -2,7 +2,13 @@
 // ponytail: localStorage is the stand-in until Supabase. Rows below are shaped like the
 // future tables (task_completions, messages, shifts) so the swap only touches this file.
 (function () {
-  const KEY = "carenest:v1";
+  // The key is per person and chosen by the auth guard (js/auth.js): "carenest:v1:<user id>" or
+  // "carenest:demo:v1". Until it is set (or when signed out) reads are empty and writes fail.
+  // Pages without the guard (none ship today) fall back to the demo key.
+  function storageKey() {
+    const auth = window.CareNestAuth;
+    return auth ? auth.storeKey : "carenest:demo:v1";
+  }
   const MOMENT_WINDOW_MS = 2 * 60 * 1000;
   const listeners = new Set();
 
@@ -20,8 +26,10 @@
   }
 
   function read() {
+    const key = storageKey();
+    if (!key) return emptyState();
     try {
-      const parsed = JSON.parse(localStorage.getItem(KEY));
+      const parsed = JSON.parse(localStorage.getItem(key));
       if (parsed && typeof parsed === "object") {
         return Object.assign(emptyState(), parsed);
       }
@@ -32,8 +40,10 @@
   }
 
   function write(state) {
+    const key = storageKey();
+    if (!key) throw new Error("Please sign in again.");
     try {
-      localStorage.setItem(KEY, JSON.stringify(state));
+      localStorage.setItem(key, JSON.stringify(state));
     } catch (e) {
       if (e && (e.name === "QuotaExceededError" || e.code === 22)) {
         throw new StoreError(
@@ -52,7 +62,7 @@
 
   // Fires for writes from other tabs (sitter tab + parent tab in one browser).
   window.addEventListener("storage", (e) => {
-    if (e.key === KEY || e.key === null) notify();
+    if (e.key === null || e.key === storageKey()) notify();
   });
 
   function newId() {
@@ -101,7 +111,7 @@
       if (!state.shift) {
         state.shift = newShift(Date.now());
         try {
-          localStorage.setItem(KEY, JSON.stringify(state));
+          if (storageKey()) localStorage.setItem(storageKey(), JSON.stringify(state));
         } catch (e) {
           /* still return the in-memory shift */
         }

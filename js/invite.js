@@ -1,13 +1,34 @@
 // invite.html#<token>: the token lives in the URL fragment, so it is never sent to a server or
 // in a Referer header. Signed out -> sign in with the invited Google account -> accept.
+//
+// On load the token is read once into this closure and the address bar is rewritten to plain
+// "invite.html" (no fragment) before anything renders or Google's script loads, so the token
+// isn't left on screen, in screenshots, or in this tab's history. A copy is kept in this tab's
+// sessionStorage only so a reload (e.g. after allowing Google's script) still works; it is
+// removed once the invite is accepted.
 (function () {
+  const TOKEN_KEY = "carenest:invite-token";
+  const token = (function readToken() {
+    let value = window.location.hash.replace(/^#/, "").trim().toLowerCase();
+    try {
+      if (value) sessionStorage.setItem(TOKEN_KEY, value);
+      else value = sessionStorage.getItem(TOKEN_KEY) || "";
+    } catch (e) {
+      /* storage unavailable: the closure copy still works until reload */
+    }
+    if (window.location.hash || window.location.search) {
+      window.history.replaceState(null, "", "invite.html");
+    }
+    return value;
+  })();
+  const tokenLooksValid = /^[0-9a-f]{64}$/.test(token);
+
   const auth = window.CareNestAuth;
+  // Accepting an invite is real-account work, so it ends this tab's ?demo=1 mode.
+  auth.clearDemo();
   const card = document.getElementById("invite-card");
   const esc = auth.escapeHtml;
   document.getElementById("risk-notice").innerHTML = auth.riskNoticeHtml();
-
-  const token = window.location.hash.replace(/^#/, "").trim().toLowerCase();
-  const tokenLooksValid = /^[0-9a-f]{64}$/.test(token);
 
   function showProblem(message, extraHtml = "") {
     card.innerHTML = `
@@ -55,11 +76,15 @@
         }
         return;
       }
-      // replace(): the invite URL (with its token) leaves this tab's history.
+      try {
+        sessionStorage.removeItem(TOKEN_KEY);
+      } catch (e) {
+        /* storage unavailable */
+      }
       auth.go("index.html");
     });
     card.querySelector("[data-switch]").addEventListener("click", async () => {
-      await auth.client.auth.signOut();
+      await auth.endSession();
       render();
     });
   }

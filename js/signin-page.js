@@ -2,11 +2,7 @@
 (function () {
   const auth = window.CareNestAuth;
   // Choosing to sign in ends this tab's ?demo=1 mode, so app pages use the real account again.
-  try {
-    sessionStorage.removeItem("carenest:demo");
-  } catch (e) {
-    /* storage unavailable */
-  }
+  auth.clearDemo();
   document.getElementById("risk-notice").innerHTML = auth.riskNoticeHtml();
 
   async function routeSignedIn() {

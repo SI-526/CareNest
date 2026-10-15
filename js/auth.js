@@ -51,17 +51,60 @@
     return "Something went wrong. Please try again.";
   }
 
-  // ?demo=1 (remembered for this tab) shows the sample family without signing in, as before
-  // accounts existed. It reads only the bundled sample data in js/data.js and this browser's
-  // localStorage; signed-out requests can read nothing from the database (RLS).
+  // ---------- device data (js/store.js) ----------
+  //
+  // Photos, messages, check-offs and moments still live in this browser's localStorage until T3
+  // moves them to the database. Each person gets their own key so demo mode, every account, and
+  // signed-out visitors never see each other's data:
+  //   carenest:demo:v1          ?demo=1 (starts empty; the sample family comes from js/data.js)
+  //   carenest:v1:<user id>     a signed-in account
+  // Nothing is readable until the guard picks a key (signed-out visitors get none). Signing out,
+  // or the guard finding no family space, removes that account's key.
+  const DEMO_STORE_KEY = "carenest:demo:v1";
+  const DEMO_FLAG = "carenest:demo";
+  let storeKey = null;
+
+  function userStoreKey(userId) {
+    return `carenest:v1:${userId}`;
+  }
+
+  function clearUserData(userId) {
+    if (!userId) return;
+    try {
+      localStorage.removeItem(userStoreKey(userId));
+    } catch (e) {
+      /* storage unavailable: nothing to clear */
+    }
+  }
+
+  // The pre-accounts key "carenest:v1" was shared by everyone on this device and can't be
+  // attributed to one account, so it is discarded rather than migrated.
+  try {
+    localStorage.removeItem("carenest:v1");
+  } catch (e) {
+    /* storage unavailable */
+  }
+
+  // ?demo=1 (remembered for this tab) shows the sample family, as before accounts existed. It
+  // reads only the bundled sample data in js/data.js and its own localStorage key; signed-out
+  // requests can read nothing from the database (RLS).
   function demoMode() {
     try {
       if (new URLSearchParams(window.location.search).has("demo")) {
-        sessionStorage.setItem("carenest:demo", "1");
+        sessionStorage.setItem(DEMO_FLAG, "1");
       }
-      return sessionStorage.getItem("carenest:demo") === "1";
+      return sessionStorage.getItem(DEMO_FLAG) === "1";
     } catch (e) {
       return false;
+    }
+  }
+
+  // Ends this tab's demo mode (sign-in, invite, onboarding, and "Exit demo" call this).
+  function clearDemo() {
+    try {
+      sessionStorage.removeItem(DEMO_FLAG);
+    } catch (e) {
+      /* storage unavailable */
     }
   }
 
@@ -111,6 +154,7 @@
     if (userResult.error || !userResult.data.user) {
       const status = userResult.error && userResult.error.status;
       if (!userResult.error || status === 401 || status === 403 || status === 404) {
+        clearUserData(sessionData.session.user && sessionData.session.user.id);
         await client.auth.signOut({ scope: "local" });
         return null;
       }
@@ -166,8 +210,15 @@
   // The auth guard for app pages (index, parent, people, messages, info, food).
   async function guard() {
     if (demoMode()) {
+      storeKey = DEMO_STORE_KEY;
+      let session = null;
+      try {
+        if (client) session = (await client.auth.getSession()).data.session;
+      } catch (e) {
+        /* treat as signed out */
+      }
       reveal();
-      showDemoBanner();
+      showDemoBanner(session);
       return { demo: true, role: null };
     }
     let ctx;
@@ -178,7 +229,11 @@
       return new Promise(() => {});
     }
     if (!ctx) return go("signin.html");
-    if (!ctx.role) return go("onboarding.html");
+    if (!ctx.role) {
+      clearUserData(ctx.user.id);
+      return go("onboarding.html");
+    }
+    storeKey = userStoreKey(ctx.user.id);
 
     const allowed = PAGE_ROLES[page] || [];
     if (!allowed.includes(ctx.role)) return go(HOME[ctx.role]);
@@ -197,11 +252,23 @@
     return ctx;
   }
 
-  function showDemoBanner() {
+  // Signed out: "Demo mode ... Sign in". Signed in: the account stays signed in underneath, so
+  // say whose it is and offer "Exit demo" back to the real family space.
+  function showDemoBanner(session) {
     const banner = document.createElement("p");
     banner.className = "demo-banner";
-    banner.innerHTML =
-      'Demo mode: sample family, not signed in. <a href="signin.html">Sign in</a>';
+    if (session && session.user) {
+      const meta = session.user.user_metadata || {};
+      const name = (meta.full_name || meta.name || "").trim() || session.user.email || "your account";
+      banner.innerHTML = `Demo mode — signed in as ${escapeHtml(name)} · <button type="button" class="text-btn demo-exit">Exit demo</button>`;
+      banner.querySelector("button").addEventListener("click", () => {
+        clearDemo();
+        window.location.replace(window.location.pathname);
+      });
+    } else {
+      banner.innerHTML =
+        'Demo mode: sample family, not signed in. <a href="signin.html">Sign in</a>';
+    }
     document.body.prepend(banner);
   }
 
@@ -268,8 +335,20 @@
     accountDialog.showModal();
   }
 
+  // Signs out and removes this account's device data (photos, messages) from this browser.
+  async function endSession() {
+    if (!client) return;
+    try {
+      const { data } = await client.auth.getSession();
+      clearUserData(data.session && data.session.user && data.session.user.id);
+    } catch (e) {
+      /* no session to clear */
+    }
+    await client.auth.signOut();
+  }
+
   async function signOut() {
-    if (client) await client.auth.signOut();
+    await endSession();
     window.location.replace("signin.html");
   }
 
@@ -296,7 +375,7 @@
       }
       return;
     }
-    // This browser's own copies (sample shift, photos, messages) go too.
+    // This browser's own copies (every carenest:* key: photos, messages, demo data) go too.
     try {
       Object.keys(localStorage)
         .filter((key) => key.startsWith("carenest:"))
@@ -375,6 +454,12 @@
     reveal,
     go,
     signOut,
+    endSession,
+    clearDemo,
     mountChrome,
+    // localStorage key for js/store.js; null until the guard has decided who this is.
+    get storeKey() {
+      return storeKey;
+    },
   };
 })();

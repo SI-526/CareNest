@@ -21,9 +21,25 @@ right one. The Account item in the nav signs out or deletes the account and its 
 slice the schedule, care info, photos, and messages still come from `js/data.js` and
 `js/store.js`; only names (child, parent, sitter) come from the family space.
 
-`?demo=1` (remembered for the browser tab) skips sign-in and shows the sample family with a
-"Demo mode" banner, as before accounts existed. It reads only the bundled sample data; signed-out
-requests can read nothing from the database.
+`?demo=1` (remembered for the browser tab) shows the sample family from `js/data.js` with a
+"Demo mode" banner, as before accounts existed. It does not sign anyone in or out: signed out, the
+banner links to sign-in; signed in, it reads "Demo mode — signed in as <name> · Exit demo" (Exit
+demo clears the flag). Sign-in, `invite.html`, and `onboarding.html` also clear it. Demo mode never
+reads the database (signed-out requests can read nothing anyway) and never reads an account's
+device data.
+
+Device data (`js/store.js`: task photos, moments, messages, check-offs) is still localStorage
+only until T3. It is keyed per person: `carenest:demo:v1` for demo mode and
+`carenest:v1:<user id>` for each account, picked by the auth guard; signed-out visitors get no key.
+Signing out, or the guard finding no family space, removes that account's key; deleting the
+account removes every `carenest:*` key in that browser. The pre-accounts shared key `carenest:v1`
+is discarded on load (it can't be attributed to one account).
+
+Security headers (CSP with Google Identity Services' documented sources, `frame-ancestors
+'none'`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`) are set for every route in
+`vercel.json`. `style-src` includes `'unsafe-inline'` because Google's sign-in script injects
+its own `<style>` element and `style` attributes (the button renders broken without it);
+`script-src` has no inline allowance. `python3 -m http.server` does not send these headers.
 
 Config is in `js/config.js` and is public by design: the Supabase URL, the publishable key, and
 the Google OAuth client ID. On `localhost`/`127.0.0.1` the app uses the local stack
