@@ -38,6 +38,7 @@
       child: { name: "Child", age: "", avatar: null, dateLabel: "", shiftTime: "" },
       contacts: [],
       schedule: [],
+      dayNotes: [],
       knowTiles: sample.knowTiles,
       categories: {
         preferences: { title: sample.categories.preferences.title, items: [] },
