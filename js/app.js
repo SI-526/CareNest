@@ -1,5 +1,6 @@
 (function () {
   const data = window.CareNestData;
+  const store = window.CareNestStore;
   if (!data) return;
 
   const page = document.body.dataset.page;
@@ -7,6 +8,32 @@
   let pendingPhotoFile = null;
   let photoObjectUrl = null;
   let cameraStream = null;
+  let returnFocusEl = null;
+
+  const SHIFT_LOCKED_TEXT = "This shift has ended. Photos can't be added after a shift.";
+  const isDevHost =
+    ["localhost", "127.0.0.1", "[::1]", ""].includes(window.location.hostname) ||
+    demoFlag();
+  // Until real accounts exist, the parent side is the same app opened as parent.html or
+  // messages.html?as=parent (a second tab in the same browser stays in sync via the store).
+  const role =
+    page === "parent" ||
+    (page === "messages" && new URLSearchParams(window.location.search).get("as") === "parent")
+      ? "parent"
+      : "sitter";
+  if (role === "parent") document.body.dataset.role = "parent";
+
+  // ?demo=1 turns on the demo/dev controls for this browser tab (e.g. on the deployed site).
+  function demoFlag() {
+    try {
+      if (new URLSearchParams(window.location.search).has("demo")) {
+        sessionStorage.setItem("carenest:demo", "1");
+      }
+      return sessionStorage.getItem("carenest:demo") === "1";
+    } catch (e) {
+      return false;
+    }
+  }
 
   if (page === "home") {
     initHome();
@@ -14,17 +41,48 @@
     initFood();
   } else if (page === "info") {
     initInfo();
+  } else if (page === "messages") {
+    initMessages();
   }
 
   function initHome() {
+    initNavigation();
     renderSitterHeader(document.getElementById("sitter-header"));
     renderShift();
+    renderShiftControls();
     renderSchedule(document.getElementById("schedule-list"));
     renderEmergencyEntry(document.getElementById("emergency-entry"));
     renderContacts(document.getElementById("contacts-list"));
     renderKnowTiles(document.getElementById("know-grid"));
     initModal();
     initCompleteModal();
+    initEndShiftDialog();
+    renderDevTools();
+
+    store.subscribe(() => {
+      renderShiftControls();
+      renderSchedule(document.getElementById("schedule-list"));
+      applyShiftLockToCompleteModal();
+    });
+  }
+
+  function initNavigation() {
+    const links = Array.from(document.querySelectorAll(".primary-nav .nav-item"));
+    if (!links.length) return;
+
+    const updateCurrentPage = () => {
+      const hash = window.location.hash || "#home";
+      links.forEach((link) => {
+        if (link.getAttribute("href") === hash) {
+          link.setAttribute("aria-current", "page");
+        } else {
+          link.removeAttribute("aria-current");
+        }
+      });
+    };
+
+    window.addEventListener("hashchange", updateCurrentPage);
+    updateCurrentPage();
   }
 
   function initFood() {
@@ -258,10 +316,31 @@
       </div>`;
   }
 
+  // Merge the static schedule with persisted completions from the store.
+  function scheduleWithCompletions() {
+    const completions = store.getCompletions();
+    return data.schedule.map((item) => {
+      const completion = completions[item.id];
+      return Object.assign({}, item, {
+        completed: Boolean(completion),
+        completion: completion || null,
+        photoUrl:
+          completion && store.isPhotoDataUrl(completion.photoDataUrl)
+            ? completion.photoDataUrl
+            : null,
+      });
+    });
+  }
+
   function renderSchedule(el) {
     if (!el) return;
 
-    el.innerHTML = data.schedule
+    const shiftActive = store.isShiftActive();
+    const lockNote = document.getElementById("schedule-locked");
+    if (lockNote) lockNote.hidden = shiftActive;
+    const items = scheduleWithCompletions();
+
+    el.innerHTML = items
       .map((item, index) => {
         const detailHtml = item.location
           ? `<div class="schedule-location">
@@ -290,12 +369,12 @@
 
         const completeButton = item.completed
           ? ""
-          : `<button type="button" class="check-btn" data-complete-id="${item.id}" aria-label="Mark ${escapeHtml(item.title)} as complete">
+          : `<button type="button" class="check-btn" data-complete-id="${escapeHtml(item.id)}" aria-label="Mark ${escapeHtml(item.title)} as complete"${shiftActive ? "" : ` disabled aria-describedby="schedule-locked"`}>
               <img src="assets/check.svg" alt="" width="24" height="24" />
             </button>`;
 
         const divider =
-          index < data.schedule.length - 1
+          index < items.length - 1
             ? `<hr class="schedule-divider" />`
             : "";
 
@@ -304,7 +383,7 @@
         return `
           <li class="schedule-row${item.completed ? " is-completed" : ""}">
             <div class="schedule-item-wrap">
-              <button type="button" class="schedule-item" data-schedule-id="${item.id}" aria-label="View details for ${escapeHtml(item.title)}${completedLabel}">
+              <button type="button" class="schedule-item" data-schedule-id="${escapeHtml(item.id)}" aria-label="View details for ${escapeHtml(item.title)}${completedLabel}">
                 <span class="schedule-time">${escapeHtml(item.time)}</span>
                 <div class="schedule-body">
                   <p class="schedule-title">${escapeHtml(item.title)}</p>
@@ -321,17 +400,17 @@
 
     el.querySelectorAll("[data-schedule-id]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const item = data.schedule.find((s) => s.id === btn.dataset.scheduleId);
-        if (item) openModal(item);
+        const item = items.find((s) => s.id === btn.dataset.scheduleId);
+        if (item) openModal(item, btn);
       });
     });
 
     el.querySelectorAll("[data-complete-id]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        const item = data.schedule.find((s) => s.id === btn.dataset.completeId);
-        if (!item || item.completed) return;
-        openCompleteModal(item);
+        const item = items.find((s) => s.id === btn.dataset.completeId);
+        if (!item || item.completed || !store.isShiftActive()) return;
+        openCompleteModal(item, btn);
       });
     });
   }
@@ -430,10 +509,11 @@
     return item.location || item.detail || "";
   }
 
-  function openCompleteModal(item) {
+  function openCompleteModal(item, opener) {
     const overlay = document.getElementById("complete-modal");
     if (!overlay) return;
 
+    returnFocusEl = opener || document.activeElement;
     pendingCompleteItem = item;
     resetPhotoUpload();
 
@@ -443,24 +523,45 @@
       taskDetailText(item);
 
     document.getElementById("complete-note").value = "";
-    document.getElementById("complete-send-btn").textContent =
-      `Send to ${parentFirstName()}`;
+    const noTag = overlay.querySelector('input[name="complete-tag"][value=""]');
+    if (noTag) noTag.checked = true;
+    const sendBtn = document.getElementById("complete-send-btn");
+    sendBtn.textContent = `Send to ${parentFirstName()}`;
+    sendBtn.disabled = false;
 
-    closeModal();
+    closeModal(false);
     overlay.classList.add("is-open");
     overlay.setAttribute("aria-hidden", "false");
     document.body.classList.add("modal-open");
     overlay.querySelector("[data-close-complete]").focus();
   }
 
-  function closeCompleteModal() {
+  function closeCompleteModal(restoreFocus = true) {
     const overlay = document.getElementById("complete-modal");
     if (!overlay) return;
+    const wasOpen = overlay.classList.contains("is-open");
     overlay.classList.remove("is-open");
     overlay.setAttribute("aria-hidden", "true");
     document.body.classList.remove("modal-open");
     pendingCompleteItem = null;
     resetPhotoUpload();
+    if (wasOpen && restoreFocus) restoreFocusAfterModal();
+  }
+
+  function restoreFocusAfterModal() {
+    const el = returnFocusEl;
+    returnFocusEl = null;
+    if (el && el.isConnected && !el.disabled) el.focus();
+  }
+
+  function applyShiftLockToCompleteModal() {
+    const overlay = document.getElementById("complete-modal");
+    if (!overlay || !overlay.classList.contains("is-open")) return;
+    if (store.isShiftActive()) return;
+    const error = document.getElementById("complete-photo-error");
+    error.textContent = SHIFT_LOCKED_TEXT;
+    error.hidden = false;
+    document.getElementById("complete-send-btn").disabled = true;
   }
 
   function resetPhotoUpload() {
@@ -656,23 +757,260 @@
     if (!pendingCompleteItem) return;
 
     const item = pendingCompleteItem;
-    const reader = new FileReader();
-    reader.onload = () => {
-      item.completed = true;
-      item.completionNote = note;
-      item.photoName = file.name;
-      item.photoUrl = reader.result;
+    const tagInput = document.querySelector('input[name="complete-tag"]:checked');
+    const tag = tagInput ? tagInput.value : "";
+    const sendBtn = document.getElementById("complete-send-btn");
+    sendBtn.disabled = true;
 
-      const list = document.getElementById("schedule-list");
-      closeCompleteModal();
-      if (list) renderSchedule(list);
-    };
-    reader.readAsDataURL(file);
+    store
+      .downscaleImage(file)
+      .then((photoDataUrl) => {
+        store.completeTask({ taskId: item.id, photoDataUrl, note, tag });
+        // The check button is gone after re-render; return focus to the task row.
+        returnFocusEl = null;
+        closeCompleteModal(false);
+        const row = document.querySelector(
+          `[data-schedule-id="${cssEscape(item.id)}"]`
+        );
+        if (row) row.focus();
+        announce(`${item.title} sent to ${parentFirstName()}.`);
+      })
+      .catch((err) => {
+        sendBtn.disabled = Boolean(err && err.code === "shift_ended");
+        if (error) {
+          error.textContent =
+            (err && err.message) || "Something went wrong. Please try again.";
+          error.hidden = false;
+        }
+      });
   }
 
-  function openModal(item) {
+  function cssEscape(value) {
+    return window.CSS && CSS.escape ? CSS.escape(value) : String(value);
+  }
+
+  function announce(text) {
+    const el = document.getElementById("app-status");
+    if (!el) return;
+    el.textContent = "";
+    window.setTimeout(() => {
+      el.textContent = text;
+    }, 50);
+  }
+
+  function formatTime(ms) {
+    return new Date(ms).toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  function renderShiftControls() {
+    const el = document.getElementById("shift-controls");
+    if (!el) return;
+    const shift = store.getShift();
+    const status = el.querySelector("[data-shift-status]");
+    const endBtn = el.querySelector("[data-end-shift]");
+    if (shift.endedAt) {
+      status.textContent = `Shift ended at ${formatTime(shift.endedAt)}.`;
+      endBtn.hidden = true;
+    } else {
+      status.textContent = `Shift in progress since ${formatTime(shift.startedAt)}.`;
+      endBtn.hidden = false;
+    }
+  }
+
+  function initEndShiftDialog() {
+    const dialog = document.getElementById("end-shift-dialog");
+    const openBtn = document.querySelector("[data-end-shift]");
+    if (!dialog || !openBtn || typeof dialog.showModal !== "function") return;
+
+    openBtn.addEventListener("click", () => {
+      dialog.returnValue = "";
+      dialog.showModal();
+    });
+
+    dialog.addEventListener("close", () => {
+      if (dialog.returnValue === "confirm") {
+        store.endShift();
+        announce("Shift ended. Photos can no longer be added.");
+        const heading = document.getElementById("shift-heading");
+        const status = document.querySelector("[data-shift-status]");
+        if (status) {
+          status.setAttribute("tabindex", "-1");
+          status.focus();
+        } else if (heading) heading.focus();
+      } else {
+        openBtn.focus();
+      }
+    });
+  }
+
+  // Dev-only controls so the moment prompt and shift lock can be tested quickly.
+  function renderDevTools() {
+    if (!isDevHost) return;
+    const host = document.querySelector(".side-column") || document.querySelector(".app");
+    if (!host) return;
+    const box = document.createElement("section");
+    box.className = "panel dev-tools";
+    box.setAttribute("aria-labelledby", "dev-tools-heading");
+    box.innerHTML = `
+      <h2 class="panel-title" id="dev-tools-heading">Dev tools (localhost only)</h2>
+      <div class="dev-tools-actions">
+        <a class="photo-source-btn dev-link" href="parent.html" target="_blank" rel="noopener">Open parent view<span class="visually-hidden"> (opens in a new tab)</span></a>
+        <button type="button" class="photo-source-btn" data-dev="moment">Trigger moment now</button>
+        <button type="button" class="photo-source-btn" data-dev="reset">Start a new shift (clears data)</button>
+      </div>`;
+    box.querySelector('[data-dev="moment"]').addEventListener("click", () => {
+      if (!store.isShiftActive()) store.resetShift();
+      store.triggerMomentNow();
+    });
+    box.querySelector('[data-dev="reset"]').addEventListener("click", () => {
+      store.resetShift();
+      announce("New shift started.");
+    });
+    host.appendChild(box);
+  }
+
+  function senderName(sender) {
+    if (sender === "parent") {
+      const contact = data.contacts && data.contacts[0];
+      return (contact && contact.name) || "Parent";
+    }
+    return data.babysitter.name;
+  }
+
+  function photoImg(src, alt, className) {
+    if (!store.isPhotoDataUrl(src)) return "";
+    return `<img class="${className}" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" />`;
+  }
+
+  function messageMeta(message) {
+    const iso = new Date(message.sentAt).toISOString();
+    return `<p class="msg-meta">${escapeHtml(senderName(message.sender))} · <time datetime="${iso}">${escapeHtml(formatTime(message.sentAt))}</time></p>`;
+  }
+
+  // Label for a task_proof/moment message, e.g. "Snack" or "Moment".
+  function photoTitle(message) {
+    if (!message) return "Photo";
+    if (message.kind === "moment") return "Moment";
+    const task = data.schedule.find((s) => s.id === message.taskId);
+    return task ? task.title : "Task";
+  }
+
+  function renderMessage(message, completions, byId) {
+    const side = message.sender === role ? "is-mine" : "is-theirs";
+
+    if (message.kind === "task_proof") {
+      const task = data.schedule.find((s) => s.id === message.taskId);
+      const completion = completions[message.taskId];
+      const title = task ? task.title : "Task";
+      return `
+        <li class="msg ${side}" id="msg-${escapeHtml(message.id)}">
+          <article class="msg-card proof-card" aria-label="Task completed: ${escapeHtml(title)}">
+            <p class="msg-card-kicker">
+              <img src="assets/check.svg" alt="" width="16" height="16" />
+              Task completed
+            </p>
+            <h2 class="msg-card-title">${escapeHtml(title)}${task ? ` <span class="msg-card-time">${escapeHtml(task.time)}</span>` : ""}</h2>
+            ${completion ? photoImg(completion.photoDataUrl, `Photo for ${title}`, "msg-photo") : ""}
+            ${completion && completion.tag ? `<p class="tag-chip">${escapeHtml(completion.tag)}</p>` : ""}
+            ${completion && completion.note ? `<p class="msg-card-note">${escapeHtml(completion.note)}</p>` : ""}
+            ${messageMeta(message)}
+          </article>
+        </li>`;
+    }
+
+    if (message.kind === "moment") {
+      return `
+        <li class="msg ${side}" id="msg-${escapeHtml(message.id)}">
+          <article class="msg-card moment-card" aria-label="Moment${message.late ? ", late" : ""}">
+            <p class="msg-card-kicker">
+              Moment
+              ${message.late ? `<span class="late-badge">Late</span>` : ""}
+            </p>
+            ${photoImg(message.photo, "Moment photo from the shift", "msg-photo")}
+            ${message.body ? `<p class="msg-card-note">${escapeHtml(message.body)}</p>` : ""}
+            ${messageMeta(message)}
+          </article>
+        </li>`;
+    }
+
+    const replyRef = message.replyTo
+      ? `<a class="msg-reply-ref" href="#msg-${escapeHtml(message.replyTo)}">Reply to ${escapeHtml(photoTitle(byId && byId[message.replyTo]))} photo</a>`
+      : "";
+    return `
+      <li class="msg ${side}">
+        <div class="msg-bubble">
+          ${replyRef}
+          <p class="msg-body">${escapeHtml(message.body)}</p>
+        </div>
+        ${messageMeta(message)}
+      </li>`;
+  }
+
+  function initMessages() {
+    const list = document.getElementById("message-list");
+    const form = document.getElementById("message-form");
+    const input = document.getElementById("message-input");
+    const error = document.getElementById("message-error");
+    const title = document.getElementById("messages-title");
+    // The other person in the thread, from the viewer's side.
+    const parentName = role === "parent" ? data.babysitter.name : parentFirstName();
+    if (role === "parent") renderParentNav("messages");
+    if (title) title.textContent = `Messages with ${parentName}`;
+    if (input) input.placeholder = `Message ${parentName}`;
+    const label = document.querySelector('label[for="message-input"]');
+    if (label) label.textContent = `Message to ${parentName}`;
+
+    let lastCount = -1;
+    const render = () => {
+      const messages = store.getMessages();
+      const completions = store.getCompletions();
+      const byId = {};
+      messages.forEach((m) => {
+        byId[m.id] = m;
+      });
+      list.innerHTML = messages.length
+        ? messages.map((m) => renderMessage(m, completions, byId)).join("")
+        : `<li class="empty-state msg-empty"><p>No messages yet. Say hi to ${escapeHtml(parentName)}!</p></li>`;
+      const lock = document.getElementById("messages-locked");
+      if (lock) lock.hidden = role === "parent" || store.isShiftActive();
+      if (messages.length !== lastCount) {
+        lastCount = messages.length;
+        const last = list.lastElementChild;
+        if (last) last.scrollIntoView({ block: "end" });
+      }
+    };
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      error.hidden = true;
+      try {
+        const sent = store.sendChat(input.value, role);
+        if (!sent) {
+          error.textContent = "Type a message first.";
+          error.hidden = false;
+          input.focus();
+          return;
+        }
+        input.value = "";
+        announce(`Message sent to ${parentName}.`);
+      } catch (err) {
+        error.textContent = (err && err.message) || "Message not sent. Please try again.";
+        error.hidden = false;
+      }
+      input.focus();
+    });
+
+    store.subscribe(render);
+    render();
+  }
+
+  function openModal(item, opener) {
     const overlay = document.getElementById("activity-modal");
     if (!overlay) return;
+    returnFocusEl = opener || document.activeElement;
 
     overlay.querySelector("[data-modal-time]").textContent = item.time;
     overlay.querySelector("[data-modal-date]").textContent = data.child.dateLabel;
@@ -736,36 +1074,96 @@
       photoWrap.hidden = true;
     }
 
+    const completion = item.completion;
+    const tagEl = overlay.querySelector("[data-modal-tag]");
+    if (tagEl) {
+      tagEl.textContent = completion && completion.tag ? completion.tag : "";
+      tagEl.hidden = !(completion && completion.tag);
+    }
+
     const noteWrap = overlay.querySelector("[data-modal-note-wrap]");
     const noteEl = overlay.querySelector("[data-modal-note]");
-    if (item.completionNote) {
-      noteEl.textContent = item.completionNote;
+    if (completion && completion.note) {
+      noteEl.textContent = completion.note;
       noteWrap.hidden = false;
     } else {
       noteEl.textContent = "";
       noteWrap.hidden = true;
     }
 
-    closeCompleteModal();
+    closeCompleteModal(false);
     overlay.classList.add("is-open");
     overlay.setAttribute("aria-hidden", "false");
     document.body.classList.add("modal-open");
     overlay.querySelector("[data-close-modal]").focus();
   }
 
-  function closeModal() {
+  function closeModal(restoreFocus = true) {
     const overlay = document.getElementById("activity-modal");
     if (!overlay) return;
+    const wasOpen = overlay.classList.contains("is-open");
     overlay.classList.remove("is-open");
     overlay.setAttribute("aria-hidden", "true");
     document.body.classList.remove("modal-open");
+    if (wasOpen && restoreFocus) restoreFocusAfterModal();
   }
+
+  // A function (not a const) because initMessages runs before this line is reached.
+  function parentNavItems() {
+    return [
+    {
+      id: "today",
+      href: "parent.html#today",
+      label: "Today",
+      icon: '<path d="m12 3 9 7.5V21h-6v-6H9v6H3v-10.5L12 3Z" />',
+    },
+    {
+      id: "album",
+      href: "parent.html#album",
+      label: "Album",
+      icon: '<path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2ZM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5Z" />',
+    },
+    {
+      id: "messages",
+      href: "messages.html?as=parent",
+      label: "Messages",
+      icon: '<path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8.4L4.6 21.2A1 1 0 0 1 3 20.4V5a2 2 0 0 1 1-2Zm3 6a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 7 9Zm5 0a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 12 9Zm5 0a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 17 9Z" />',
+    },
+  ];
+  }
+
+  // Parent-side primary nav (static markup only).
+  function renderParentNav(current) {
+    const nav = document.querySelector(".primary-nav");
+    if (!nav) return;
+    nav.setAttribute("aria-label", "Parent navigation");
+    nav.innerHTML = parentNavItems().map(
+      (item) => `
+        <a class="nav-item" href="${item.href}" data-nav="${item.id}"${item.id === current ? ' aria-current="page"' : ""}>
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">${item.icon}</svg>
+          <span>${item.label}</span>
+        </a>`
+    ).join("");
+  }
+
+  // Shared helpers for js/parent.js.
+  window.CareNestUI = {
+    escapeHtml,
+    announce,
+    formatTime,
+    senderName,
+    photoTitle,
+    photoImg,
+    renderParentNav,
+    isDevHost,
+  };
 
   function escapeHtml(str) {
     return String(str)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 })();
