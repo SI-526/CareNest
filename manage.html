@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en" class="auth-pending">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+    <title>CareNest — Family info</title>
+  </head>
+  <body data-page="manage">
+    <div class="app detail-app parent-app">
+      <nav class="primary-nav" aria-label="Parent navigation"></nav>
+
+      <main class="parent-main people-main manage-main" aria-labelledby="manage-title">
+        <header class="detail-nav">
+          <h1 id="manage-title">Family info</h1>
+        </header>
+        <p class="signin-note">
+          What you enter here is what your sitter sees: the schedule, care info, food and
+          allergies, emergency steps, and who to call.
+        </p>
+        <p class="auth-status" id="manage-loading" role="status">Loading your family's information…</p>
+        <div class="auth-fatal" id="manage-load-error" role="alert" hidden>
+          <p id="manage-load-error-text"></p>
+          <button type="button" class="primary-btn" id="manage-retry">Try again</button>
+        </div>
+
+        <div class="manage-sections" id="manage-sections" hidden>
+          <section class="card auth-card" aria-labelledby="child-heading">
+            <h2 class="panel-title" id="child-heading">Your child</h2>
+            <form class="invite-form" id="child-form" novalidate>
+              <label class="field-label" for="child-name">Name</label>
+              <input class="text-input" id="child-name" name="child_name" type="text" maxlength="80" autocomplete="off" />
+              <label class="field-label" for="child-age">Age <span class="field-optional">(for example "Age 3")</span></label>
+              <input class="text-input" id="child-age" name="child_age_label" type="text" maxlength="40" autocomplete="off" />
+              <button type="submit" class="primary-btn">Save</button>
+              <p class="form-error" role="alert" hidden data-form-error></p>
+            </form>
+          </section>
+
+          <section class="card auth-card" aria-labelledby="schedule-heading">
+            <h2 class="panel-title" id="schedule-heading">Schedule</h2>
+            <form class="invite-form" id="plan-form" novalidate>
+              <label class="field-label" for="plan-hours">Usual shift hours <span class="field-optional">(for example "3:00pm - 7:00pm")</span></label>
+              <input class="text-input" id="plan-hours" name="schedule" type="text" maxlength="100" autocomplete="off" />
+              <button type="submit" class="photo-source-btn">Save hours</button>
+              <p class="form-error" role="alert" hidden data-form-error></p>
+            </form>
+            <ul class="people-list" id="list-tasks"></ul>
+            <button type="button" class="primary-btn" data-add="tasks">Add a task</button>
+          </section>
+
+          <div id="care-sections"></div>
+
+          <section class="card auth-card" aria-labelledby="contacts-heading">
+            <h2 class="panel-title" id="contacts-heading">Contacts</h2>
+            <p class="signin-note">
+              People your sitter can call. Give the hospital the role <strong>Hospital</strong> and an
+              address: it then shows as the hospital on the emergency page.
+            </p>
+            <ul class="people-list" id="list-contacts"></ul>
+            <button type="button" class="primary-btn" data-add="contacts">Add a contact</button>
+          </section>
+
+          <p class="form-error" id="manage-error" role="alert" hidden></p>
+        </div>
+      </main>
+    </div>
+
+    <dialog class="confirm-dialog manage-dialog" id="edit-dialog" aria-labelledby="edit-title">
+      <form class="confirm-dialog-body" id="edit-form" novalidate>
+        <h2 class="panel-title" id="edit-title"></h2>
+        <div class="manage-fields" id="edit-fields"></div>
+        <p class="form-error" id="edit-error" role="alert" hidden></p>
+        <div class="moment-dialog-actions">
+          <button type="submit" class="primary-btn" id="edit-save">Save</button>
+          <button type="button" class="photo-source-btn" id="edit-cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <datalist id="contact-roles">
+      <option value="Parent"></option>
+      <option value="Grandparent"></option>
+      <option value="Neighbor"></option>
+      <option value="Pediatrician"></option>
+      <option value="Hospital"></option>
+    </datalist>
+
+    <p class="visually-hidden" id="app-status" aria-live="polite"></p>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"
+      integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok"
+      crossorigin="anonymous"
+    ></script>
+    <script src="js/config.js"></script>
+    <script src="js/supabase.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/family-data.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/manage.js"></script>
+  </body>
+</html>

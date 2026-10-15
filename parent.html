@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="auth-pending">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CareNest — Jack's day</title>
+    <title>CareNest — Today</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -18,7 +18,7 @@
 
       <main class="parent-main" aria-labelledby="parent-title">
         <header class="parent-header">
-          <img class="parent-child-avatar" id="parent-child-avatar" src="assets/avatar.png" alt="" width="48" height="48" />
+          <img class="parent-child-avatar" id="parent-child-avatar" alt="" width="48" height="48" hidden />
           <div>
             <p class="parent-greeting" id="parent-greeting"></p>
             <h1 class="parent-title" id="parent-title" tabindex="-1"></h1>
@@ -49,6 +49,16 @@
             <span class="day-progress-count" id="day-progress-count"></span>
           </div>
           <progress class="day-progress" id="day-progress" max="1" value="0" aria-labelledby="day-progress-label day-progress-count"></progress>
+          <div class="shift-actions parent-shift-actions">
+            <button type="button" class="photo-source-btn shift-btn" id="parent-end-shift" hidden>End shift</button>
+            <button type="button" class="photo-source-btn shift-btn" id="parent-reopen-shift" hidden>Reopen shift</button>
+          </div>
+          <p class="photo-upload-error" id="parent-error" role="alert" hidden></p>
+        </section>
+
+        <section class="panel parent-schedule" id="parent-schedule" aria-labelledby="parent-schedule-heading">
+          <h2 class="panel-title" id="parent-schedule-heading">Today's schedule</h2>
+          <ul class="parent-task-list" id="parent-task-list"></ul>
         </section>
 
         <section class="feed-section" aria-labelledby="feed-heading">
@@ -61,8 +71,18 @@
 
     <p class="visually-hidden" id="app-status" aria-live="polite"></p>
 
+    <script
+      src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"
+      integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok"
+      crossorigin="anonymous"
+    ></script>
+    <script src="js/config.js"></script>
+    <script src="js/supabase.js"></script>
+    <script src="js/auth.js"></script>
     <script src="js/data.js"></script>
+    <script src="js/family-data.js"></script>
     <script src="js/store.js"></script>
+    <script src="js/shift-data.js"></script>
     <script src="js/app.js"></script>
     <script src="js/parent.js"></script>
   </body>

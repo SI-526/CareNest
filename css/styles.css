@@ -2214,3 +2214,643 @@ body.modal-open {
 .album-chip {
   align-self: center;
 }
+
+/* ---------- Accounts: sign-in, onboarding, invites, people, account menu (T2b) ---------- */
+
+/* App pages stay hidden until js/auth.js has checked the session and role. */
+.auth-pending body {
+  visibility: hidden;
+}
+
+.auth-app {
+  max-width: 560px;
+}
+
+.auth-header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.auth-brand {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.01em;
+}
+
+.auth-main,
+.legal-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.auth-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+}
+
+.auth-lede {
+  margin: 8px 0 0;
+  color: var(--grey);
+}
+
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+}
+
+.auth-card .panel-title,
+.risk-notice .panel-title {
+  margin: 0;
+}
+
+.auth-step {
+  margin: 0;
+  color: var(--grey);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.auth-status {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: #eaf0ff;
+  font-size: var(--text-sm);
+}
+
+.auth-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.signin-note {
+  margin: 0;
+  color: var(--grey);
+  font-size: var(--text-sm);
+}
+
+.signin-note:empty {
+  display: none;
+}
+
+.gis-button {
+  min-height: 44px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.gis-button[hidden] {
+  display: none;
+}
+
+.dev-signin {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px dashed var(--accent);
+  box-shadow: none;
+}
+
+.dev-signin-title {
+  margin: 0;
+}
+
+.risk-notice {
+  padding: 18px;
+}
+
+.risk-notice ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--text-sm);
+}
+
+.risk-notice a,
+.legal-page a,
+.auth-card a,
+.form-error a,
+.signin-note a,
+.demo-banner a,
+.account-links a,
+.legal-footer a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.field-label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.field-optional {
+  color: var(--grey);
+  font-weight: var(--weight-regular);
+}
+
+.text-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #d5dbea;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--blue);
+  font: inherit;
+}
+
+.text-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.check-row {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: var(--text-sm);
+}
+
+.check-row input {
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: var(--blue);
+}
+
+.form-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.form-error[hidden],
+.auth-status[hidden],
+.invite-link[hidden] {
+  display: none;
+}
+
+.text-btn {
+  display: inline;
+  color: var(--blue);
+  font-size: inherit;
+  font-weight: var(--weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.danger-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 10px 6px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+}
+
+.danger-btn:hover,
+.danger-btn:focus-visible {
+  background: var(--danger);
+  color: #ffffff;
+  outline: none;
+}
+
+.legal-footer {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding-top: 12px;
+  color: var(--grey);
+  font-size: var(--text-xs);
+}
+
+.legal-page h2 {
+  margin: 12px 0 0;
+  font-size: var(--text-md);
+}
+
+.legal-page p,
+.legal-page ul {
+  margin: 0;
+}
+
+.legal-page ul {
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* People page */
+.people-main {
+  width: 100%;
+  max-width: 560px;
+}
+
+.invite-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.invite-link {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: #eaf0ff;
+}
+
+.invite-link-title {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.copy-row {
+  display: flex;
+  gap: 8px;
+}
+
+.copy-row .text-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--text-sm);
+}
+
+.copy-btn {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 10px 14px;
+}
+
+.people-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.people-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #eef0f6;
+}
+
+.people-row:first-child {
+  border-top: 0;
+}
+
+.people-meta {
+  min-width: 0;
+}
+
+.people-name,
+.people-sub {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.people-name {
+  font-weight: var(--weight-semibold);
+}
+
+.people-sub {
+  color: var(--grey);
+  font-size: var(--text-sm);
+}
+
+.people-action {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 8px 14px;
+}
+
+/* Account menu (a nav item that opens a native <dialog>) */
+.nav-account {
+  font-family: inherit;
+}
+
+.account-dialog .confirm-dialog-body > * {
+  margin: 0;
+}
+
+.account-dialog .photo-source-btn {
+  min-height: 44px;
+}
+
+.account-who {
+  overflow-wrap: anywhere;
+}
+
+.account-meta,
+.account-links {
+  color: var(--grey);
+  font-size: var(--text-sm);
+}
+
+.account-dialog form {
+  display: flex;
+  justify-content: center;
+}
+
+.confirm-desc {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.demo-banner {
+  margin: 0;
+  padding: 8px 16px;
+  background: var(--mild);
+  text-align: center;
+  font-size: var(--text-sm);
+}
+
+.auth-fatal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 360px;
+  margin: 20vh auto 0;
+  padding: 24px;
+  text-align: center;
+}
+
+/* T2c: family data loading layer, setup nudge, Family info (manage.html) */
+.data-status {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 16px;
+  background: var(--bg);
+}
+
+.data-status-text {
+  margin: 20vh 0 0;
+  color: var(--grey);
+  font-size: var(--text-sm);
+}
+
+.badge--moderate {
+  background: #ffd6a5;
+}
+
+.profile-avatar.contact-initials,
+.sitter-avatar.contact-initials,
+.shift-avatar.contact-initials {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.profile-avatar.contact-initials {
+  width: 56px;
+  height: 56px;
+}
+
+.empty-state-link,
+.setup-nudge a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: var(--weight-semibold);
+}
+
+.setup-nudge {
+  margin: 0 0 12px;
+}
+
+.manage-main .auth-card {
+  margin-bottom: 14px;
+}
+
+.manage-row {
+  flex-wrap: wrap;
+}
+
+.manage-row .people-meta {
+  flex: 1 1 180px;
+}
+
+.manage-sub {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.manage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.manage-icon-btn {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+
+.manage-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.manage-actions .people-action {
+  min-height: 44px;
+}
+
+.manage-dialog {
+  max-width: 440px;
+}
+
+.manage-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.manage-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.manage-textarea {
+  resize: vertical;
+}
+
+.manage-sections[hidden],
+.auth-fatal[hidden],
+.profile-address[hidden] {
+  display: none;
+}
+
+/* ---------- T3b: shift lifecycle, history, check labels ---------- */
+.shift-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shift-actions [hidden],
+.shift-history[hidden],
+.check-meta[hidden],
+.uncheck-btn[hidden] {
+  display: none;
+}
+
+.shift-btn {
+  width: auto;
+  padding: 8px 16px;
+}
+
+.shift-history {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+  color: var(--grey);
+}
+
+.check-meta,
+.schedule-check-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 4px 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+  color: var(--grey);
+}
+
+.reopen-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #fff4e0;
+  color: #8a5300;
+  font-weight: var(--weight-semibold);
+}
+
+.photo-removed {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: #f3f4f6;
+  color: var(--grey);
+  font-size: var(--text-sm);
+  font-style: italic;
+}
+
+.uncheck-btn {
+  width: auto;
+  align-self: flex-start;
+  padding: 8px 16px;
+}
+
+/* ---------- Parent home (T3b-2): shift state, schedule check-off, removal ---------- */
+
+.status-pill.is-reopened {
+  background: #fff4e0;
+  color: #8a5300;
+}
+
+.status-pill.is-idle {
+  background: #f3f4f6;
+  color: var(--grey);
+}
+
+.parent-shift-actions {
+  margin-top: 12px;
+}
+
+.parent-shift-actions:not(:has(button:not([hidden]))) {
+  display: none;
+}
+
+.parent-task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.parent-task {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 0;
+  border-top: 1px solid #eceef1;
+}
+
+.parent-task:first-child {
+  border-top: 0;
+}
+
+.parent-task-main {
+  min-width: 0;
+  flex: 1 1 180px;
+}
+
+.parent-task-title {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.parent-task-time {
+  color: var(--grey);
+  font-weight: var(--weight-medium);
+  font-size: var(--text-sm);
+  margin-right: 6px;
+}
+
+.parent-task-btn {
+  width: auto;
+  padding: 6px 14px;
+}
+
+.parent-task.is-done .parent-task-title::before {
+  content: "\2713\00a0";
+  color: #1e6b3a;
+}
+
+.feed-remove {
+  width: auto;
+}
+
+.feed-card .reopen-badge {
+  font-size: var(--text-xs);
+  margin-left: 6px;
+}

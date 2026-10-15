@@ -1,8 +1,14 @@
-// CareNestStore — the single home for mutable app state (completions, messages, shift).
-// ponytail: localStorage is the stand-in until Supabase. Rows below are shaped like the
-// future tables (task_completions, messages, shifts) so the swap only touches this file.
+// CareNestStore — the ?demo=1 backend (completions, messages, shift) in localStorage.
+// Signed-in people use Supabase through js/shift-data.js; parent.js still reads this store until
+// the parent side moves (T3b-2). The image helpers at the bottom are shared by both backends.
 (function () {
-  const KEY = "carenest:v1";
+  // The key is per person and chosen by the auth guard (js/auth.js): "carenest:v1:<user id>" or
+  // "carenest:demo:v1". Until it is set (or when signed out) reads are empty and writes fail.
+  // Pages without the guard (none ship today) fall back to the demo key.
+  function storageKey() {
+    const auth = window.CareNestAuth;
+    return auth ? auth.storeKey : "carenest:demo:v1";
+  }
   const MOMENT_WINDOW_MS = 2 * 60 * 1000;
   const listeners = new Set();
 
@@ -20,8 +26,10 @@
   }
 
   function read() {
+    const key = storageKey();
+    if (!key) return emptyState();
     try {
-      const parsed = JSON.parse(localStorage.getItem(KEY));
+      const parsed = JSON.parse(localStorage.getItem(key));
       if (parsed && typeof parsed === "object") {
         return Object.assign(emptyState(), parsed);
       }
@@ -32,8 +40,10 @@
   }
 
   function write(state) {
+    const key = storageKey();
+    if (!key) throw new Error("Please sign in again.");
     try {
-      localStorage.setItem(KEY, JSON.stringify(state));
+      localStorage.setItem(key, JSON.stringify(state));
     } catch (e) {
       if (e && (e.name === "QuotaExceededError" || e.code === 22)) {
         throw new StoreError(
@@ -52,7 +62,7 @@
 
   // Fires for writes from other tabs (sitter tab + parent tab in one browser).
   window.addEventListener("storage", (e) => {
-    if (e.key === KEY || e.key === null) notify();
+    if (e.key === null || e.key === storageKey()) notify();
   });
 
   function newId() {
@@ -63,7 +73,7 @@
   function newShift(now) {
     // BeReal-style prompt lands at a random 1–5 minutes after the shift starts (demo timing).
     const delay = (60 + Math.floor(Math.random() * 241)) * 1000;
-    return { id: newId(), startedAt: now, endedAt: null, momentAt: now + delay };
+    return { id: newId(), startedAt: now, endedAt: null, momentAt: now + delay, events: [] };
   }
 
   function requireActiveShift(state) {
@@ -101,7 +111,7 @@
       if (!state.shift) {
         state.shift = newShift(Date.now());
         try {
-          localStorage.setItem(KEY, JSON.stringify(state));
+          if (storageKey()) localStorage.setItem(storageKey(), JSON.stringify(state));
         } catch (e) {
           /* still return the in-memory shift */
         }
@@ -116,9 +126,36 @@
     endShift() {
       const state = read();
       if (!state.shift) state.shift = newShift(Date.now());
-      if (!state.shift.endedAt) state.shift.endedAt = Date.now();
+      if (!state.shift.endedAt) {
+        state.shift.endedAt = Date.now();
+        state.shift.events = (state.shift.events || []).concat({ kind: "ended", at: state.shift.endedAt });
+      }
       write(state);
       return state.shift;
+    },
+
+    // Demo mirror of reopen_visit(): history is kept, the end is cleared.
+    reopenShift() {
+      const state = read();
+      if (!state.shift || !state.shift.endedAt) return;
+      state.shift.events = (state.shift.events || []).concat({ kind: "reopened", at: Date.now() });
+      state.shift.endedAt = null;
+      write(state);
+    },
+
+    // Demo mirror of an uncheck; logged when it removes an original-shift check after a reopen.
+    uncheckTask(taskId, taskTitle) {
+      const state = read();
+      requireActiveShift(state);
+      const completion = state.completions[taskId];
+      if (!completion) return;
+      const events = state.shift.events || [];
+      const ends = events.filter((e) => e.kind === "ended").map((e) => e.at);
+      if (ends.length && events.some((e) => e.kind === "reopened") && completion.sentAt <= Math.min.apply(null, ends)) {
+        state.shift.events = events.concat({ kind: "unchecked", at: Date.now(), taskTitle });
+      }
+      delete state.completions[taskId];
+      write(state);
     },
 
     getCompletions() {
@@ -286,6 +323,21 @@
       const canvas = drawScaled(img, maxSide);
       if (img.close) img.close();
       return canvas.toDataURL("image/jpeg", quality);
+    });
+  };
+
+  // Same downscale, as a JPEG Blob for upload to Storage.
+  api.downscaleImageBlob = function (blob, maxSide = 1280, quality = 0.82) {
+    return loadImage(blob).then((img) => {
+      const canvas = drawScaled(img, maxSide);
+      if (img.close) img.close();
+      return new Promise((resolve, reject) => {
+        canvas.toBlob(
+          (out) => (out ? resolve(out) : reject(new Error("That photo couldn't be prepared. Try another."))),
+          "image/jpeg",
+          quality
+        );
+      });
     });
   };
 

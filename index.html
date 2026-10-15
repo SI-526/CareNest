@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="auth-pending">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -40,12 +40,12 @@
       </nav>
 
       <section class="panel profile-panel" id="profile" aria-labelledby="profile-heading">
-        <h2 class="panel-title" id="profile-heading">Welcome Bethany</h2>
+        <h2 class="panel-title" id="profile-heading">Welcome</h2>
         <div class="card profile-card">
-          <img class="profile-avatar" src="assets/bethany.png" alt="" width="56" height="56" />
+          <span class="profile-avatar" aria-hidden="true"></span>
           <div class="profile-meta">
             <p class="profile-role">Caregiver</p>
-            <p class="profile-address">51900 Beck St., Grand Rapids, MI, 48091</p>
+            <p class="profile-address"></p>
           </div>
         </div>
       </section>
@@ -59,9 +59,16 @@
             <div class="card shift-card" id="shift-card"></div>
             <div class="shift-controls" id="shift-controls">
               <p class="shift-status" data-shift-status></p>
-              <button type="button" class="photo-source-btn end-shift-btn" data-end-shift hidden>
-                End shift
-              </button>
+              <div class="shift-actions">
+                <button type="button" class="primary-btn shift-btn" data-start-shift hidden>Start today’s shift</button>
+                <button type="button" class="photo-source-btn end-shift-btn" data-end-shift hidden>
+                  End shift
+                </button>
+                <button type="button" class="photo-source-btn end-shift-btn" data-reopen-shift hidden>Reopen shift</button>
+                <button type="button" class="photo-source-btn end-shift-btn" data-retry-shift hidden>Try again</button>
+              </div>
+              <p class="shift-history" data-shift-history hidden></p>
+              <p class="photo-upload-error" data-shift-error role="alert" hidden></p>
             </div>
           </section>
 
@@ -138,6 +145,10 @@
           <h3 class="complete-note-label">Note to parent</h3>
           <p class="submitted-note-text" data-modal-note></p>
         </div>
+
+        <p class="check-meta" data-modal-check-meta hidden></p>
+        <button type="button" class="photo-source-btn uncheck-btn" data-uncheck hidden>Uncheck this task</button>
+        <p class="photo-upload-error" data-uncheck-error role="alert" hidden></p>
 
         <img
           class="modal-map"
@@ -311,7 +322,7 @@
         ></textarea>
 
         <button type="button" class="primary-btn" id="complete-send-btn">
-          Send to Mary
+          Send
         </button>
       </div>
     </div>
@@ -329,10 +340,32 @@
       </form>
     </dialog>
 
+    <dialog class="confirm-dialog" id="reopen-shift-dialog" aria-labelledby="reopen-shift-title" aria-describedby="reopen-shift-desc">
+      <form method="dialog" class="confirm-dialog-body">
+        <h2 class="complete-heading" id="reopen-shift-title">Reopen this shift?</h2>
+        <p class="modal-detail" id="reopen-shift-desc">
+          The parent will be told the shift was reopened, and the shift history keeps when it ended. Anything you check off after reopening is labelled “Added after reopen”.
+        </p>
+        <div class="moment-dialog-actions">
+          <button type="submit" class="photo-source-btn" value="cancel" autofocus>Keep it ended</button>
+          <button type="submit" class="primary-btn" value="confirm">Reopen shift</button>
+        </div>
+      </form>
+    </dialog>
     <p class="visually-hidden" id="app-status" aria-live="polite"></p>
 
+    <script
+      src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"
+      integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok"
+      crossorigin="anonymous"
+    ></script>
+    <script src="js/config.js"></script>
+    <script src="js/supabase.js"></script>
+    <script src="js/auth.js"></script>
     <script src="js/data.js"></script>
+    <script src="js/family-data.js"></script>
     <script src="js/store.js"></script>
+    <script src="js/shift-data.js"></script>
     <script src="js/app.js"></script>
     <script src="js/moment.js"></script>
   </body>

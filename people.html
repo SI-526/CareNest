@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en" class="auth-pending">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+    <title>CareNest — People</title>
+  </head>
+  <body data-page="people">
+    <div class="app detail-app parent-app">
+      <nav class="primary-nav" aria-label="Parent navigation"></nav>
+
+      <main class="parent-main people-main" aria-labelledby="people-title">
+        <header class="detail-nav">
+          <h1 id="people-title">People</h1>
+        </header>
+        <p class="auth-status" id="people-welcome" role="status" hidden>
+          Your family space is ready. Next, invite your sitter.
+        </p>
+
+        <section class="card auth-card" aria-labelledby="invite-heading">
+          <h2 class="panel-title" id="invite-heading">Invite a sitter</h2>
+          <p class="signin-note">
+            CareNest sends no email. You'll get a private link to send them yourself. Only someone
+            signed in with this exact Google address can use it, within 7 days.
+            Only invite people you trust: they'll see your child's care info, schedule, and photos.
+          </p>
+          <form class="invite-form" id="invite-form" novalidate>
+            <label class="field-label" for="invite-email">Sitter's Google email</label>
+            <input class="text-input" id="invite-email" name="email" type="email" autocomplete="off" required maxlength="320" />
+            <button type="submit" class="primary-btn" id="invite-submit">Create invite link</button>
+            <p class="form-error" id="invite-error" role="alert" hidden></p>
+          </form>
+          <div class="invite-link" id="invite-link" hidden>
+            <p class="invite-link-title"><strong>Copy this link now.</strong> For your privacy it's shown only once. Send it to <span id="invite-link-email"></span>.</p>
+            <label class="visually-hidden" for="invite-link-input">Invite link</label>
+            <div class="copy-row">
+              <input class="text-input" id="invite-link-input" type="text" readonly />
+              <button type="button" class="photo-source-btn copy-btn" id="invite-copy">Copy link</button>
+            </div>
+            <p class="signin-note" id="invite-copy-status" role="status"></p>
+          </div>
+        </section>
+
+        <section class="card auth-card" aria-labelledby="pending-heading">
+          <h2 class="panel-title" id="pending-heading">Pending invites</h2>
+          <ul class="people-list" id="pending-list"></ul>
+          <p class="signin-note" id="pending-empty" hidden>No pending invites.</p>
+        </section>
+
+        <section class="card auth-card" aria-labelledby="members-heading">
+          <h2 class="panel-title" id="members-heading">In your family space</h2>
+          <ul class="people-list" id="members-list"></ul>
+          <p class="form-error" id="people-error" role="alert" hidden></p>
+        </section>
+      </main>
+    </div>
+
+    <p class="visually-hidden" id="app-status" aria-live="polite"></p>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"
+      integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok"
+      crossorigin="anonymous"
+    ></script>
+    <script src="js/config.js"></script>
+    <script src="js/supabase.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/family-data.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/people.js"></script>
+  </body>
+</html>

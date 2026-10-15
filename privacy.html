@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+    <title>CareNest — Privacy policy</title>
+    <meta name="description" content="What CareNest collects, how it is used, who can see it, and how to delete it." />
+  </head>
+  <body data-page="privacy">
+    <div class="app auth-app">
+      <header class="auth-header"><a class="auth-brand" href="signin.html">CareNest</a></header>
+      <main class="legal-page" aria-labelledby="privacy-title">
+        <h1 class="auth-title" id="privacy-title">Privacy policy</h1>
+        <p class="signin-note">Effective October 14, 2026</p>
+        <p>
+          CareNest is a student class project for the University of Michigan course SI 526, run by
+          the CareNest student team ("we", "us"). This page explains, in plain language, what
+          CareNest collects, how it is used, who can see it, and how to delete it. Questions,
+          privacy requests, and deletion requests: email <a href="mailto:SI-526-Care@umich.edu">SI-526-Care@umich.edu</a>.
+        </p>
+
+        <h2>What we collect</h2>
+        <p>
+          <strong>From Google, when you sign in.</strong> CareNest uses Google sign-in only, with
+          Google's basic <code>openid</code>, <code>email</code>, and <code>profile</code>
+          permissions. Google shares your name, email address, whether that address is verified,
+          your profile picture link, and your Google account ID. Our sign-in provider, Supabase
+          Auth, keeps these with your account. CareNest copies your name and email address into
+          your family space so the other members know who you are. We do not get access to your
+          Gmail, contacts, calendar, Drive, or any other Google data.
+        </p>
+        <p><strong>What you and your family space enter.</strong></p>
+        <ul>
+          <li>The family space name, your child's name and age label, and when the parent accepted the data notice.</li>
+          <li>Care information: preferences, where things are, instructions, emergency steps, food and allergies, contacts, and the child's schedule.</li>
+          <li>Shifts: when a sitter started and ended a shift, which tasks were checked off by whom and when, and the handoff note.</li>
+          <li><strong>Photos of your child</strong> that a sitter takes or uploads during a shift (task photos and "moments"), and messages between the parent and the sitter.</li>
+          <li>Invites: the email address a parent invites, who sent it, and when it was sent, accepted, or revoked. The invite link itself is stored only in a scrambled (hashed) form.</li>
+        </ul>
+        <p>
+          <strong>Where photos and messages are stored.</strong> Photos, messages, task check-offs,
+          moments, which photos you have seen, and a parent's saved-photo album are stored with
+          Supabase in the United States (US East, N. Virginia), not only on your device. Photos are
+          kept in private storage: there are no public links, and only signed-in members of your
+          family space can load them.
+        </p>
+        <p>
+          <strong>Technical basics.</strong> Signing in stores a sign-in token in your browser's
+          local storage to keep you signed in. Our hosting providers keep routine server logs (such
+          as IP address, browser type, and request times) to run and secure the service. Pages load
+          fonts from Google Fonts and a code library from jsDelivr, which see your IP address when
+          they serve those files. CareNest has no advertising, analytics, or tracking tools.
+        </p>
+        <p>
+          <strong>Google's sign-in button.</strong> The sign-in and invite pages load Google's
+          sign-in script from <code>accounts.google.com</code>. Google uses it, under
+          <a href="https://policies.google.com/privacy">Google's own privacy policy</a>, to show the
+          "Continue with Google" button and the account chooser, so Google can see that you opened
+          those pages. CareNest receives nothing from Google until you choose an account and continue.
+        </p>
+
+        <h2>How we use it</h2>
+        <p>Only to run CareNest: to sign you in and know which family space you belong to; to show a family space's care info, schedule, shifts, photos, and messages to its members; and to create and check invites, so only the invited Google account can join.</p>
+        <p>
+          We do not sell your information, show ads, build profiles, or use it for analytics or
+          tracking. We do not send your information or photos to AI or machine-learning services or
+          use them to train models. The app sends no email. We do not look at what you enter unless
+          you ask us for help, we need to investigate a security problem or abuse, or the law requires it.
+        </p>
+
+        <h2>Google user data</h2>
+        <p>
+          We use the information we receive from Google (your name, email address, profile picture
+          link, and account ID) only to sign you in and to identify you to the other members of your
+          family space. We do not sell it, use it for advertising, or transfer it to anyone except
+          the service providers below, and only as needed to run CareNest. CareNest's use and
+          transfer of information received from Google APIs adheres to the
+          <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+          including the Limited Use requirements.
+        </p>
+
+        <h2>Who can see your information</h2>
+        <ul>
+          <li><strong>Members of your family space.</strong> The parent and the sitters they invite can see the family space's care info, schedule, shifts, check-offs, notes, photos, and messages, and each other's names and email addresses. Only the parent can see invites. Which photos you have seen and a parent's saved-photo album are private to that person. Members of other family spaces cannot see any of it; the database enforces this, not just the app.</li>
+          <li><strong>Removing a photo.</strong> A parent can remove any photo in their family space, whoever took it. It is deleted from our storage for everyone (and from every album); the task or moment stays, marked "Photo removed by" that parent. Copies someone already saved to their own device are not affected.</li>
+          <li><strong>Service providers.</strong> Supabase (database and sign-in hosting, in the United States: US East, N. Virginia) stores the data. Vercel hosts the website. They process data only to provide those services to us.</li>
+          <li><strong>If the law requires it.</strong> We would share information only if legally required to.</li>
+        </ul>
+
+        <h2>Please read: this is not a medical service</h2>
+        <ul>
+          <li>CareNest is a student project. It is <strong>not HIPAA-compliant</strong> and <strong>not a medical service</strong>.</li>
+          <li>You may enter real information, but you do so at your own risk.</li>
+          <li>The data is hosted on a free plan with <strong>no backups</strong>. It could be lost.</li>
+          <li>Only invite people you trust. Everyone in your family space can see its care info and photos of your child.</li>
+        </ul>
+
+        <h2>Keeping and deleting your data</h2>
+        <p>We keep your information until you delete it, or until we shut the service down (see <a href="terms.html">Terms</a>). Signing out doesn't delete anything on our servers.</p>
+        <p><strong>Delete my account and data</strong> is in the Account menu in the app's navigation. It takes effect immediately and cannot be undone:</p>
+        <ul>
+          <li><strong>If you are a family space's only parent</strong>, every photo of that family space is deleted from our storage first, then the family space is deleted with everything in it: care info, contacts, schedule, shifts, check-offs, notes, messages, moments, saved albums, and invites, including what sitters wrote there. Sitters lose access.</li>
+          <li><strong>If you are a sitter</strong>, you leave the family space. Check-offs, notes, photos, and messages you sent stay in the family's history but are no longer linked to your name. The family's parent can remove any of those photos. The record of the invite you accepted, which includes your email address, stays with the family space until it is deleted.</li>
+          <li>In every case, your membership, your seen-photo marks and saved album, and your sign-in account (including the name, email, and profile details from Google) are deleted, and CareNest clears its data from the browser you deleted from.</li>
+          <li>Photos someone already saved to their own phone or computer (with "Save photo") are copies outside CareNest and are not affected.</li>
+        </ul>
+        <p>Removing CareNest's access in your Google account settings stops future sign-ins but does not delete your data. Our providers' routine logs expire on their own schedules. In particular, our sign-in provider's security logs (such as its sign-in audit log) may keep your email address after your account is deleted, until the provider purges them.</p>
+        <p>If you can't use the Account menu, email <a href="mailto:SI-526-Care@umich.edu">SI-526-Care@umich.edu</a> from the address you signed in with and we will delete your account and data.</p>
+
+        <h2>Children</h2>
+        <p>CareNest is for adults: parents and the sitters they invite. It holds information and photos about children, entered by their parents and sitters, but it is not directed to children and children should not have accounts. If you believe a child has signed up, email <a href="mailto:SI-526-Care@umich.edu">SI-526-Care@umich.edu</a> and we will delete the account.</p>
+
+        <h2>Changes to this policy</h2>
+        <p>If we change this policy, we will update this page and its effective date.</p>
+      </main>
+      <footer class="legal-footer"><a href="privacy.html">Privacy</a><span aria-hidden="true">·</span><a href="terms.html">Terms</a></footer>
+    </div>
+  </body>
+</html>

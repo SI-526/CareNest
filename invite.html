@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+    <!-- Keep the invite token out of Referer headers: only the origin is ever sent. Google's
+         sign-in button needs the origin, so "no-referrer" is not an option here. -->
+    <meta name="referrer" content="strict-origin" />
+    <title>CareNest — You're invited</title>
+  </head>
+  <body data-page="invite">
+    <div class="app auth-app">
+      <header class="auth-header"><a class="auth-brand" href="signin.html">CareNest</a></header>
+      <main class="auth-main" aria-labelledby="invite-title">
+        <section class="auth-intro">
+          <h1 class="auth-title" id="invite-title">You're invited to CareNest</h1>
+          <p class="auth-lede">
+            A parent invited you as their sitter. You'll see the child's schedule and care info,
+            check off tasks during a shift, and share photos with the family.
+          </p>
+        </section>
+        <section class="card auth-card" id="invite-card" aria-live="polite"></section>
+        <div id="risk-notice"></div>
+      </main>
+      <footer class="legal-footer"><a href="privacy.html">Privacy</a><span aria-hidden="true">·</span><a href="terms.html">Terms</a></footer>
+    </div>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"
+      integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok"
+      crossorigin="anonymous"
+    ></script>
+    <script src="js/config.js"></script>
+    <script src="js/supabase.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/signin-widget.js"></script>
+    <script src="js/invite.js"></script>
+  </body>
+</html>
