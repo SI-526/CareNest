@@ -19,6 +19,7 @@
     people: ["parent"],
     manage: ["parent"],
     messages: ["parent", "caretaker"],
+    gallery: ["parent", "caretaker"],
     info: ["parent", "caretaker"],
     food: ["parent", "caretaker"],
   };
@@ -266,12 +267,12 @@
     const allowed = PAGE_ROLES[page] || [];
     if (!allowed.includes(ctx.role)) return go(HOME[ctx.role]);
 
-    // messages.html is shared; ?as=parent selects the parent's side of the thread.
-    if (page === "messages") {
+    // messages.html and gallery.html are shared; ?as=parent selects the parent's side.
+    if (page === "messages" || page === "gallery") {
       const params = new URLSearchParams(window.location.search);
       const asParent = params.get("as") === "parent";
-      if (ctx.role === "parent" && !asParent) return go("messages.html?as=parent");
-      if (ctx.role === "caretaker" && asParent) return go("messages.html");
+      if (ctx.role === "parent" && !asParent) return go(`${page}.html?as=parent`);
+      if (ctx.role === "caretaker" && asParent) return go(`${page}.html`);
     }
 
     fillNames(ctx);

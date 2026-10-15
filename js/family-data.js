@@ -67,7 +67,7 @@
   const data = window.CareNestData;
 
   // Which pages render the family's data (and so load it). people/manage only need the scrub.
-  const DATA_PAGES = ["home", "parent", "info", "food", "messages"];
+  const DATA_PAGES = ["home", "parent", "info", "food", "messages", "gallery"];
 
   const HOSPITAL_ROLE = "hospital";
   const SEVERITY_CLASS = { Severe: "badge--severe", Moderate: "badge--moderate", Mild: "badge--mild" };

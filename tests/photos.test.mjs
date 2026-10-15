@@ -1031,8 +1031,7 @@ test("photo messages: the sitter's, in an open shift, own photo; parents can rem
   // The photo must be uploaded, by the sender, in this shift's folder, and not used already.
   assertRpcError(await send(sitter, { photo_path: photoPath(hh, visit.id) }), "photo_not_found");
   assertRpcError(await send(sitter, { photo_path: momPhoto }), "photo_not_found");
-  const elsewhere = await uploadOk(caretaker, householdA, tomorrowVisitId);
-  assert.ok((await send(sitter, { photo_path: elsewhere })).error, "another family's folder");
+  assert.ok((await send(sitter, { photo_path: photoPath(householdB, visitB) })).error, "another family's folder");
   const otherShift = photoPath(hh, endedVisit);
   assert.ok(
     (await sitter.client.from("messages").insert({ household_id: hh, visit_id: visit.id, kind: "chat", photo_path: otherShift })).error,
