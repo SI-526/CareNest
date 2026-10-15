@@ -2777,3 +2777,80 @@ body.modal-open {
   align-self: flex-start;
   padding: 8px 16px;
 }
+
+/* ---------- Parent home (T3b-2): shift state, schedule check-off, removal ---------- */
+
+.status-pill.is-reopened {
+  background: #fff4e0;
+  color: #8a5300;
+}
+
+.status-pill.is-idle {
+  background: #f3f4f6;
+  color: var(--grey);
+}
+
+.parent-shift-actions {
+  margin-top: 12px;
+}
+
+.parent-shift-actions:not(:has(button:not([hidden]))) {
+  display: none;
+}
+
+.parent-task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.parent-task {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 0;
+  border-top: 1px solid #eceef1;
+}
+
+.parent-task:first-child {
+  border-top: 0;
+}
+
+.parent-task-main {
+  min-width: 0;
+  flex: 1 1 180px;
+}
+
+.parent-task-title {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.parent-task-time {
+  color: var(--grey);
+  font-weight: var(--weight-medium);
+  font-size: var(--text-sm);
+  margin-right: 6px;
+}
+
+.parent-task-btn {
+  width: auto;
+  padding: 6px 14px;
+}
+
+.parent-task.is-done .parent-task-title::before {
+  content: "\2713\00a0";
+  color: #1e6b3a;
+}
+
+.feed-remove {
+  width: auto;
+}
+
+.feed-card .reopen-badge {
+  font-size: var(--text-xs);
+  margin-left: 6px;
+}

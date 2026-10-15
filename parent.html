@@ -49,6 +49,16 @@
             <span class="day-progress-count" id="day-progress-count"></span>
           </div>
           <progress class="day-progress" id="day-progress" max="1" value="0" aria-labelledby="day-progress-label day-progress-count"></progress>
+          <div class="shift-actions parent-shift-actions">
+            <button type="button" class="photo-source-btn shift-btn" id="parent-end-shift" hidden>End shift</button>
+            <button type="button" class="photo-source-btn shift-btn" id="parent-reopen-shift" hidden>Reopen shift</button>
+          </div>
+          <p class="photo-upload-error" id="parent-error" role="alert" hidden></p>
+        </section>
+
+        <section class="panel parent-schedule" id="parent-schedule" aria-labelledby="parent-schedule-heading">
+          <h2 class="panel-title" id="parent-schedule-heading">Today's schedule</h2>
+          <ul class="parent-task-list" id="parent-task-list"></ul>
         </section>
 
         <section class="feed-section" aria-labelledby="feed-heading">
@@ -72,6 +82,7 @@
     <script src="js/data.js"></script>
     <script src="js/family-data.js"></script>
     <script src="js/store.js"></script>
+    <script src="js/shift-data.js"></script>
     <script src="js/app.js"></script>
     <script src="js/parent.js"></script>
   </body>

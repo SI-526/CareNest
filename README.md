@@ -21,7 +21,7 @@ right one. The Account item in the nav signs out or deletes the account and its 
 name and age, the schedule, care info (Good to know, food and allergies, emergency steps) and
 contacts come from the family space in Supabase (`js/family-data.js` loads them into the shape
 `js/data.js` defines); parents edit them on `manage.html` ("Family info" in the parent nav).
-The sitter's shift (start, end, reopen, history), task check-offs with photo proofs, moments, and the message thread are in Supabase (`js/shift-data.js`: Postgres, the private `photos` Storage bucket, and Realtime); `?demo=1` keeps them in this browser (`js/store.js`). The parent's Today/Album page (`parent.html`) still reads `js/store.js` until T3b-2.
+The shift (start, end, reopen, history), task check-offs with photo proofs, moments, and the message thread are in Supabase (`js/shift-data.js`: Postgres, the private `photos` Storage bucket, and Realtime) for both roles; `?demo=1` keeps them in this browser (`js/store.js`). The parent's Today page (`parent.html`) shows today's shift status (not started / active / reopened / ended) with its history, "x of y done", the schedule (a parent can mark a task done without a photo, "Done by <name>", and end or reopen the shift), and a live feed of the shift's proofs and moments (Late, "Added after reopen", "Photo removed by <name>", replies, "New" until seen via `message_reads`). New photos and shift events raise an in-app banner and a polite live announcement (no push notifications). Save photo uses the Web Share API with files on touch devices, otherwise a JPEG download, and adds it to the parent's Album (`#album`, `photo_saves`). Remove photo calls `remove_photo` and then deletes the object from Storage. The concept alert (`concept_flags`) and "Bring moment forward" (`trigger_moment_now`) are demo controls shown only on localhost or with `?demo=1`; the concept alert is labelled "Concept — not real analysis". On `manage.html`, "Remove from schedule" archives a task (`archived_at`, stamped by the database); past shifts keep it.
 Outside demo mode the bundled sample family is discarded before anything renders, so a
 signed-in person never sees sample content; an empty family shows "No information provided".
 
@@ -32,8 +32,8 @@ demo clears the flag). Sign-in, `invite.html`, and `onboarding.html` also clear 
 reads the database (signed-out requests can read nothing anyway) and never reads an account's
 device data.
 
-Device data (`js/store.js`: task photos, moments, messages, check-offs) is still localStorage
-only until T3. It is keyed per person: `carenest:demo:v1` for demo mode and
+Demo data (`js/store.js`, `?demo=1` only: task photos, moments, messages, check-offs) is
+localStorage. Signed-in people's photos and messages are not kept on the device. It is keyed per person: `carenest:demo:v1` for demo mode and
 `carenest:v1:<user id>` for each account, picked by the auth guard; signed-out visitors get no key.
 Signing out, or the guard finding no family space, removes that account's key; deleting the
 account removes every `carenest:*` key in that browser. The pre-accounts shared key `carenest:v1`

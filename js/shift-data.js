@@ -17,13 +17,18 @@
 //   events    shift history [{ kind: ended|reopened|unchecked, at, actorName, taskTitle }]
 //   checks    taskId -> { checkedAt, checkedByName, afterReopen, snapshot, proof }
 //   moment    this shift's moment message, or null
-//   thread    the household's messages, oldest first (messages page only)
+//   thread    the household's messages, oldest first (messages and parent pages)
+//   feed      this shift's proofs and moments, newest first (parent page)
+//   reads     Set of message ids this person has seen (message_reads)
+//   saves     message id -> saved time (this parent's photo_saves)
+//   album     this parent's saved photo messages, newest save first
+//   flags     message id -> concept flag text (CONCEPT ONLY: typed by a parent, never analysis)
 (function () {
   const auth = window.CareNestAuth;
   const store = window.CareNestStore;
   const family = window.CareNestFamily;
   const page = document.body.dataset.page;
-  if (!store || (page !== "home" && page !== "messages")) return;
+  if (!store || (page !== "home" && page !== "messages" && page !== "parent")) return;
 
   const MOMENT_WINDOW_MS = 2 * 60 * 1000;
   const THREAD_LIMIT = 300;
@@ -44,6 +49,9 @@
     photo_required: "Please add a photo before sending.",
     photo_not_found: "The photo didn't finish uploading. Please try again.",
     photo_already_removed: "That photo was already removed.",
+    photo_limit_reached: "Photo limit reached for this shift.",
+    moment_photo_too_early: "That photo was taken before the moment prompt. Take a new one now.",
+    message_not_found: "That photo is no longer available. Reload the page.",
     reply_not_found: "That photo is no longer available.",
     not_caretaker: "Only the sitter can share a moment.",
     not_parent: "Only a parent can do that.",
@@ -139,7 +147,29 @@
       checks: {},
       moment: null,
       thread: [],
+      feed: [],
+      reads: new Set(),
+      saves: {},
+      album: [],
+      flags: {},
     };
+  }
+
+  // Proofs and moments of the current shift, newest first, with the check's snapshot title.
+  function buildFeed(visitMessages, checks, reopened, firstEnded) {
+    return visitMessages
+      .filter((m) => m.kind === "task_proof" || m.kind === "moment")
+      .map((m) => {
+        const check = m.kind === "task_proof" ? checks[m.taskId] : null;
+        const own = check && check.proof && check.proof.id === m.id;
+        return Object.assign({}, m, {
+          title: m.kind === "moment" ? "Moment" : (own && check.snapshot.title) || m.taskTitle || "Task",
+          taskTime: own ? check.snapshot.time : m.taskTime,
+          afterReopen:
+            m.kind === "task_proof" && reopened && firstEnded !== null && m.createdAt > firstEnded,
+        });
+      })
+      .reverse();
   }
 
   // ---------------------------------------------------------------- Supabase
@@ -154,7 +184,10 @@
     const me = ctx.user.id;
     const listeners = new Set();
     const photoCache = new Map(); // Storage path -> Promise<object URL>
-    const wantThread = page === "messages";
+    const blobCache = new Map(); // Storage path -> Promise<Blob>
+    const blobReady = new Map(); // Storage path -> Blob, once downloaded (for a synchronous share)
+    const wantParent = page === "parent" && ctx.role === "parent";
+    const wantThread = page === "messages" || wantParent;
     let state = emptyState();
     let loadSeq = 0;
     let reloadTimer = null;
@@ -207,7 +240,8 @@
         visit = (res.data && res.data[0]) || null;
       }
 
-      const [checksRes, eventsRes, visitMsgsRes, threadRes] = await Promise.all([
+      const none = { data: [] };
+      const [checksRes, eventsRes, visitMsgsRes, threadRes, readsRes, savesRes, flagsRes] = await Promise.all([
         visit
           ? client
               .from("task_checks")
@@ -239,14 +273,29 @@
               .order("created_at", { ascending: false })
               .limit(THREAD_LIMIT)
           : { data: [] },
+        // RLS: each person reads only their own read marks and saves; flags of their household.
+        wantParent
+          ? client.from("message_reads").select("message_id").order("read_at", { ascending: false }).limit(1000)
+          : none,
+        wantParent
+          ? client
+              .from("photo_saves")
+              .select(`message_id, saved_at, message:messages(${MSG_COLS})`)
+              .order("saved_at", { ascending: false })
+              .limit(THREAD_LIMIT)
+          : none,
+        wantParent ? client.from("concept_flags").select("message_id, text") : none,
       ]);
-      const failed = [checksRes, eventsRes, visitMsgsRes, threadRes].find((r) => r.error);
+      const failed = [checksRes, eventsRes, visitMsgsRes, threadRes, readsRes, savesRes, flagsRes].find(
+        (r) => r.error
+      );
       if (failed) throw failed.error;
       if (seq !== loadSeq) return; // a newer load is on its way
 
       const events = (eventsRes.data || []).map((e) => ({
         kind: e.kind,
         at: Date.parse(e.created_at),
+        mine: e.actor_id === me,
         actorName: nameOf(e.actor_id),
         taskTitle: e.task ? e.task.title : null,
       }));
@@ -305,6 +354,13 @@
         checks,
         moment: visitMessages.find((m) => m.kind === "moment") || null,
         thread: (threadRes.data || []).slice().reverse().map(toMessage),
+        feed: buildFeed(visitMessages, checks, reopened, firstEnded),
+        reads: new Set((readsRes.data || []).map((r) => r.message_id)),
+        saves: Object.fromEntries((savesRes.data || []).map((r) => [r.message_id, Date.parse(r.saved_at)])),
+        album: (savesRes.data || [])
+          .filter((r) => r.message && r.message.photo_path)
+          .map((r) => Object.assign(toMessage(r.message), { title: r.message.kind === "moment" ? "Moment" : (r.message.task && r.message.task.title) || "Task" })),
+        flags: Object.fromEntries((flagsRes.data || []).map((r) => [r.message_id, r.text])),
       };
       notify();
     }
@@ -490,17 +546,107 @@
       photoUrl(path) {
         if (!path) return Promise.resolve(null);
         if (!photoCache.has(path)) {
+          const pending = backend.photoBlob(path).then((blob) => URL.createObjectURL(blob));
+          pending.catch(() => photoCache.delete(path));
+          photoCache.set(path, pending);
+        }
+        return photoCache.get(path);
+      },
+      photoBlob(path) {
+        if (!path) return Promise.reject(friendly("This photo was removed."));
+        if (!blobCache.has(path)) {
           const pending = client.storage
             .from("photos")
             .download(path)
             .then(({ data: blob, error }) => {
               if (error) throw error;
-              return URL.createObjectURL(blob);
+              blobReady.set(path, blob);
+              return blob;
             });
-          pending.catch(() => photoCache.delete(path));
-          photoCache.set(path, pending);
+          pending.catch(() => blobCache.delete(path));
+          blobCache.set(path, pending);
         }
-        return photoCache.get(path);
+        return blobCache.get(path);
+      },
+      // The already-downloaded photo, or null. iOS opens the share sheet only when
+      // navigator.share() runs inside the tap, so saving must not await a download.
+      photoBlobNow(path) {
+        return blobReady.get(path) || null;
+      },
+
+      // ---------- parent side ----------
+
+      // "New" until seen: one read mark per person and message (message_reads).
+      async markSeen(ids) {
+        const fresh = ids.filter((id) => !state.reads.has(id));
+        if (!fresh.length) return;
+        fresh.forEach((id) => state.reads.add(id));
+        notify();
+        // Multi-row insert: defaultToNull false so user_id takes its auth.uid() default.
+        const { error } = await client
+          .from("message_reads")
+          .upsert(
+            fresh.map((id) => ({ message_id: id })),
+            { onConflict: "message_id,user_id", ignoreDuplicates: true, defaultToNull: false }
+          );
+        if (error) {
+          fresh.forEach((id) => state.reads.delete(id));
+          throw error;
+        }
+      },
+      async savePhoto(messageId) {
+        const { error } = await client.from("photo_saves").insert({ message_id: messageId });
+        if (error && error.code !== "23505") throw error;
+        await load();
+      },
+      async unsavePhoto(messageId) {
+        const { error } = await client
+          .from("photo_saves")
+          .delete()
+          .eq("message_id", messageId)
+          .eq("user_id", me);
+        if (error) throw error;
+        await load();
+      },
+      // CONCEPT ONLY: the text is typed here, nothing looks at the photo.
+      async setConceptFlag(messageId, text) {
+        const { error } = await client.from("concept_flags").insert({ message_id: messageId, text });
+        if (error && error.code !== "23505") throw error;
+        await load();
+      },
+      async clearConceptFlags() {
+        const ids = Object.keys(state.flags);
+        if (!ids.length) return;
+        const { error } = await client.from("concept_flags").delete().in("message_id", ids);
+        if (error) throw error;
+        await load();
+      },
+      // A parent removes any family photo: the database clears the message's photo first
+      // (remove_photo returns the old path), then the bytes go through the Storage API.
+      async removePhoto(messageId) {
+        const { data: path, error } = await client.rpc("remove_photo", { target_message_id: messageId });
+        if (error) throw error;
+        if (path) {
+          const { error: removeError } = await client.storage.from("photos").remove([path]);
+          if (removeError) console.warn("CareNest: photo bytes not removed yet", removeError);
+          photoCache.delete(path);
+          blobCache.delete(path);
+          blobReady.delete(path);
+        }
+        await load();
+      },
+      // A parent checks a task off with no photo ("Done by Mary").
+      async checkTask(taskId) {
+        requireActive();
+        const { error } = await client.rpc("complete_task", {
+          target_visit_id: state.visit.id,
+          target_task_id: taskId,
+          proof_photo_path: null,
+          proof_note: "",
+          proof_tag: null,
+        });
+        if (error) throw error;
+        await load();
       },
     };
     return backend;
@@ -602,6 +748,19 @@
         checks,
         moment: thread.find((m) => m.kind === "moment" && m.visitId === shift.id) || null,
         thread,
+        feed: buildFeed(
+          thread.filter((m) => m.visitId === shift.id && m.photoPath),
+          checks,
+          reopened,
+          firstEnded
+        ),
+        reads: new Set(Object.keys(store.getReads())),
+        saves: Object.fromEntries(Object.entries(store.getSaves()).map(([id, s]) => [id, s.savedAt || 0])),
+        album: thread
+          .filter((m) => m.photoPath && store.getSaves()[m.id])
+          .map((m) => Object.assign({}, m, { title: m.kind === "moment" ? "Moment" : m.taskTitle || "Task" }))
+          .reverse(),
+        flags: Object.fromEntries(Object.entries(store.getInsights()).map(([id, i]) => [id, i.text])),
       };
     }
 
@@ -664,6 +823,35 @@
       photoUrl(path) {
         return Promise.resolve(store.isPhotoDataUrl(path) ? path : null);
       },
+      photoBlob(path) {
+        return store.isPhotoDataUrl(path)
+          ? Promise.resolve(dataUrlToBlob(path))
+          : Promise.reject(friendly("This photo was removed."));
+      },
+      photoBlobNow(path) {
+        return store.isPhotoDataUrl(path) ? dataUrlToBlob(path) : null;
+      },
+      async markSeen(ids) {
+        store.markSeen(ids);
+      },
+      async savePhoto(messageId) {
+        store.savePhoto(messageId);
+      },
+      async unsavePhoto(messageId) {
+        store.unsavePhoto(messageId);
+      },
+      async setConceptFlag(messageId, text) {
+        store.setConceptAlert(messageId, text);
+      },
+      async clearConceptFlags() {
+        store.clearConceptAlerts();
+      },
+      async removePhoto() {
+        throw friendly("Removing photos needs a signed-in parent (not available in the demo).");
+      },
+      async checkTask() {
+        throw friendly("Checking off without a photo needs a signed-in parent (not available in the demo).");
+      },
     };
   }
 
@@ -677,7 +865,8 @@
       backend = createSupabaseBackend(ctx, data);
     } else {
       const asParent =
-        page === "messages" && new URLSearchParams(window.location.search).get("as") === "parent";
+        page === "parent" ||
+        (page === "messages" && new URLSearchParams(window.location.search).get("as") === "parent");
       backend = createDemoBackend(data, asParent ? "parent" : "caretaker");
     }
     await backend.init();

@@ -47,6 +47,9 @@
 
   function friendly(error) {
     const message = (error && error.message) || "";
+    if (/task_archived/.test(message)) {
+      return "This task was removed from the schedule, so it can't be changed. Reload the page.";
+    }
     if (/row-level security|permission denied/i.test(message)) {
       return "Only a parent can change this.";
     }
@@ -151,7 +154,9 @@
               <button type="button" class="photo-source-btn manage-icon-btn" data-move="-1" data-list="${key}" data-id="${esc(row.id)}" aria-label="Move ${esc(name)} up"${index === 0 ? " disabled" : ""}>↑</button>
               <button type="button" class="photo-source-btn manage-icon-btn" data-move="1" data-list="${key}" data-id="${esc(row.id)}" aria-label="Move ${esc(name)} down"${index === rows.length - 1 ? " disabled" : ""}>↓</button>
               <button type="button" class="photo-source-btn people-action" data-edit data-list="${key}" data-id="${esc(row.id)}" aria-label="Edit ${esc(name)}">Edit</button>
-              <button type="button" class="danger-btn people-action" data-delete data-list="${key}" data-id="${esc(row.id)}" aria-label="Delete ${esc(name)}">Delete</button>
+              ${key === "tasks"
+                ? `<button type="button" class="danger-btn people-action" data-delete data-list="${key}" data-id="${esc(row.id)}" aria-label="Remove ${esc(name)} from schedule">Remove from schedule</button>`
+                : `<button type="button" class="danger-btn people-action" data-delete data-list="${key}" data-id="${esc(row.id)}" aria-label="Delete ${esc(name)}">Delete</button>`}
             </div>
           </li>`;
         })
@@ -200,7 +205,7 @@
           .order("created_at", { ascending: true }),
         client
           .from("plans")
-          .select("id, title, schedule, tasks(id, title, time_of_day, detail, location, care_note, position, created_at)")
+          .select("id, title, schedule, tasks(id, title, time_of_day, detail, location, care_note, position, created_at, archived_at)")
           .eq("household_id", householdId)
           .order("position", { ascending: true })
           .order("created_at", { ascending: true })
@@ -220,7 +225,9 @@
         state.care[c.key] = careItems.data.filter((item) => item.category === c.key);
       });
       state.plan = plans.data[0] || null;
-      state.tasks = state.plan ? sortTasks(state.plan.tasks || []) : [];
+      // Archived tasks are off the schedule and frozen (the database refuses edits); past
+      // shifts keep them through their check snapshots.
+      state.tasks = state.plan ? sortTasks((state.plan.tasks || []).filter((t) => !t.archived_at)) : [];
       sectionsEl.hidden = false;
       renderAll();
     }
@@ -393,6 +400,25 @@
         openEditor(key, row, button);
       } else if (button.hasAttribute("data-delete")) {
         const name = config.summary(row);
+        if (config.table === "tasks") {
+          // Archive, never delete: past shifts keep the task and what was checked. The database
+          // stamps archived_at itself; any non-null value asks for it.
+          const ok = await auth.confirmDialog({
+            title: `Remove ${name} from the schedule?`,
+            body: "Your sitter won't see it on new shifts and it can't be edited anymore. Past shifts keep it, including whether it was checked off. To bring it back, add it again as a new task.",
+            confirmLabel: "Remove from schedule",
+            danger: true,
+          });
+          if (!ok) return;
+          const { error } = await client
+            .from("tasks")
+            .update({ archived_at: new Date().toISOString() })
+            .eq("id", row.id);
+          if (error) show(pageError, friendly(error));
+          else announce(`${name} removed from the schedule.`);
+          await load();
+          return;
+        }
         const ok = await auth.confirmDialog({
           title: `Delete ${name}?`,
           body: `Your sitter will no longer see this ${config.noun}. This cannot be undone.`,
