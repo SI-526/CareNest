@@ -7,17 +7,26 @@
 --   * Photos live in a PRIVATE Storage bucket `photos` (5 MB, JPEG/PNG/WebP) at
 --     `<household_id>/<visit_id>/<uuid>.<jpg|png|webp>`. Members of the household read them.
 --     A member uploads only into an open shift of their household whose date is in the window
---     (database UTC date ±1). Nobody overwrites a photo. Deletion: the uploader, while the shift
---     is open and before the photo is attached to a message (a cancelled upload), or the sole
---     parent during account deletion (after start_account_deletion()).
+--     (database UTC date ±1), at most 200 objects per shift folder, never at a path a message
+--     already uses. Nobody overwrites a photo. A photo is readable only while its path's shift
+--     still exists in that household. Deletion: anything no message uses, by its uploader or by
+--     a parent of the household; a used photo first goes through remove_photo() (parents only,
+--     which keeps the message as "Photo removed by ..."); or, during account deletion, the sole
+--     parent who started it (start_account_deletion(), valid for one hour).
 --   * messages: chat, task proofs, and moments. The sender, the sender's role, the time, and the
 --     moment's `late` flag are always set by the database (trigger), never by the client.
 --     Proofs and moments need an open, in-window shift, checked under a share lock on the visit,
 --     so they cannot race end_visit(). Chat stays open after a shift ends.
---   * A task is completed only through complete_task(), which requires a photo: it writes the
---     task check and the proof message together. Clients can no longer insert task_checks.
+--   * A task is completed only through complete_task(), the only path that creates a task
+--     check: it locks the visit (FOR SHARE) and re-checks the end, the date window, and that the
+--     task is not archived. Caretakers must attach a photo (the check and the proof message are
+--     written together); parents may check off without one. Clients cannot insert task_checks.
+--   * Archived tasks are frozen: parents cannot edit (or un-archive) them.
 --   * visits.moment_at: one BeReal-style prompt per shift at a random time chosen by the
---     database when the shift starts. A moment posted more than 2 minutes after it is late.
+--     database when the shift starts: between 30 minutes after the start and 30 minutes before
+--     the plan's usual end (from its schedule label), or 30 minutes to 3 hours after the start
+--     when the usual hours are unknown. trigger_moment_now() (parents) moves it to 1-5 minutes
+--     from now for demos. A moment posted more than 2 minutes after the prompt is late.
 --   * message_reads (per user, private), photo_saves (per parent, private), concept_flags
 --     (parent-set demo control, readable by members, CONCEPT ONLY: nothing analyses photos).
 
@@ -30,9 +39,32 @@ alter table public.visits add column moment_at timestamptz;
 update public.visits set moment_at = started_at + interval '3 minutes' where moment_at is null;
 alter table public.visits alter column moment_at set not null;
 
+-- Snapshot of the task as it was when it was checked, so a past shift shows what the sitter saw
+-- even after a parent edits the task. Filled by the task_checks_lock_visit trigger on every
+-- insert; clients cannot insert or update task_checks at all.
+alter table public.task_checks
+  add column task_title text,
+  add column task_time_of_day time,
+  add column task_detail text,
+  add column task_location text,
+  add column task_care_note text;
+update public.task_checks c
+   set task_title = t.title, task_time_of_day = t.time_of_day, task_detail = t.detail,
+       task_location = t.location, task_care_note = t.care_note
+  from public.tasks t
+ where t.id = c.task_id;
+alter table public.task_checks
+  alter column task_title set not null,
+  alter column task_detail set not null,
+  alter column task_location set not null,
+  alter column task_care_note set not null;
+
 -- Set by start_account_deletion(); lets the departing sole parent delete the household's photos
 -- from Storage for a short time before delete_my_account() removes the household.
 alter table public.households add column deletion_started_at timestamptz;
+-- Who started it: only that user (while still the sole parent) may use the marker.
+alter table public.households
+  add column deletion_started_by uuid references auth.users (id) on delete set null;
 
 -- ---------------------------------------------------------------------------
 -- Tables
@@ -54,9 +86,16 @@ create table public.messages (
   sender_role text not null check (sender_role in ('parent', 'caretaker')),
   created_at timestamptz not null default now(),
   late boolean not null default false,
-  -- Chat has text and no photo; proofs and moments have a photo and belong to a shift.
+  -- Set by remove_photo(): a parent erased this proof's or moment's photo. The message, its
+  -- task check, and the shift history stay ("Photo removed by Mary").
+  photo_removed_by uuid references auth.users (id) on delete set null,
+  photo_removed_at timestamptz,
+  -- Chat has text and no photo; proofs and moments belong to a shift and have a photo until a
+  -- parent removes it.
   check (kind <> 'chat' or char_length(btrim(body)) >= 1),
-  check ((kind = 'chat') = (photo_path is null)),
+  check (kind <> 'chat' or (photo_path is null and photo_removed_at is null)),
+  check (kind = 'chat' or (photo_path is null) = (photo_removed_at is not null)),
+  check (photo_removed_by is null or photo_removed_at is not null),
   check (kind = 'chat' or visit_id is not null),
   -- The photo is in this message's household/visit folder.
   check (
@@ -125,14 +164,101 @@ comment on column public.concept_flags.text is
 -- Triggers
 -- ---------------------------------------------------------------------------
 
--- BeReal-style prompt: a random time 1-5 minutes after the shift starts (the demo app's timing).
+-- The usual hours in a plan's schedule label, e.g. "3:00pm - 7:00pm", "3-7pm", "9am to 1pm",
+-- "15:00–19:00". Nulls when the label is empty or not understood.
+create function public.schedule_hours(label text, out start_time time, out end_time time)
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  parts text[];
+  h1 int;
+  m1 int;
+  h2 int;
+  m2 int;
+  ap1 text;
+  ap2 text;
+begin
+  parts := regexp_match(
+    coalesce(label, ''),
+    '^\s*(\d{1,2})(?::(\d{2}))?\s*([ap]\.?m\.?)?\s*(?:-|–|—|to)\s*(\d{1,2})(?::(\d{2}))?\s*([ap]\.?m\.?)?\s*$',
+    'i'
+  );
+  if parts is null then
+    return;
+  end if;
+  h1 := parts[1]::int;
+  m1 := coalesce(parts[2], '0')::int;
+  ap1 := lower(left(parts[3], 1));
+  h2 := parts[4]::int;
+  m2 := coalesce(parts[5], '0')::int;
+  ap2 := lower(left(parts[6], 1));
+  -- "3-7pm" is 3pm-7pm; "11-1pm" is 11am-1pm; "3pm-7" is 3pm-7pm.
+  if ap1 is null and ap2 is not null then
+    ap1 := case when h1 % 12 <= h2 % 12 then ap2 else (case when ap2 = 'p' then 'a' else 'p' end) end;
+  elsif ap2 is null and ap1 is not null then
+    ap2 := ap1;
+  end if;
+  if m1 > 59 or m2 > 59 then
+    return;
+  end if;
+  if ap1 is not null then
+    if h1 not between 1 and 12 or h2 not between 1 and 12 then
+      return;
+    end if;
+    h1 := h1 % 12 + case when ap1 = 'p' then 12 else 0 end;
+    h2 := h2 % 12 + case when ap2 = 'p' then 12 else 0 end;
+  elsif h1 > 23 or h2 > 23 then
+    return;
+  end if;
+  start_time := make_time(h1, m1, 0);
+  end_time := make_time(h2, m2, 0);
+end;
+$$;
+
+-- BeReal-style prompt delay from the shift's start: a random time between 30 minutes after the
+-- start and 30 minutes before the usual end. The usual end is the start plus the usual shift
+-- length from the plan's schedule label (no household time zone is stored, so a clock time
+-- cannot be placed on the timeline). Unknown hours: 30 minutes to 3 hours. A usual shift of an
+-- hour or less gets the prompt 30 minutes in.
+create function public.moment_delay(schedule_label text)
+returns interval
+language plpgsql
+volatile
+set search_path = ''
+as $$
+declare
+  usual_start time;
+  usual_end time;
+  usual_length interval;
+  latest interval := interval '3 hours';
+begin
+  select h.start_time, h.end_time into usual_start, usual_end
+    from public.schedule_hours(schedule_label) h;
+  if usual_start is not null and usual_end is not null then
+    usual_length := usual_end - usual_start;
+    if usual_length <= interval '0' then
+      usual_length := usual_length + interval '24 hours'; -- overnight, e.g. "10pm - 6am"
+    end if;
+    latest := greatest(usual_length - interval '30 minutes', interval '30 minutes');
+  end if;
+  return interval '30 minutes' + random() * (latest - interval '30 minutes');
+end;
+$$;
+
+-- Chooses the shift's moment time when it starts. Runs as the owner so it can read the plan and
+-- call moment_delay(); the insert policy still decides whether the row lands.
 create function public.set_moment_at()
 returns trigger
 language plpgsql
+security definer
 set search_path = ''
 as $$
 begin
-  new.moment_at := new.started_at + make_interval(secs => 60 + floor(random() * 241));
+  new.moment_at := new.started_at + public.moment_delay(
+    (select p.schedule from public.plans p where p.id = new.plan_id)
+  );
   return new;
 end;
 $$;
@@ -176,6 +302,8 @@ begin
   new.sender_role := caller_role;
   new.created_at := now();
   new.late := false;
+  new.photo_removed_by := null;
+  new.photo_removed_at := null;
 
   if new.visit_id is not null then
     -- The share lock waits for a concurrent end_visit() (which holds the row for update) and
@@ -255,6 +383,88 @@ create trigger messages_stamp
   before insert on public.messages
   for each row execute function public.stamp_message();
 
+-- Every task check a signed-in user creates (today only complete_task(); any future path too)
+-- locks its visit FOR SHARE and re-reads it. FOR SHARE waits for a concurrent end_visit() (which
+-- holds the row FOR UPDATE) and then sees the committed end, so a check cannot land on a shift
+-- that ended while the insert was in flight. Also re-checks the date window. Writes with no
+-- signed-in user (service role, migrations, seed) skip the shift checks. Every insert, from
+-- anyone, gets the task snapshot (title, time, detail, location, care note) from the task row,
+-- whatever the writer sent.
+create function public.lock_visit_for_check()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  visit_ended_at timestamptz;
+  visit_day date;
+begin
+  select t.title, t.time_of_day, t.detail, t.location, t.care_note
+    into new.task_title, new.task_time_of_day, new.task_detail, new.task_location,
+         new.task_care_note
+    from public.tasks t
+   where t.id = new.task_id;
+  if not found then
+    raise exception 'task_not_found';
+  end if;
+  if auth.uid() is null then
+    return new;
+  end if;
+  select v.ended_at, v.visit_date into visit_ended_at, visit_day
+    from public.visits v
+   where v.id = new.visit_id
+     for share;
+  if not found then
+    raise exception 'visit_not_found';
+  end if;
+  if visit_ended_at is not null then
+    raise exception 'visit_ended';
+  end if;
+  if visit_day not between (now() at time zone 'utc')::date - 1
+                       and (now() at time zone 'utc')::date + 1 then
+    raise exception 'visit_too_old';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger task_checks_lock_visit
+  before insert on public.task_checks
+  for each row execute function public.lock_visit_for_check();
+
+-- tasks.archived_at is stamped by the database: setting it (from null) records the current time,
+-- whatever value the client sent, and it never changes again (no un-archive, no back-dating).
+-- Also applies to inserts: a task created already archived gets the current time.
+create function public.stamp_task_archived_at()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.archived_at is not null then
+      new.archived_at := clock_timestamp();
+    end if;
+  elsif old.archived_at is null and new.archived_at is not null then
+    new.archived_at := clock_timestamp();
+  elsif new.archived_at is distinct from old.archived_at then
+    raise exception 'task_archived';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger tasks_stamp_archived_at
+  before insert or update on public.tasks
+  for each row execute function public.stamp_task_archived_at();
+
+-- Correction to a comment in 20261014000000 (that file is frozen): log_original_uncheck's note
+-- that deleting a task, plan, or visit cascades checks away describes paths members cannot take
+-- while checks exist (no DELETE on tasks or visits; a plan with shifts cannot be deleted). The
+-- only member-reachable cascade that removes checks is delete_my_account (a sole parent's
+-- whole family space); the service role can delete visits directly.
+
 -- ---------------------------------------------------------------------------
 -- Row Level Security
 -- ---------------------------------------------------------------------------
@@ -306,6 +516,7 @@ create policy "Parents save photos"
       select 1 from public.messages m
       where m.id = photo_saves.message_id
         and m.kind in ('task_proof', 'moment')
+        and m.photo_path is not null
         and public.is_parent(m.household_id)
     )
   );
@@ -330,6 +541,7 @@ create policy "Parents set concept flags"
       select 1 from public.messages m
       where m.id = concept_flags.message_id
         and m.kind in ('task_proof', 'moment')
+        and m.photo_path is not null
         and public.is_parent(m.household_id)
     )
   );
@@ -345,13 +557,17 @@ create policy "Parents clear concept flags"
 -- RPCs
 -- ---------------------------------------------------------------------------
 
--- Completes a task with a photo (required), an optional note, and an optional tag. Writes the
--- task check and the task_proof message in one transaction; stamp_message() re-checks the shift
--- under a share lock and verifies the photo. Returns the proof message id.
+-- The only way to create a task check. Locks the visit FOR SHARE (so it waits for a concurrent
+-- end_visit(), which holds the row FOR UPDATE, and then sees the committed end), re-checks the
+-- end and the date window, and locks the task FOR SHARE (so it cannot be archived mid-way) and
+-- refuses archived tasks. A caretaker must attach a photo: the check and the task_proof message
+-- (optional note and tag) are written together, and stamp_message() verifies the photo. A
+-- parent may check off without a photo ("Done by Mary"): only the check is written. Returns the
+-- proof message id, or null when a parent checked off without a photo.
 create function public.complete_task(
   target_visit_id uuid,
   target_task_id uuid,
-  proof_photo_path text,
+  proof_photo_path text default null,
   proof_note text default '',
   proof_tag text default null
 )
@@ -362,10 +578,12 @@ set search_path = ''
 as $$
 declare
   caller uuid := auth.uid();
+  caller_role text;
   visit_household_id uuid;
   visit_plan_id uuid;
   visit_ended_at timestamptz;
   visit_day date;
+  task_archived_at timestamptz;
   message_id uuid;
 begin
   if caller is null then
@@ -380,7 +598,10 @@ begin
      for share of v;
 
   -- Visits in other households look the same as visits that do not exist.
-  if not found or not public.is_member(visit_household_id) then
+  select m.role into caller_role
+    from public.household_members m
+   where m.household_id = visit_household_id and m.user_id = caller;
+  if visit_household_id is null or caller_role is null then
     raise exception 'visit_not_found';
   end if;
   if visit_ended_at is not null then
@@ -390,12 +611,18 @@ begin
                        and (now() at time zone 'utc')::date + 1 then
     raise exception 'visit_too_old';
   end if;
-  if not exists (
-    select 1 from public.tasks t where t.id = target_task_id and t.plan_id = visit_plan_id
-  ) then
+
+  select t.archived_at into task_archived_at
+    from public.tasks t
+   where t.id = target_task_id and t.plan_id = visit_plan_id
+     for share;
+  if not found then
     raise exception 'task_not_found';
   end if;
-  if proof_photo_path is null then
+  if task_archived_at is not null then
+    raise exception 'task_archived';
+  end if;
+  if proof_photo_path is null and caller_role <> 'parent' then
     raise exception 'photo_required';
   end if;
 
@@ -404,6 +631,10 @@ begin
   on conflict do nothing;
   if not found then
     raise exception 'task_already_done';
+  end if;
+
+  if proof_photo_path is null then
+    return null;
   end if;
 
   insert into public.messages (household_id, visit_id, kind, body, photo_path, task_id, tag)
@@ -422,10 +653,111 @@ begin
 end;
 $$;
 
+-- A parent removes a photo from a proof or moment (any sender's). The message stays with
+-- photo_path cleared and photo_removed_by/at set ("Photo removed by Mary"); its task check and
+-- the shift history are untouched. Saves of the photo (every parent's album) and its concept
+-- flag go with it. Returns the Storage path, which the client then deletes with the Storage API
+-- (the delete policy lets a parent remove any photo no message uses). Locks the message so two
+-- removals cannot interleave.
+create function public.remove_photo(target_message_id uuid)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller uuid := auth.uid();
+  message_household_id uuid;
+  old_path text;
+begin
+  if caller is null then
+    raise exception 'not_authenticated';
+  end if;
+
+  select m.household_id, m.photo_path
+    into message_household_id, old_path
+    from public.messages m
+   where m.id = target_message_id and m.kind in ('task_proof', 'moment')
+     for update;
+  if not found or not public.is_member(message_household_id) then
+    raise exception 'message_not_found';
+  end if;
+  if not public.is_parent(message_household_id) then
+    raise exception 'not_parent';
+  end if;
+  if old_path is null then
+    raise exception 'photo_already_removed';
+  end if;
+
+  update public.messages
+     set photo_path = null, photo_removed_by = caller, photo_removed_at = now()
+   where id = target_message_id;
+  delete from public.photo_saves where message_id = target_message_id;
+  delete from public.concept_flags where message_id = target_message_id;
+
+  return old_path;
+end;
+$$;
+
+-- Demo/dev control: a parent moves an open, in-window shift's moment prompt to 1-5 minutes from
+-- now (the old demo timing). Refused once the moment is posted. Holds the visit FOR UPDATE, so
+-- it serializes with a moment being posted (stamp_message() holds it FOR SHARE). Returns the
+-- new moment_at.
+create function public.trigger_moment_now(target_visit_id uuid)
+returns timestamptz
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller uuid := auth.uid();
+  visit_household_id uuid;
+  visit_ended_at timestamptz;
+  visit_day date;
+  result timestamptz;
+begin
+  if caller is null then
+    raise exception 'not_authenticated';
+  end if;
+
+  select p.household_id, v.ended_at, v.visit_date
+    into visit_household_id, visit_ended_at, visit_day
+    from public.visits v
+    join public.plans p on p.id = v.plan_id
+   where v.id = target_visit_id
+     for update of v;
+  if not found or not public.is_member(visit_household_id) then
+    raise exception 'visit_not_found';
+  end if;
+  if not public.is_parent(visit_household_id) then
+    raise exception 'not_parent';
+  end if;
+  if visit_ended_at is not null then
+    raise exception 'visit_ended';
+  end if;
+  if visit_day not between (now() at time zone 'utc')::date - 1
+                       and (now() at time zone 'utc')::date + 1 then
+    raise exception 'visit_too_old';
+  end if;
+  if exists (
+    select 1 from public.messages m where m.visit_id = target_visit_id and m.kind = 'moment'
+  ) then
+    raise exception 'moment_already_posted';
+  end if;
+
+  update public.visits
+     set moment_at = now() + make_interval(secs => 60 + floor(random() * 241))
+   where id = target_visit_id
+  returning moment_at into result;
+  return result;
+end;
+$$;
+
 -- Step 1 of deleting an account: marks every household where the caller is the only parent
 -- (the ones delete_my_account() will remove) and returns their ids. For the next hour the caller
--- may delete those households' photos from Storage (folder = household id). Then the client
--- calls delete_my_account(). Storage objects are not removed by database cascades.
+-- (and only the caller, while still the only parent) may delete those households' photos from
+-- Storage (folder = household id). Then the client calls delete_my_account(). Storage objects
+-- are not removed by database cascades.
 create function public.start_account_deletion()
 returns uuid[]
 language plpgsql
@@ -442,7 +774,7 @@ begin
 
   with marked as (
     update public.households h
-       set deletion_started_at = now()
+       set deletion_started_at = now(), deletion_started_by = caller
      where exists (
              select 1 from public.household_members m
              where m.household_id = h.id and m.user_id = caller and m.role = 'parent'
@@ -484,7 +816,9 @@ begin
 end;
 $$;
 
--- Members of the household in the path's first folder.
+-- Members of the household in the path's first folder, while the path's shift still exists in
+-- that household. Objects left behind by a deleted shift or family space are readable by nobody
+-- (only the service role) until they are cleaned up.
 create function public.can_read_photo(object_name text)
 returns boolean
 language sql
@@ -492,11 +826,19 @@ stable
 security definer
 set search_path = ''
 as $$
-  select coalesce(public.is_member((public.photo_path_parts(object_name)).household_id), false);
+  select exists (
+    select 1
+      from public.photo_path_parts(object_name) parts
+      join public.visits v on v.id = parts.visit_id
+      join public.plans p on p.id = v.plan_id and p.household_id = parts.household_id
+     where public.is_member(p.household_id)
+  );
 $$;
 
--- A member, into an open shift of their household whose date is in the window. (A message that
--- uses the photo re-checks this under a lock in stamp_message().)
+-- A member, into an open shift of their household whose date is in the window, at a path no
+-- message uses, while the shift's folder holds fewer than 200 objects (a cap on abandoned
+-- uploads; a shift has a handful of tasks and one moment). (A message that uses the photo
+-- re-checks the shift under a lock in stamp_message().)
 create function public.can_upload_photo(object_name text)
 returns boolean
 language sql
@@ -513,12 +855,20 @@ as $$
        and v.visit_date between (now() at time zone 'utc')::date - 1
                             and (now() at time zone 'utc')::date + 1
        and public.is_member(p.household_id)
+       and not exists (select 1 from public.messages m where m.photo_path = object_name)
+       and (
+         select count(*)
+           from storage.objects o
+          where o.bucket_id = 'photos'
+            and o.name like parts.household_id::text || '/' || parts.visit_id::text || '/%'
+       ) < 200
   );
 $$;
 
--- The uploader may delete a photo that no message uses yet while the shift is still open (a
--- cancelled upload). The sole parent may delete the household's photos within an hour of
--- start_account_deletion(). Nothing else deletes photos.
+-- A photo no message uses: its uploader (while still a member, whether or not the shift is
+-- open), or any parent of the household (this includes a photo just detached by
+-- remove_photo()). A photo a message uses is never deleted directly. During account deletion:
+-- the parent who called start_account_deletion(), within the hour, while still the only parent.
 create function public.can_delete_photo(object_name text, object_owner_id text)
 returns boolean
 language sql
@@ -528,14 +878,20 @@ set search_path = ''
 as $$
   select
     (
-      object_owner_id = (select auth.uid())::text
-      and public.can_upload_photo(object_name)
-      and not exists (select 1 from public.messages m where m.photo_path = object_name)
+      not exists (select 1 from public.messages m where m.photo_path = object_name)
+      and (
+        (
+          object_owner_id = (select auth.uid())::text
+          and public.is_member((public.photo_path_parts(object_name)).household_id)
+        )
+        or public.is_parent((public.photo_path_parts(object_name)).household_id)
+      )
     )
     or exists (
       select 1
         from public.households h
        where h.id = (public.photo_path_parts(object_name)).household_id
+         and h.deletion_started_by = (select auth.uid())
          and h.deletion_started_at > now() - interval '1 hour'
          and public.is_parent(h.id)
          and not exists (
@@ -557,7 +913,7 @@ create policy "carenest photos: members upload to an open shift"
   on storage.objects for insert to authenticated
   with check (bucket_id = 'photos' and public.can_upload_photo(name));
 
-create policy "carenest photos: uploader or departing sole parent deletes"
+create policy "carenest photos: uploader, parent, or departing sole parent deletes"
   on storage.objects for delete to authenticated
   using (bucket_id = 'photos' and public.can_delete_photo(name, owner_id));
 
@@ -575,13 +931,26 @@ grant select, insert (message_id) on public.message_reads to authenticated;
 grant select, insert (message_id), delete on public.photo_saves to authenticated;
 grant select, insert (message_id, text), delete on public.concept_flags to authenticated;
 
--- A task is completed only through complete_task(), which requires a photo. (Revoking the
--- table privilege also revokes the column grant from the first migration.) Unchecking (delete)
--- is unchanged.
+-- A task is completed only through complete_task(), the one path that creates a check under the
+-- visit's share lock. (Revoking the table privilege also revokes the column grant from the first
+-- migration.) Unchecking (delete) is unchanged.
 revoke insert on public.task_checks from authenticated;
+
+-- Archived tasks are frozen: a parent edits only active tasks (archiving is the last edit), so a
+-- past shift's tasks cannot be relabelled and nothing is un-archived (re-create the task).
+alter policy "Parents can update tasks" on public.tasks
+  using (
+    archived_at is null
+    and exists (
+      select 1 from public.plans p
+      where p.id = tasks.plan_id and public.is_parent(p.household_id)
+    )
+  );
 
 grant execute on function
   public.complete_task(uuid, uuid, text, text, text),
+  public.remove_photo(uuid),
+  public.trigger_moment_now(uuid),
   public.start_account_deletion(),
   public.photo_path_parts(text),
   public.can_read_photo(text),
@@ -590,8 +959,8 @@ grant execute on function
 to authenticated;
 
 -- ---------------------------------------------------------------------------
--- Realtime: new messages stream to household members (RLS applies). Messages are never deleted
--- by clients; they go only with their household, plan, or shift (see README for the known
+-- Realtime: new messages, and remove_photo() updates, stream to household members (RLS
+-- applies). Messages are never deleted by clients; they go only with their household, plan, or shift (see README for the known
 -- DELETE-event limitation).
 -- ---------------------------------------------------------------------------
 
