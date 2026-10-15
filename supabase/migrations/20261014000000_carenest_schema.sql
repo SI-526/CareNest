@@ -1,6 +1,6 @@
 -- CareNest schema: households (family spaces with one child), members, email-bound invites,
 -- care info (care_items, contacts), the day's schedule (plans, tasks), babysitting shifts
--- (visits), and task checks.
+-- (visits), task checks, and the shift history (shift_events).
 --
 -- Ported from Carekeeper's schema; every security property is kept:
 --   * Row Level Security is enabled on every table; with no matching policy, access is denied.
@@ -15,7 +15,9 @@
 --     later in ANY schema no longer get Postgres's built-in EXECUTE for PUBLIC (global default
 --     privilege revoked). A later migration must grant access explicitly.
 --   * A shift can only be started for yesterday, today, or tomorrow (database date, UTC on
---     Supabase), and only a parent can reopen an ended shift (reopen_visit).
+--     Supabase). Any member (parent or sitter) can end it (end_visit), and can reopen it
+--     (reopen_visit) while its date is still in that window. Every end and reopen is appended
+--     to shift_events, which members read but nobody can write directly.
 
 create extension if not exists pgcrypto with schema extensions;
 
@@ -147,6 +149,23 @@ create table public.task_checks (
 
 create index task_checks_task_id_idx on public.task_checks (task_id);
 
+-- Append-only history of a shift: one row per end and per reopen, written only inside
+-- end_visit() and reopen_visit() (SECURITY DEFINER); clients have no write privilege at all.
+-- visits.ended_at/ended_by stay the current state; this is the record ("Ended 5:02pm by
+-- Bethany, reopened 5:10pm by Bethany"). A check whose checked_at is later than the visit's
+-- first 'ended' event was added after a reopen. created_at uses clock_timestamp(), taken after
+-- the RPC holds the visit's row lock, so time order matches the order the events happened.
+-- A deleted member's events stay with actor_id null ("a former member").
+create table public.shift_events (
+  id uuid primary key default gen_random_uuid(),
+  visit_id uuid not null references public.visits (id) on delete cascade,
+  kind text not null check (kind in ('ended', 'reopened')),
+  actor_id uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default clock_timestamp()
+);
+
+create index shift_events_visit_id_idx on public.shift_events (visit_id, created_at);
+
 -- ---------------------------------------------------------------------------
 -- Helper functions used by policies
 -- ---------------------------------------------------------------------------
@@ -214,6 +233,7 @@ alter table public.plans enable row level security;
 alter table public.tasks enable row level security;
 alter table public.visits enable row level security;
 alter table public.task_checks enable row level security;
+alter table public.shift_events enable row level security;
 
 -- households: members read; parents edit the name and child fields (column grants);
 -- creation and deletion go through RPCs.
@@ -401,6 +421,16 @@ create policy "Members can uncheck tasks"
       and public.is_member(p.household_id)
   ));
 
+-- shift_events: members read. No insert/update/delete policy and no write grant: rows are
+-- written only by end_visit() and reopen_visit().
+create policy "Members can read shift events"
+  on public.shift_events for select to authenticated
+  using (exists (
+    select 1 from public.visits v
+    join public.plans p on p.id = v.plan_id
+    where v.id = shift_events.visit_id and public.is_member(p.household_id)
+  ));
+
 -- ---------------------------------------------------------------------------
 -- RPCs
 -- ---------------------------------------------------------------------------
@@ -550,7 +580,8 @@ end;
 $$;
 
 -- Ends a shift once. Any member of the household (parent or sitter) may end it; who and when
--- are recorded server-side. Returns the end time.
+-- are recorded server-side, on the visit (current state) and as an 'ended' shift event
+-- (history). Returns the end time.
 create function public.end_visit(target_visit_id uuid)
 returns timestamptz
 language plpgsql
@@ -587,12 +618,18 @@ begin
    where id = target_visit_id
   returning ended_at into result;
 
+  insert into public.shift_events (visit_id, kind, actor_id)
+  values (target_visit_id, 'ended', caller);
+
   return result;
 end;
 $$;
 
 -- Reopens an ended shift so its tasks can be checked again (e.g. a sitter ended it by mistake).
--- Parents only; the handoff note and existing checks are kept.
+-- Any member of the household (parent or sitter) may reopen it, but only for a visit_date in
+-- the same window a shift can be started for (database UTC date ±1 day), so old days cannot
+-- be backfilled. A 'reopened' shift event is appended (the parent is alerted through Realtime)
+-- and the end is cleared; the handoff note, existing checks, and earlier events are kept.
 create function public.reopen_visit(target_visit_id uuid)
 returns void
 language plpgsql
@@ -603,13 +640,14 @@ declare
   caller uuid := auth.uid();
   visit_household_id uuid;
   current_ended_at timestamptz;
+  current_visit_date date;
 begin
   if caller is null then
     raise exception 'not_authenticated';
   end if;
 
-  select p.household_id, v.ended_at
-    into visit_household_id, current_ended_at
+  select p.household_id, v.ended_at, v.visit_date
+    into visit_household_id, current_ended_at, current_visit_date
     from public.visits v
     join public.plans p on p.id = v.plan_id
    where v.id = target_visit_id
@@ -619,12 +657,16 @@ begin
   if not found or not public.is_member(visit_household_id) then
     raise exception 'visit_not_found';
   end if;
-  if not public.is_parent(visit_household_id) then
-    raise exception 'not_parent';
-  end if;
   if current_ended_at is null then
     raise exception 'visit_not_ended';
   end if;
+  if current_visit_date not between (now() at time zone 'utc')::date - 1
+                                and (now() at time zone 'utc')::date + 1 then
+    raise exception 'visit_too_old';
+  end if;
+
+  insert into public.shift_events (visit_id, kind, actor_id)
+  values (target_visit_id, 'reopened', caller);
 
   update public.visits
      set ended_at = null, ended_by = null
@@ -632,8 +674,10 @@ begin
 end;
 $$;
 
--- Deletes households where the caller is the only parent (cascading all their data),
--- the caller's remaining memberships, and finally the caller's auth account.
+-- Deletes households where the caller is the only parent (cascading all their data, including
+-- shift_events), the caller's remaining memberships, and finally the caller's auth account.
+-- In households that survive, the caller's checks, visit stamps, and shift events stay with
+-- the user column set to null (on delete set null), which the app shows as a former member.
 create function public.delete_my_account()
 returns void
 language plpgsql
@@ -678,6 +722,9 @@ grant update (handoff_note) on public.visits to authenticated;
 grant insert (visit_id, task_id), delete on public.task_checks to authenticated;
 grant update (revoked_at) on public.invites to authenticated;
 grant delete on public.household_members to authenticated;
+-- Read-only for clients (explicit, though "select on all tables" above already covers it):
+-- shift_events is written only by end_visit() and reopen_visit().
+grant select on public.shift_events to authenticated;
 
 revoke execute on all functions in schema public from public, anon;
 revoke execute on function public.reopen_visit(uuid) from public, anon;
@@ -707,7 +754,9 @@ alter default privileges for role postgres
   revoke execute on functions from public;
 
 -- ---------------------------------------------------------------------------
--- Realtime: shifts and checks stream to household members (RLS applies).
+-- Realtime: shifts, checks, and shift events stream to household members (RLS applies).
+-- shift_events lets the parent's page alert them live when a shift is reopened.
 -- ---------------------------------------------------------------------------
 
-alter publication supabase_realtime add table public.visits, public.task_checks;
+alter publication supabase_realtime
+  add table public.visits, public.task_checks, public.shift_events;

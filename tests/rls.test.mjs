@@ -99,6 +99,7 @@ const tables = [
   "tasks",
   "visits",
   "task_checks",
+  "shift_events",
 ];
 
 const rpcs = [
@@ -124,6 +125,7 @@ let careItemIds;
 let contactIds;
 let visitId;
 let parentVisitId;
+let oldVisitId;
 
 before(async () => {
   const [row] = localSql("select ((now() at time zone 'utc')::date)::text as today");
@@ -712,17 +714,25 @@ test("a shift ends once, only by a member, and its checks are then frozen", asyn
   );
 });
 
-test("only a parent of the household can reopen an ended shift", async () => {
+test("any member can reopen an ended shift in the start window, and every end and reopen is logged", async () => {
   const reopen = (user, id) => user.client.rpc("reopen_visit", { target_visit_id: id });
+  const events = (user) =>
+    user.client
+      .from("shift_events")
+      .select("kind, actor_id, created_at")
+      .eq("visit_id", visitId)
+      .order("created_at")
+      .order("id");
 
-  assertRpcError(await reopen(caretaker, visitId), "not_parent");
+  // Not a member of the household (or no such shift): indistinguishable.
   assertRpcError(await reopen(parentB, visitId), "visit_not_found");
   assertRpcError(await reopen(outsider, visitId), "visit_not_found");
   assertRpcError(await reopen(parentA, randomUUID()), "visit_not_found");
   const stillEnded = await admin.from("visits").select("ended_at").eq("id", visitId).single();
   assert.ok(stillEnded.data.ended_at, "a refused reopen leaves the shift ended");
 
-  assert.ifError((await reopen(parentA, visitId)).error);
+  // The caretaker can reopen (e.g. they ended it by mistake).
+  assert.ifError((await reopen(caretaker, visitId)).error);
   const { data: reopened } = await admin
     .from("visits")
     .select("ended_at, ended_by, handoff_note")
@@ -735,7 +745,7 @@ test("only a parent of the household can reopen an ended shift", async () => {
   });
   assertRpcError(await reopen(parentA, visitId), "visit_not_ended");
 
-  // Open again: the caretaker can check tasks, then the shift ends again.
+  // Open again: the caretaker checks another task (a backfill), then ends the shift again.
   const c = caretaker.client;
   assert.ifError(
     (await c.from("task_checks").insert({ visit_id: visitId, task_id: taskIds[1] })).error,
@@ -745,6 +755,87 @@ test("only a parent of the household can reopen an ended shift", async () => {
     await c.from("task_checks").delete().eq("visit_id", visitId).select(),
     "checks are frozen again after the second end",
   );
+
+  // A parent can reopen too, and end it.
+  assert.ifError((await reopen(parentA, visitId)).error);
+  assert.ifError((await parentA.client.rpc("end_visit", { target_visit_id: visitId })).error);
+
+  // History: every end and reopen, in order, with who did it. Both members read it.
+  const expected = [
+    ["ended", caretaker.id],
+    ["reopened", caretaker.id],
+    ["ended", caretaker.id],
+    ["reopened", parentA.id],
+    ["ended", parentA.id],
+  ];
+  for (const member of [parentA, caretaker]) {
+    const { data, error } = await events(member);
+    assert.ifError(error);
+    assert.deepEqual(
+      data.map((e) => [e.kind, e.actor_id]),
+      expected,
+      "shift events are recorded in order with their actors",
+    );
+  }
+  const { data: current } = await admin
+    .from("visits")
+    .select("ended_by")
+    .eq("id", visitId)
+    .single();
+  assert.equal(current.ended_by, parentA.id, "visits keeps the latest end as current state");
+
+  // Backfill: a check made after the first end (i.e. after a reopen) is identifiable.
+  const { data: history } = await events(parentA);
+  const firstEnd = Date.parse(history[0].created_at);
+  const { data: checks } = await parentA.client
+    .from("task_checks")
+    .select("task_id, checked_at")
+    .eq("visit_id", visitId);
+  const afterReopen = Object.fromEntries(
+    checks.map((row) => [row.task_id, Date.parse(row.checked_at) > firstEnd]),
+  );
+  assert.deepEqual(afterReopen, { [taskIds[0]]: false, [taskIds[1]]: true });
+
+  // Other households and signed-in strangers see no events.
+  for (const stranger of [parentB, outsider]) {
+    const { data, error } = await events(stranger);
+    assert.ifError(error);
+    assert.deepEqual(data, [], "non-members read no shift events");
+  }
+
+  // Nobody writes shift_events directly; only end_visit/reopen_visit do.
+  for (const member of [parentA, caretaker]) {
+    const s = member.client.from("shift_events");
+    assertPermissionDenied(
+      await s.insert({ visit_id: visitId, kind: "reopened", actor_id: member.id }).select(),
+      "direct insert into shift_events",
+    );
+    assertPermissionDenied(
+      await s.update({ kind: "ended" }).eq("visit_id", visitId).select(),
+      "direct update of shift_events",
+    );
+    assertPermissionDenied(
+      await s.delete().eq("visit_id", visitId).select(),
+      "direct delete from shift_events",
+    );
+  }
+  const { count: eventCount } = await admin
+    .from("shift_events")
+    .select("*", { count: "exact", head: true })
+    .eq("visit_id", visitId);
+  assert.equal(eventCount, expected.length, "refused writes left the history unchanged");
+
+  // A shift outside the start window (database UTC date ±1) cannot be reopened, so old days
+  // cannot be backfilled. Clients cannot create such a visit, so the local SQL helper does.
+  [{ id: oldVisitId }] = localSql(`
+    insert into public.visits (plan_id, visit_date, ended_at)
+    values ('${uuid(planA.id)}', '${isoDate(-5)}', now())
+    returning id::text as id`);
+  uuid(oldVisitId);
+  assertRpcError(await reopen(parentA, oldVisitId), "visit_too_old");
+  assertRpcError(await reopen(caretaker, oldVisitId), "visit_too_old");
+  const { data: old } = await admin.from("visits").select("ended_at").eq("id", oldVisitId).single();
+  assert.ok(old.ended_at, "a too-old shift stays ended");
 });
 
 test("after shifts exist, parent B still sees nothing of household A", async () => {
@@ -756,7 +847,7 @@ test("after shifts exist, parent B still sees nothing of household A", async () 
       (row) =>
         [row.household_id, row.id].includes(householdA) ||
         row.plan_id === planA.id ||
-        [visitId, parentVisitId].includes(row.visit_id) ||
+        [visitId, parentVisitId, oldVisitId].includes(row.visit_id) ||
         taskIds.includes(row.task_id),
     );
     assert.deepEqual(leaked, [], `parent B sees household A rows in ${table}`);
@@ -786,7 +877,16 @@ test("parent can remove a caretaker, who then loses access", async () => {
     .select();
   assert.equal(removed.data?.length, 1);
 
-  for (const table of ["households", "plans", "tasks", "care_items", "contacts", "visits"]) {
+  for (const table of [
+    "households",
+    "plans",
+    "tasks",
+    "care_items",
+    "contacts",
+    "visits",
+    "task_checks",
+    "shift_events",
+  ]) {
     const { data } = await caretaker.client.from(table).select("*");
     assert.deepEqual(data, [], `removed caretaker still reads ${table}`);
   }
@@ -816,6 +916,7 @@ test("delete_my_account removes the sole parent's household data and account", a
     ["tasks", "plan_id", planA.id],
     ["visits", "plan_id", planA.id],
     ["task_checks", "visit_id", visitId],
+    ["shift_events", "visit_id", visitId],
   ]) {
     const { count } = await admin
       .from(table)
@@ -871,6 +972,8 @@ test("a caretaker deleting their account keeps the family's history without thei
       .error,
   );
   assert.ifError((await sitter.client.rpc("end_visit", { target_visit_id: visit.data.id })).error);
+  assert.ifError((await sitter.client.rpc("reopen_visit", { target_visit_id: visit.data.id })).error);
+  assert.ifError((await parent.client.rpc("end_visit", { target_visit_id: visit.data.id })).error);
 
   assert.ifError((await sitter.client.rpc("delete_my_account")).error);
 
@@ -884,7 +987,19 @@ test("a caretaker deleting their account keeps the family's history without thei
     .select("started_by, ended_by")
     .eq("id", visit.data.id)
     .single();
-  assert.deepEqual(v, { started_by: null, ended_by: null });
+  assert.deepEqual(v, { started_by: null, ended_by: parent.id });
+  // The shift history keeps every row; the departed sitter's become "a former member".
+  const { data: history } = await parent.client
+    .from("shift_events")
+    .select("kind, actor_id")
+    .eq("visit_id", visit.data.id)
+    .order("created_at")
+    .order("id");
+  assert.deepEqual(history, [
+    { kind: "ended", actor_id: null },
+    { kind: "reopened", actor_id: null },
+    { kind: "ended", actor_id: parent.id },
+  ]);
   const { count } = await admin
     .from("households")
     .select("*", { count: "exact", head: true })

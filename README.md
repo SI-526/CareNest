@@ -51,8 +51,9 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 | `care_items` | Preferences, where things are, instructions, emergency steps, food/allergies (with severity) | Parents |
 | `contacts` | People and places to call (including the hospital, with address) | Parents |
 | `plans`, `tasks` | The child's day: ordered tasks with time, detail, location, care note | Parents |
-| `visits` | One babysitting shift per plan per date (yesterday, today, or tomorrow); start, handoff note, end | Members start and write the note; `end_visit` ends it; parents can `reopen_visit` |
-| `task_checks` | Which tasks are done in a shift | Members, while the shift is open |
+| `visits` | One babysitting shift per plan per date (yesterday, today, or tomorrow); start, handoff note, current end | Members start and write the note; any member can `end_visit` and `reopen_visit` |
+| `task_checks` | Which tasks are done in a shift, by whom, and when (`checked_at`) | Members, while the shift is open |
+| `shift_events` | Append-only shift history: one row per end and per reopen, with who and when | Nobody directly; only `end_visit` and `reopen_visit` write it. Members read |
 
 ## Data and risk boundaries
 
@@ -84,20 +85,35 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   UTC date, `(now() at time zone 'utc')::date`, which ignores the client-settable session time
   zone), so a client cannot claim a plan's far-off dates. It ends through `end_visit`, which
   records who ended it and when. After that its task checks are frozen; the handoff note stays
-  editable. A parent (not a caretaker) can reopen an ended shift with `reopen_visit`, which
-  clears the end so tasks can be checked again (for example, if the sitter ended it by mistake).
+  editable.
+- Any member, the sitter or a parent, can reopen an ended shift with `reopen_visit` (for example,
+  if the sitter ended it by mistake), but only while its date is still in the window a shift can
+  be started for (yesterday, today, or tomorrow, UTC); older shifts raise `visit_too_old`, so old
+  days cannot be backfilled. Reopening clears the current end on `visits` so tasks can be checked
+  again; nothing else is erased.
+- Shift history: every end and every reopen is appended to `shift_events` (kind, who, when),
+  so the app can show "Ended 5:02pm by Bethany · reopened 5:10pm by Bethany". Members read it;
+  no client can insert, update, or delete it (no table write privilege); only the two
+  `SECURITY DEFINER` functions write it, under the visit's row lock. It is published to Realtime
+  so the parent's page can alert them when a shift is reopened.
+- Backfill labelling: a task check whose `checked_at` (set by the database; clients cannot write
+  it) is later than the shift's first `ended` event was added after a reopen, so the parent feed
+  can label it "Added after reopen". An uncheck after a reopen deletes the check and leaves no
+  row to label.
 - A task check that races `end_visit` can land just after the end: each statement checks
   `ended_at` against its own snapshot. That is harmless for checks, but T3's photo lock must not
   rely on the same plain predicate: it must re-check `ended_at` under a row lock on the visit
   (`select ... for share`) or in a trigger.
 - `delete_my_account` deletes every family space where you are the only parent (cascading all
   care info, contacts, plans, tasks, shifts, checks, and invites), removes your other
-  memberships, and deletes your sign-in account. When a caretaker deletes their account, checks
-  and notes they wrote stay in the family's history without their name.
+  memberships, and deletes your sign-in account. When a caretaker deletes their account, checks,
+  notes, and shift-history entries they made stay in the family's history without their name
+  (the user column becomes null, shown as a former member).
 - Known limitation (same as Carekeeper): Supabase Realtime does not apply RLS to DELETE events,
   so a signed-in user subscribed to `task_checks` also receives the primary keys (two random
-  UUIDs, no content) of unchecks in other family spaces. Clients must ignore events for shifts
-  they are not showing.
+  UUIDs, no content) of unchecks in other family spaces. The same applies to `visits` and
+  `shift_events` rows removed when a family space or plan is deleted (one random UUID each).
+  Clients must ignore events for shifts they are not showing.
 
 ## Deploying to a hosted Supabase project
 
