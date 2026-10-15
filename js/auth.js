@@ -424,9 +424,9 @@
   async function deleteAccount(ctx) {
     const consequence =
       ctx.role === "parent"
-        ? "If you are the only parent, your family space and everything in it (care info, schedule, shifts, task checks, notes, and invites) is permanently deleted, and your sitters lose access."
+        ? "If you are the only parent, every photo of your family space is deleted from storage, then the family space and everything in it (care info, schedule, shifts, task checks, notes, messages, and invites) is permanently deleted, and your sitters lose access."
         : ctx.role === "caretaker"
-          ? "You leave the family space. Task checks and notes you wrote stay in the family's history without your name."
+          ? "You leave the family space. Task checks, notes, photos, and messages you sent stay in the family's history without your name."
           : "Your account is permanently deleted.";
     const ok = await confirmDialog({
       title: "Delete your account and data?",
@@ -437,7 +437,21 @@
     if (!ok) return;
     const errorEl = accountDialog && accountDialog.querySelector("[data-account-error]");
     endingSession = true;
-    const { error } = await client.rpc("delete_my_account");
+    // A sole parent's family space goes with the account, but Storage objects are not removed by
+    // database cascades: remove_all_photos() detaches every photo of those households (messages
+    // read "Photo removed by ...") and returns every object path, which are deleted through the
+    // Storage API before the account. Any failure stops here with the account kept, and a retry
+    // repeats both steps. For a caretaker, or a parent with a co-parent, the list is empty.
+    let error = null;
+    if (ctx.role === "parent") {
+      const removed = await client.rpc("remove_all_photos");
+      error = removed.error;
+      const paths = (!error && removed.data) || [];
+      for (let i = 0; !error && i < paths.length; i += 100) {
+        ({ error } = await client.storage.from("photos").remove(paths.slice(i, i + 100)));
+      }
+    }
+    if (!error) ({ error } = await client.rpc("delete_my_account"));
     if (error) {
       endingSession = false;
       if (errorEl) {

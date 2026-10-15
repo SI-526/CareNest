@@ -49,6 +49,7 @@
     photo_required: "Please add a photo before sending.",
     photo_not_found: "The photo didn't finish uploading. Please try again.",
     photo_already_removed: "That photo was already removed.",
+    photo_removed: "That photo was removed by a parent.",
     photo_limit_reached: "Photo limit reached for this shift.",
     moment_photo_too_early: "That photo was taken before the moment prompt. Take a new one now.",
     message_not_found: "That photo is no longer available. Reload the page.",
