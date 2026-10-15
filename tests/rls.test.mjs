@@ -264,8 +264,14 @@ test("parent can create plans, tasks, care items, and contacts", async () => {
   assert.ifError(contacts.error);
   contactIds = contacts.data.map((c) => c.id);
 
-  const tooLong = await a.from("plans").insert({ household_id: householdA, title: "x".repeat(81) });
-  assert.ok(tooLong.error, "title over 80 characters is rejected");
+  const tooLong = await a.from("plans").update({ title: "x".repeat(81) }).eq("id", planA.id).select();
+  assert.equal(tooLong.error?.code, "23514", "title over 80 characters is rejected");
+  // One plan per household: a second plan (e.g. two tabs racing to create it) is refused.
+  const secondPlan = await a
+    .from("plans")
+    .insert({ household_id: householdA, title: "Second plan" })
+    .select();
+  assert.equal(secondPlan.error?.code, "23505", "a household has at most one plan");
   const badCategory = await a
     .from("care_items")
     .insert({ household_id: householdA, category: "secrets", title: "x" });
@@ -594,6 +600,13 @@ test("caretaker can start a shift, check tasks, and write the handoff", async ()
     .insert({ visit_id: visitId, task_id: taskIds[0], checked_by: parentA.id })
     .select();
   assert.ok(spoofed.error, "checked_by cannot be chosen by the client");
+  assertPermissionDenied(
+    await c
+      .from("task_checks")
+      .insert({ visit_id: visitId, task_id: taskIds[0], checked_at: "2000-01-01T00:00:00Z" })
+      .select(),
+    "checked_at cannot be chosen by the client",
+  );
 
   const check = await c
     .from("task_checks")
@@ -602,6 +615,16 @@ test("caretaker can start a shift, check tasks, and write the handoff", async ()
     .single();
   assert.ifError(check.error);
   assert.equal(check.data.checked_by, caretaker.id);
+  assertPermissionDenied(
+    await c
+      .from("task_checks")
+      .upsert(
+        { visit_id: visitId, task_id: taskIds[0], checked_at: "2000-01-01T00:00:00Z" },
+        { onConflict: "visit_id,task_id" },
+      )
+      .select(),
+    "an upsert cannot rewrite checked_at",
+  );
 
   const uncheck = await c
     .from("task_checks")
@@ -610,6 +633,11 @@ test("caretaker can start a shift, check tasks, and write the handoff", async ()
     .eq("task_id", taskIds[0])
     .select();
   assert.equal(uncheck.data?.length, 1, "caretaker can uncheck");
+  const { count: earlyEvents } = await admin
+    .from("shift_events")
+    .select("*", { count: "exact", head: true })
+    .eq("visit_id", visitId);
+  assert.equal(earlyEvents, 0, "an uncheck before the shift ever ended is not logged");
   assert.ifError(
     (await c.from("task_checks").insert({ visit_id: visitId, task_id: taskIds[0] })).error,
   );
@@ -678,6 +706,26 @@ test("a shift ends once, only by a member, and its checks are then frozen", asyn
     .single();
   assert.ok(visit.ended_at);
   assert.equal(visit.ended_by, caretaker.id);
+  // One timestamp for the visit's end, the 'ended' event, and the return value.
+  const { data: endEvent } = await admin
+    .from("shift_events")
+    .select("created_at")
+    .eq("visit_id", visitId)
+    .eq("kind", "ended")
+    .single();
+  assert.deepEqual(
+    [ended.data, endEvent.created_at].map(Date.parse),
+    [Date.parse(visit.ended_at), Date.parse(visit.ended_at)],
+    "end_visit's return value, visits.ended_at, and the event's created_at agree",
+  );
+  assert.deepEqual(
+    localSql(`
+      select (v.ended_at = e.created_at) as same
+        from public.visits v join public.shift_events e on e.visit_id = v.id
+       where v.id = '${uuid(visitId)}' and e.kind = 'ended'`),
+    [{ same: true }],
+    "visits.ended_at equals the 'ended' event's created_at to the microsecond",
+  );
 
   const c = caretaker.client;
   assertDenied(
@@ -784,15 +832,17 @@ test("any member can reopen an ended shift in the start window, and every end an
     .single();
   assert.equal(current.ended_by, parentA.id, "visits keeps the latest end as current state");
 
-  // Backfill: a check made after the first end (i.e. after a reopen) is identifiable.
+  // Backfill: "Added after reopen" = the shift has a 'reopened' event and the check's
+  // checked_at is later than the first 'ended' event.
   const { data: history } = await events(parentA);
-  const firstEnd = Date.parse(history[0].created_at);
+  const firstEnd = Date.parse(history.find((e) => e.kind === "ended").created_at);
+  const wasReopened = history.some((e) => e.kind === "reopened");
   const { data: checks } = await parentA.client
     .from("task_checks")
     .select("task_id, checked_at")
     .eq("visit_id", visitId);
   const afterReopen = Object.fromEntries(
-    checks.map((row) => [row.task_id, Date.parse(row.checked_at) > firstEnd]),
+    checks.map((row) => [row.task_id, wasReopened && Date.parse(row.checked_at) > firstEnd]),
   );
   assert.deepEqual(afterReopen, { [taskIds[0]]: false, [taskIds[1]]: true });
 
@@ -836,6 +886,153 @@ test("any member can reopen an ended shift in the start window, and every end an
   assertRpcError(await reopen(caretaker, oldVisitId), "visit_too_old");
   const { data: old } = await admin.from("visits").select("ended_at").eq("id", oldVisitId).single();
   assert.ok(old.ended_at, "a too-old shift stays ended");
+});
+
+test("unchecking an original-shift task after a reopen is logged; later checks are not", async () => {
+  const fam = await newFamily("uncheck", 5);
+  const t = fam.taskIds;
+  const s = fam.sitter.client;
+  const p = fam.parent.client;
+  const visit = await s.from("visits").insert({ plan_id: fam.planId }).select().single();
+  assert.ifError(visit.error);
+  const id = visit.data.id;
+  for (const task of t.slice(0, 4)) {
+    assert.ifError((await s.from("task_checks").insert({ visit_id: id, task_id: task })).error);
+  }
+  assert.ifError((await s.rpc("end_visit", { target_visit_id: id })).error);
+  assert.ifError((await p.rpc("reopen_visit", { target_visit_id: id })).error);
+  assert.ifError((await s.from("task_checks").insert({ visit_id: id, task_id: t[4] })).error);
+
+  const uncheck = (user, task) =>
+    user.client.from("task_checks").delete().eq("visit_id", id).eq("task_id", task).select();
+  assert.equal((await uncheck(fam.sitter, t[0])).data?.length, 1, "sitter unchecks an original check");
+  assert.equal((await uncheck(fam.parent, t[1])).data?.length, 1, "parent unchecks an original check");
+  assert.equal((await uncheck(fam.sitter, t[4])).data?.length, 1, "sitter unchecks a post-reopen check");
+
+  // Deleting a task cascades its (original-shift) check away without logging an uncheck.
+  const deletedTask = await p.from("tasks").delete().eq("id", t[2]).select();
+  assert.ifError(deletedTask.error);
+  assert.equal(deletedTask.data.length, 1);
+
+  const history = (user) =>
+    user.client
+      .from("shift_events")
+      .select("kind, actor_id, task_id")
+      .eq("visit_id", id)
+      .order("created_at")
+      .order("id");
+  const expected = [
+    { kind: "ended", actor_id: fam.sitter.id, task_id: null },
+    { kind: "reopened", actor_id: fam.parent.id, task_id: null },
+    { kind: "unchecked", actor_id: fam.sitter.id, task_id: t[0] },
+    { kind: "unchecked", actor_id: fam.parent.id, task_id: t[1] },
+  ];
+  for (const member of [fam.parent, fam.sitter]) {
+    const { data, error } = await history(member);
+    assert.ifError(error);
+    assert.deepEqual(data, expected, "only original-shift unchecks are logged, with task and actor");
+  }
+
+  // A deleted task's 'unchecked' event stays, with task_id null.
+  assert.ifError((await p.from("tasks").delete().eq("id", t[0])).error);
+  const { data: afterTaskDelete } = await history(fam.parent);
+  assert.deepEqual(afterTaskDelete[2], { kind: "unchecked", actor_id: fam.sitter.id, task_id: null });
+
+  // Deleting the plan (the reopened shift still holds an original check, t[3]) succeeds and
+  // takes the shift's history with it, logging nothing.
+  const before = await countEvents();
+  const deletedPlan = await p.from("plans").delete().eq("id", fam.planId).select();
+  assert.ifError(deletedPlan.error);
+  assert.equal(deletedPlan.data.length, 1);
+  assert.equal(await countEvents((q) => q.eq("visit_id", id)), 0);
+  assert.equal(await countEvents(), before - expected.length, "plan deletion logged nothing");
+});
+
+test("a shift dated outside yesterday..tomorrow (UTC) is read-only, under any session time zone", async () => {
+  const fam = await newFamily("window", 2);
+  const [t0, t1] = fam.taskIds;
+  const visitOn = {};
+  // Clients cannot start these shifts, so the local SQL helper does: open shifts 2 days before
+  // and after the database's UTC date, and an open shift 3 days old with one check on it.
+  for (const offset of [-3, -2, 2]) {
+    [{ id: visitOn[offset] }] = localSql(`
+      insert into public.visits (plan_id, visit_date, started_by)
+      values ('${uuid(fam.planId)}', '${isoDate(offset)}', '${uuid(fam.sitter.id)}')
+      returning id::text as id`);
+    uuid(visitOn[offset]);
+  }
+  localSql(`
+    insert into public.task_checks (visit_id, task_id, checked_by)
+    values ('${uuid(visitOn[-3])}', '${uuid(t0)}', '${uuid(fam.sitter.id)}')
+    returning task_id::text as task_id`);
+  for (const offset of [-1, 1]) {
+    const v = await fam.sitter.client
+      .from("visits")
+      .insert({ plan_id: fam.planId, visit_date: isoDate(offset) })
+      .select()
+      .single();
+    assert.ifError(v.error);
+    visitOn[offset] = v.data.id;
+  }
+
+  // The window is the database's UTC date, whatever session time zone the client asks for.
+  // The time-zone clients send PostgREST's `Prefer: timezone=...` header on every request.
+  const members = [
+    ["default time zone", fam.sitter],
+    ["Etc/GMT-14 (UTC+14)", await inTimeZone(fam.sitter, "Etc/GMT-14")],
+    ["Etc/GMT+12 (UTC-12)", await inTimeZone(fam.sitter, "Etc/GMT+12")],
+  ];
+  const check = (user, offset, task) =>
+    user.client.from("task_checks").insert({ visit_id: visitOn[offset], task_id: task }).select();
+  const uncheck = (user, offset) =>
+    user.client.from("task_checks").delete().eq("visit_id", visitOn[offset]).select();
+  const rpc = (user, name, offset) => user.client.rpc(name, { target_visit_id: visitOn[offset] });
+
+  for (const [label, user] of members) {
+    // Out of the window: no check, no uncheck, no handoff note, even though nobody ended it.
+    for (const offset of [-3, -2, 2]) {
+      assertDenied(await check(user, offset, t1), `${label}: check ${offset} days away`);
+      assertDenied(await uncheck(user, offset), `${label}: uncheck ${offset} days away`);
+      assertDenied(
+        await user.client
+          .from("visits")
+          .update({ handoff_note: "Late" })
+          .eq("id", visitOn[offset])
+          .select(),
+        `${label}: handoff note ${offset} days away`,
+      );
+    }
+    // In the window: check and uncheck work.
+    for (const offset of [-1, 1]) {
+      const checked = await check(user, offset, t0);
+      assert.ifError(checked.error);
+      assert.equal(checked.data.length, 1, `${label}: check ${offset} days away`);
+      assert.equal((await uncheck(user, offset)).data?.length, 1, `${label}: uncheck ${offset}`);
+    }
+  }
+  const { data: oldChecks } = await admin
+    .from("task_checks")
+    .select("task_id")
+    .in("visit_id", [visitOn[-3], visitOn[-2], visitOn[2]]);
+  assert.deepEqual(oldChecks, [{ task_id: t0 }], "the old shift's check survived the refusals");
+
+  // A shift nobody ended can still be ended for the record, in or out of the window...
+  for (const offset of [-3, -2, 2, -1, 1]) {
+    assert.ifError((await rpc(fam.sitter, "end_visit", offset)).error, `end ${offset}`);
+  }
+  // ...but only yesterday, today, or tomorrow can be reopened, under every time zone.
+  for (const [label, user] of members) {
+    for (const offset of [-3, -2, 2]) {
+      assertRpcError(await rpc(user, "reopen_visit", offset), "visit_too_old");
+    }
+    for (const offset of [-1, 1]) {
+      assert.ifError((await rpc(user, "reopen_visit", offset)).error, `${label}: reopen ${offset}`);
+      assert.ifError((await rpc(user, "end_visit", offset)).error, `${label}: end ${offset}`);
+    }
+  }
+  for (const [label, user] of members.slice(1)) {
+    assert.ok(user.applied() > 0, `${label}: PostgREST did not confirm the Prefer: timezone header`);
+  }
 });
 
 test("after shifts exist, parent B still sees nothing of household A", async () => {
@@ -900,11 +1097,41 @@ test("parent can remove a caretaker, who then loses access", async () => {
   assertDenied(
     await caretaker.client.from("visits").insert({ plan_id: planA.id, visit_date: isoDate(1) }).select(),
   );
+  for (const rpc of ["end_visit", "reopen_visit"]) {
+    assertRpcError(
+      await caretaker.client.rpc(rpc, { target_visit_id: visitId }),
+      "visit_not_found",
+    );
+  }
 });
 
 test("delete_my_account removes the sole parent's household data and account", async () => {
-  const result = await parentA.client.rpc("delete_my_account");
+  // Leave an open, reopened shift with an original-shift check in household A: the cascade
+  // must neither fail on that check nor log it as an uncheck.
+  const a = parentA.client;
+  const open = await a
+    .from("visits")
+    .insert({ plan_id: planA.id, visit_date: isoDate(1) })
+    .select()
+    .single();
+  assert.ifError(open.error);
+  assert.ifError(
+    (await a.from("task_checks").insert({ visit_id: open.data.id, task_id: taskIds[0] })).error,
+  );
+  assert.ifError((await a.rpc("end_visit", { target_visit_id: open.data.id })).error);
+  assert.ifError((await a.rpc("reopen_visit", { target_visit_id: open.data.id })).error);
+  const householdVisits = [visitId, parentVisitId, oldVisitId, open.data.id];
+  const before = await countEvents();
+  const own = await countEvents((q) => q.in("visit_id", householdVisits));
+  assert.ok(own > 0);
+
+  const result = await a.rpc("delete_my_account");
   assert.ifError(result.error);
+  assert.equal(
+    await countEvents(),
+    before - own,
+    "the cascade removed household A's history and logged nothing new",
+  );
 
   for (const [table, column, value] of [
     ["households", "id", householdA],
@@ -1007,6 +1234,81 @@ test("a caretaker deleting their account keeps the family's history without thei
   assert.equal(count, 1, "the family space survives a caretaker leaving");
 });
 
+// A fresh family space: a parent, a sitter who accepted an invite, the plan, and `taskCount`
+// tasks (ids in position order).
+async function newFamily(label, taskCount) {
+  const parent = await signUp(`parent-${label}`);
+  const sitter = await signUp(`sitter-${label}`);
+  const h = await parent.client.rpc("create_household", {
+    household_name: `Family ${label}`,
+    acknowledged: true,
+  });
+  assert.ifError(h.error);
+  createdHouseholdIds.push(h.data);
+  const token = await parent.client.rpc("create_invite", {
+    target_household_id: h.data,
+    invite_email: sitter.email,
+  });
+  assert.ifError(token.error);
+  assert.ifError((await sitter.client.rpc("accept_invite", { invite_token: token.data })).error);
+  const plan = await parent.client
+    .from("plans")
+    .insert({ household_id: h.data, title: "Day" })
+    .select()
+    .single();
+  assert.ifError(plan.error);
+  const tasks = await parent.client
+    .from("tasks")
+    .insert(
+      Array.from({ length: taskCount }, (_, i) => ({
+        plan_id: plan.data.id,
+        title: `Task ${i}`,
+        position: i,
+      })),
+    )
+    .select("id, position");
+  assert.ifError(tasks.error);
+  const taskIds = tasks.data.sort((x, y) => x.position - y.position).map((row) => row.id);
+  return { parent, sitter, householdId: h.data, planId: plan.data.id, taskIds };
+}
+
+// The same signed-in user, but every request carries PostgREST's `Prefer: timezone=<tz>`, which
+// sets the session time zone for that request's transaction. `applied()` counts responses where
+// PostgREST confirmed it (`Preference-Applied`), so the test cannot pass vacuously if the header
+// is ignored.
+async function inTimeZone(user, tz) {
+  const { data, error } = await user.client.auth.getSession();
+  assert.ifError(error);
+  const token = data.session.access_token;
+  let applied = 0;
+  const client = createClient(apiUrl, publicKey, {
+    ...clientOptions,
+    accessToken: async () => token,
+    global: {
+      fetch: async (input, init = {}) => {
+        const headers = new Headers(init.headers);
+        const prefer = headers.get("Prefer");
+        headers.set("Prefer", prefer ? `${prefer}, timezone=${tz}` : `timezone=${tz}`);
+        const response = await fetch(input, { ...init, headers });
+        if ((response.headers.get("Preference-Applied") ?? "").includes(`timezone=${tz}`)) {
+          applied += 1;
+        }
+        return response;
+      },
+    },
+  });
+  return { client, id: user.id, email: user.email, applied: () => applied };
+}
+
+// Number of shift_events rows (service role), optionally narrowed by `filter`.
+async function countEvents(filter = (q) => q) {
+  const { count, error } = await filter(
+    admin.from("shift_events").select("*", { count: "exact", head: true }),
+  );
+  assert.ifError(error);
+  return count;
+}
+
 // Catalog checks run as the local superuser through the Supabase CLI (`--local` only), so they
 // see every table, including any a future migration adds without enabling RLS.
 function localSql(sql) {
@@ -1067,6 +1369,31 @@ test("every relation in public has RLS (tables), invoker rights (views), and gra
       );
     }
   }
+
+  // Clients cannot write the shift history at all, or choose when or by whom a task was checked.
+  assert.deepEqual(
+    localSql(`
+      select has_table_privilege('authenticated', 'public.shift_events',
+               'insert, update, delete, truncate') as shift_events_table_write,
+             has_any_column_privilege('authenticated', 'public.shift_events',
+               'insert, update') as shift_events_column_write,
+             has_column_privilege('authenticated', 'public.task_checks', 'checked_at',
+               'insert, update') as checked_at_write,
+             has_column_privilege('authenticated', 'public.task_checks', 'checked_by',
+               'insert, update') as checked_by_write,
+             has_table_privilege('authenticated', 'public.task_checks', 'update')
+               as task_checks_update`),
+    [
+      {
+        shift_events_table_write: false,
+        shift_events_column_write: false,
+        checked_at_write: false,
+        checked_by_write: false,
+        task_checks_update: false,
+      },
+    ],
+    "authenticated has a write privilege it must not have",
+  );
 
   const anonFunctions = localSql(`
     select p.proname

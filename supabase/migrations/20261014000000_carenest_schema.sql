@@ -14,10 +14,13 @@
 --     privileges (schema-scoped default privileges revoked), and functions that postgres creates
 --     later in ANY schema no longer get Postgres's built-in EXECUTE for PUBLIC (global default
 --     privilege revoked). A later migration must grant access explicitly.
---   * A shift can only be started for yesterday, today, or tomorrow (database date, UTC on
---     Supabase). Any member (parent or sitter) can end it (end_visit), and can reopen it
---     (reopen_visit) while its date is still in that window. Every end and reopen is appended
---     to shift_events, which members read but nobody can write directly.
+--   * A shift can only be started for yesterday, today, or tomorrow (the database's UTC date).
+--     Any member (parent or sitter) can end it (end_visit), and can reopen it (reopen_visit)
+--     while its date is still in that window. Outside the window a shift is read-only: no
+--     checks, unchecks, handoff-note edits, or reopen; only end_visit, so a forgotten shift can
+--     still be closed for the record.
+--   * Every end and reopen, and every uncheck of an original-shift check after a reopen, is
+--     appended to shift_events, which members read but cannot write directly.
 
 create extension if not exists pgcrypto with schema extensions;
 
@@ -96,18 +99,18 @@ create table public.contacts (
 create index contacts_household_id_idx on public.contacts (household_id, position);
 
 -- A plan is the child's day: an ordered list of tasks. `schedule` is a display label
--- for the usual shift window (e.g. "3:00pm - 7:00pm").
+-- for the usual shift window (e.g. "3:00pm - 7:00pm"). One plan per household: the app has a
+-- single daily schedule and creates it on first use, so the unique constraint makes two tabs
+-- racing to create it fail cleanly (23505; the loser re-reads) instead of leaving an orphan.
 create table public.plans (
   id uuid primary key default gen_random_uuid(),
-  household_id uuid not null references public.households (id) on delete cascade,
+  household_id uuid not null unique references public.households (id) on delete cascade,
   title text not null check (char_length(btrim(title)) between 1 and 80),
   schedule text not null default '' check (char_length(schedule) <= 100),
   note text not null default '' check (char_length(note) <= 2000),
   position integer not null default 0,
   created_at timestamptz not null default now()
 );
-
-create index plans_household_id_idx on public.plans (household_id);
 
 create table public.tasks (
   id uuid primary key default gen_random_uuid(),
@@ -149,22 +152,30 @@ create table public.task_checks (
 
 create index task_checks_task_id_idx on public.task_checks (task_id);
 
--- Append-only history of a shift: one row per end and per reopen, written only inside
--- end_visit() and reopen_visit() (SECURITY DEFINER); clients have no write privilege at all.
--- visits.ended_at/ended_by stay the current state; this is the record ("Ended 5:02pm by
--- Bethany, reopened 5:10pm by Bethany"). A check whose checked_at is later than the visit's
--- first 'ended' event was added after a reopen. created_at uses clock_timestamp(), taken after
--- the RPC holds the visit's row lock, so time order matches the order the events happened.
--- A deleted member's events stay with actor_id null ("a former member").
+-- Append-only history of a shift, written only by SECURITY DEFINER code: 'ended' by
+-- end_visit(), 'reopened' by reopen_visit(), and 'unchecked' (with task_id) by the
+-- log_original_uncheck trigger when a member unchecks an original-shift task after a reopen.
+-- Clients have no write privilege at all. visits.ended_at/ended_by stay the current state;
+-- this is the record ("Ended 5:02pm by Bethany, reopened 5:10pm by Bethany").
+-- "Added after reopen": a check is labelled so only if the visit has a 'reopened' event and the
+-- check's checked_at is later than the visit's first 'ended' event.
+-- created_at uses clock_timestamp(), taken after the RPC holds the visit's row lock, so time
+-- order matches the order the events happened. A deleted member's events stay with actor_id
+-- null ("a former member"); a deleted task's 'unchecked' events stay with task_id null.
+-- Append-only applies to members' writes: deleting a plan (a parent) or a family space
+-- (delete_my_account) cascades its visits and their history away with it.
 create table public.shift_events (
   id uuid primary key default gen_random_uuid(),
   visit_id uuid not null references public.visits (id) on delete cascade,
-  kind text not null check (kind in ('ended', 'reopened')),
+  kind text not null check (kind in ('ended', 'reopened', 'unchecked')),
+  task_id uuid references public.tasks (id) on delete set null,
   actor_id uuid references auth.users (id) on delete set null,
-  created_at timestamptz not null default clock_timestamp()
+  created_at timestamptz not null default clock_timestamp(),
+  check (task_id is null or kind = 'unchecked')
 );
 
 create index shift_events_visit_id_idx on public.shift_events (visit_id, created_at);
+create index shift_events_task_id_idx on public.shift_events (task_id) where task_id is not null;
 
 -- ---------------------------------------------------------------------------
 -- Helper functions used by policies
@@ -219,6 +230,54 @@ $$;
 create trigger visits_stamp_handoff
   before update on public.visits
   for each row execute function public.stamp_handoff();
+
+-- Logs an 'unchecked' shift event when a signed-in member unchecks a task that was checked in
+-- the original shift (checked_at no later than the visit's first 'ended' event) after the
+-- shift was reopened. Unchecks of checks added after the reopen, and unchecks before any end,
+-- are not logged. Rows removed by a cascade (deleting a task, plan, visit, or family space,
+-- including through delete_my_account) are not unchecks: the foreign key's cascade runs this
+-- trigger nested inside its own trigger (pg_trigger_depth() > 1), so they are skipped, as are
+-- rows whose visit or task is already gone and deletes with no signed-in user (service role).
+create function public.log_original_uncheck()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller uuid := auth.uid();
+  first_ended_at timestamptz;
+begin
+  if pg_trigger_depth() > 1 or caller is null then
+    return null;
+  end if;
+  if not exists (select 1 from public.visits v where v.id = old.visit_id)
+     or not exists (select 1 from public.tasks t where t.id = old.task_id) then
+    return null;
+  end if;
+
+  select min(e.created_at)
+    into first_ended_at
+    from public.shift_events e
+   where e.visit_id = old.visit_id and e.kind = 'ended';
+
+  if first_ended_at is not null
+     and old.checked_at <= first_ended_at
+     and exists (
+       select 1 from public.shift_events e
+       where e.visit_id = old.visit_id and e.kind = 'reopened'
+     ) then
+    insert into public.shift_events (visit_id, kind, task_id, actor_id)
+    values (old.visit_id, 'unchecked', old.task_id, caller);
+  end if;
+
+  return null;
+end;
+$$;
+
+create trigger task_checks_log_original_uncheck
+  after delete on public.task_checks
+  for each row execute function public.log_original_uncheck();
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security
@@ -354,8 +413,9 @@ create policy "Parents can delete tasks"
 
 -- visits: members read, start, and write the handoff note (column grants limit updates;
 -- ending a shift goes through end_visit(), reopening through reopen_visit()). A shift can be
--- started only for yesterday, today, or tomorrow, so a client cannot claim (and, by ending
--- it, block) a plan's far-future or past dates.
+-- started only for yesterday, today, or tomorrow (database UTC date), so a client cannot
+-- claim (and, by ending it, block) a plan's far-future or past dates. The handoff note is
+-- writable in the same window (ended or not); older and later shifts are read-only.
 create policy "Members can read visits"
   on public.visits for select to authenticated
   using (exists (
@@ -377,17 +437,22 @@ create policy "Members can start visits"
 
 create policy "Members can write handoff notes"
   on public.visits for update to authenticated
-  using (exists (
-    select 1 from public.plans p
-    where p.id = visits.plan_id and public.is_member(p.household_id)
-  ))
+  using (
+    visit_date between (now() at time zone 'utc')::date - 1
+                   and (now() at time zone 'utc')::date + 1
+    and exists (
+      select 1 from public.plans p
+      where p.id = visits.plan_id and public.is_member(p.household_id)
+    )
+  )
   with check (exists (
     select 1 from public.plans p
     where p.id = visits.plan_id and public.is_member(p.household_id)
   ));
 
--- task_checks: members read; while the shift is open, members check (as themselves) and
--- uncheck tasks. Once a shift has ended its checks are frozen.
+-- task_checks: members read; while the shift is open and dated yesterday, today, or tomorrow
+-- (database UTC date), members check (as themselves) and uncheck tasks. Once a shift has
+-- ended, or its date has left that window (even if nobody ended it), its checks are frozen.
 create policy "Members can read task checks"
   on public.task_checks for select to authenticated
   using (exists (
@@ -407,6 +472,8 @@ create policy "Members can check tasks"
       where v.id = task_checks.visit_id
         and t.id = task_checks.task_id
         and v.ended_at is null
+        and v.visit_date between (now() at time zone 'utc')::date - 1
+                             and (now() at time zone 'utc')::date + 1
         and public.is_member(p.household_id)
     )
   );
@@ -418,11 +485,13 @@ create policy "Members can uncheck tasks"
     join public.plans p on p.id = v.plan_id
     where v.id = task_checks.visit_id
       and v.ended_at is null
+      and v.visit_date between (now() at time zone 'utc')::date - 1
+                           and (now() at time zone 'utc')::date + 1
       and public.is_member(p.household_id)
   ));
 
 -- shift_events: members read. No insert/update/delete policy and no write grant: rows are
--- written only by end_visit() and reopen_visit().
+-- written only by end_visit(), reopen_visit(), and the log_original_uncheck trigger.
 create policy "Members can read shift events"
   on public.shift_events for select to authenticated
   using (exists (
@@ -581,7 +650,9 @@ $$;
 
 -- Ends a shift once. Any member of the household (parent or sitter) may end it; who and when
 -- are recorded server-side, on the visit (current state) and as an 'ended' shift event
--- (history). Returns the end time.
+-- (history). Returns the end time. Unlike reopening, ending is allowed outside the start
+-- window, so a shift nobody ended can still be closed for the record (its checks are already
+-- frozen by the window).
 create function public.end_visit(target_visit_id uuid)
 returns timestamptz
 language plpgsql
@@ -592,14 +663,15 @@ declare
   caller uuid := auth.uid();
   visit_household_id uuid;
   already_ended_at timestamptz;
-  result timestamptz;
+  visit_started_at timestamptz;
+  end_stamp timestamptz;
 begin
   if caller is null then
     raise exception 'not_authenticated';
   end if;
 
-  select p.household_id, v.ended_at
-    into visit_household_id, already_ended_at
+  select p.household_id, v.ended_at, v.started_at
+    into visit_household_id, already_ended_at, visit_started_at
     from public.visits v
     join public.plans p on p.id = v.plan_id
    where v.id = target_visit_id
@@ -613,15 +685,18 @@ begin
     raise exception 'visit_already_ended';
   end if;
 
+  -- One timestamp, read after the row lock is held, for the visit's end, the 'ended' event,
+  -- and the return value, so all three agree.
+  end_stamp := greatest(clock_timestamp(), visit_started_at);
+
   update public.visits
-     set ended_at = greatest(now(), started_at), ended_by = caller
-   where id = target_visit_id
-  returning ended_at into result;
+     set ended_at = end_stamp, ended_by = caller
+   where id = target_visit_id;
 
-  insert into public.shift_events (visit_id, kind, actor_id)
-  values (target_visit_id, 'ended', caller);
+  insert into public.shift_events (visit_id, kind, actor_id, created_at)
+  values (target_visit_id, 'ended', caller, end_stamp);
 
-  return result;
+  return end_stamp;
 end;
 $$;
 
@@ -723,7 +798,7 @@ grant insert (visit_id, task_id), delete on public.task_checks to authenticated;
 grant update (revoked_at) on public.invites to authenticated;
 grant delete on public.household_members to authenticated;
 -- Read-only for clients (explicit, though "select on all tables" above already covers it):
--- shift_events is written only by end_visit() and reopen_visit().
+-- shift_events is written only by end_visit(), reopen_visit(), and log_original_uncheck().
 grant select on public.shift_events to authenticated;
 
 revoke execute on all functions in schema public from public, anon;
