@@ -1099,7 +1099,7 @@
         <button type="button" class="photo-source-btn" data-dev="reset">Start a new shift (clears data)</button>`
       : "";
     box.innerHTML = `
-      <h2 class="panel-title" id="dev-tools-heading">Dev tools (localhost only)</h2>
+      <h2 class="panel-title" id="dev-tools-heading">Demo tools (not part of the product)</h2>
       <div class="dev-tools-actions">
         <a class="photo-source-btn dev-link" href="parent.html" target="_blank" rel="noopener">Open parent view<span class="visually-hidden"> (opens in a new tab)</span></a>
         ${demoButtons}
@@ -1123,7 +1123,7 @@
     const box = document.createElement("section");
     box.className = "panel dev-tools";
     box.innerHTML = `
-      <h2 class="panel-title">Dev tools (localhost only)</h2>
+      <h2 class="panel-title">Demo tools (not part of the product)</h2>
       <div class="dev-tools-actions">
         <button type="button" class="photo-source-btn" data-dev="parent-moment">Trigger the sitter's moment (1–5 min)</button>
       </div>
