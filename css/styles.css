@@ -3126,6 +3126,19 @@ body.modal-open {
   }
 }
 
+/* Eight nav items (signed-in sitter: Log, Gallery and Account) on phones: 9px labels so
+   "Messages" fits its ~47px slot at 375px. ponytail: tight; fewer items is the real fix. */
+@media (max-width: 439px) {
+  .primary-nav:has(> .nav-item:nth-child(8)) {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .primary-nav:has(> .nav-item:nth-child(8)) .nav-item {
+    font-size: 0.5625rem;
+  }
+}
+
 /* Seven nav items (with Gallery and Account) on narrow phones: tighter padding and labels. */
 @media (max-width: 400px) {
   .primary-nav {
