@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CareNest — Jack's day</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body data-page="parent">
+    <div class="app detail-app parent-app">
+      <nav class="primary-nav" aria-label="Parent navigation"></nav>
+
+      <main class="parent-main" aria-labelledby="parent-title">
+        <header class="parent-header">
+          <img class="parent-child-avatar" id="parent-child-avatar" src="assets/avatar.png" alt="" width="48" height="48" />
+          <div>
+            <p class="parent-greeting" id="parent-greeting"></p>
+            <h1 class="parent-title" id="parent-title" tabindex="-1"></h1>
+          </div>
+        </header>
+
+        <div class="new-photo-banner" id="new-photo-banner" hidden>
+          <p class="new-photo-text">
+            <span id="new-photo-text"></span>
+            <a class="new-photo-link" id="new-photo-link" href="#">View</a>
+          </p>
+          <button type="button" class="new-photo-dismiss" id="new-photo-dismiss" aria-label="Dismiss new photo alert">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+
+        <section class="panel day-status" id="day-status" aria-labelledby="day-status-heading">
+          <h2 class="visually-hidden" id="day-status-heading">Shift status</h2>
+          <div class="day-status-row">
+            <div class="day-status-meta">
+              <p class="day-status-title" id="day-status-title"></p>
+              <p class="shift-status" id="day-status-detail"></p>
+            </div>
+            <span class="status-pill" id="day-status-pill"></span>
+          </div>
+          <div class="day-progress-row">
+            <span class="day-progress-label" id="day-progress-label">Schedule</span>
+            <span class="day-progress-count" id="day-progress-count"></span>
+          </div>
+          <progress class="day-progress" id="day-progress" max="1" value="0" aria-labelledby="day-progress-label day-progress-count"></progress>
+        </section>
+
+        <section class="feed-section" aria-labelledby="feed-heading">
+          <h2 class="panel-title" id="feed-heading">Photos</h2>
+          <ol class="feed-list" id="feed-list"></ol>
+          <div class="card empty-state" id="feed-empty" hidden><p></p></div>
+        </section>
+      </main>
+    </div>
+
+    <p class="visually-hidden" id="app-status" aria-live="polite"></p>
+
+    <script src="js/data.js"></script>
+    <script src="js/store.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/parent.js"></script>
+  </body>
+</html>
