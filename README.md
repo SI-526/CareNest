@@ -97,9 +97,27 @@ npm run test:rls     # authorization tests (refuse to run against a non-local UR
 npm run test:unit    # care-log age parser and validation (no database needed)
 npm run db:lint      # supabase db lint
 npm run db:stop
+npm run db:env       # which stack this checkout uses, and its ports
 ```
 
 Local ports: API `55321`, Postgres `55322`, Studio `55323`, Mailpit `55324`.
+
+### Parallel worktrees
+
+Every `npm run db:*` and `test:rls` goes through `tests/stack.sh`. In the main checkout it changes
+nothing. In a linked git worktree (`git worktree add ../CareNest-x`) it runs a separate stack:
+project `carenest-<worktree folder>` with its own containers and volumes, and every port shifted
+by a slot (1-40) derived from the folder name, so one session's `db reset` cannot wipe another's
+data. `npm run db:env` prints the slot and ports. If two worktrees land on the same slot,
+`db:start` fails with "port is already allocated"; pick a free one with
+`CARENEST_STACK_SLOT=<n> npm run db:start` and use the same variable for that worktree's other
+commands. Stop stacks you are done with (`npm run db:stop`); each one holds a few GB of Docker
+memory.
+
+To point the site at a worktree's stack, serve that checkout on its own port and open it once
+with `?supabasePort=<API port>` (for example `http://localhost:8001/?supabasePort=57521`). The
+page remembers it for that origin; `?supabasePort=` (empty) goes back to `55321`. The override
+works only on localhost and only changes the port on `127.0.0.1`.
 
 ### Demo family (local only)
 
