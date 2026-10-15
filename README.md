@@ -13,7 +13,7 @@ step). There is deliberately **no `package.json` at the repo root**; database to
 Pages: `signin.html` (Google sign-in, the data notice), `onboarding.html` (create a family space;
 requires ticking the at-your-own-risk acknowledgement), `people.html` (parents: invite a sitter,
 revoke invites, remove sitters), `invite.html#<token>` (accept an invite), and `privacy.html` /
-`terms.html`. Every app page (`index`, `parent`, `people`, `messages`, `info`,
+`terms.html`. Every app page (`index`, `parent`, `people`, `messages`, `gallery`, `info`,
 `food-allergies`) loads `js/auth.js`, which keeps the page hidden until it has checked the
 session: signed out goes to `signin.html`, no family space goes to `onboarding.html`, a parent's
 home is `parent.html`, a sitter's is `index.html`, and a page for the other role redirects to the
@@ -30,7 +30,7 @@ re-checked at local midnight); while a shift that started on an earlier local da
 start date's own heading. Parents pick the date for each note in the "Important today" card on
 `manage.html`. The notes refresh live (Realtime), and if they
 fail to load only that section says so.
-The shift (start, end, reopen, history), task check-offs with photo proofs, moments, and the message thread are in Supabase (`js/shift-data.js`: Postgres, the private `photos` Storage bucket, and Realtime) for both roles; `?demo=1` keeps them in this browser (`js/store.js`). The parent's Today page (`parent.html`) shows today's shift status (not started / active / reopened / ended) with its history, "x of y done", the schedule (a parent can mark a task done without a photo, "Done by <name>", and end or reopen the shift), and a live feed of the shift's proofs and moments (Late, "Added after reopen", "Photo removed by <name>", replies, "New" until seen via `message_reads`). New photos and shift events raise an in-app banner and a polite live announcement (no push notifications). Save photo uses the Web Share API with files on touch devices, otherwise a JPEG download, and adds it to the parent's Album (`#album`, `photo_saves`). Remove photo calls `remove_photo` and then deletes the object from Storage. The concept alert (`concept_flags`) and "Bring moment forward" (`trigger_moment_now`) are demo controls shown only on localhost or with `?demo=1`; the concept alert is labelled "Concept — not real analysis". On `manage.html`, "Remove from schedule" archives a task (`archived_at`, stamped by the database); past shifts keep it.
+The shift (start, end, reopen, history), task check-offs with photo proofs, moments, and the message thread are in Supabase (`js/shift-data.js`: Postgres, the private `photos` Storage bucket, and Realtime) for both roles; `?demo=1` keeps them in this browser (`js/store.js`). The parent's Today page (`parent.html`) shows today's shift status (not started / active / reopened / ended) with its history, "x of y done", the schedule (a parent can mark a task done without a photo, "Done by <name>", and end or reopen the shift), and a live feed of the shift's proofs and moments (Late, "Added after reopen", "Photo removed by <name>", replies, "New" until seen via `message_reads`). New photos (proofs, moments, and the sitter's photo messages) and shift events raise an in-app banner and a polite live announcement (no push notifications); View scrolls to a new feed photo, or opens the Gallery when only photo messages are new (they stay out of the Today feed). Save photo uses the Web Share API with files on touch devices, otherwise a JPEG download, and adds it to the parent's Album (`#album`, `photo_saves`). Remove photo calls `remove_photo` and then deletes the object from Storage. The concept alert (`concept_flags`) and "Bring moment forward" (`trigger_moment_now`) are demo controls shown only on localhost or with `?demo=1`; the concept alert is labelled "Concept — not real analysis". The Gallery (`gallery.html`, both roles; parents at `gallery.html?as=parent`) shows every photo of the family's shifts, oldest first with the newest at the bottom, under a heading per shift date, each labelled Task update, Photo message, or Moment, with a filter (native radios styled as chips); removed photos are skipped. The sitter's "+" (Add a photo) opens the phone's camera or library (`<input type="file" accept="image/*">`), then a dialog with the preview and an optional caption, and sends a photo message; it is disabled with the reason when the shift isn't open. A shift takes up to 20 photo messages; past that the sitter sees "Photo limit reached for this shift." Parents get "Remove photo" on each photo. Photo messages also show in the Messages thread. On `manage.html`, "Remove from schedule" archives a task (`archived_at`, stamped by the database); past shifts keep it.
 Outside demo mode the bundled sample family is discarded before anything renders, so a
 signed-in person never sees sample content; an empty family shows "No information provided".
 
@@ -130,7 +130,7 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 | `visits` | One babysitting shift per plan per date (yesterday, today, or tomorrow); start, handoff note, current end, moment time | Members start and write the note (dates in the window only); any member can `end_visit` and `reopen_visit` |
 | `task_checks` | Which tasks are done in a shift, by whom, and when (`checked_at`) | Only `complete_task` (photo required for caretakers, optional for parents), while the shift is open and in the window; members uncheck |
 | `shift_events` | Append-only shift history: ends, reopens, and unchecks of original-shift tasks after a reopen, with who, which task, and when | Nobody directly; only `end_visit`, `reopen_visit`, and the uncheck trigger write it. Members read |
-| `messages` | Chat, task proofs (photo, note, tag), and moments (photo, `late`); replies to a photo | Members post chat; sitters post the shift's moment; proofs only via `complete_task`. Sender, role, time, and `late` are set by the database. Clients never edit or delete; a parent can remove a photo with `remove_photo` (the message stays, marked "Photo removed by …") |
+| `messages` | Chat, photo messages (chat with a photo and its shift, caption optional), task proofs (photo, note, tag), and moments (photo, `late`); replies to a photo | Members post chat; sitters post photo messages and the shift's moment; proofs only via `complete_task`. Sender, role, time, and `late` are set by the database. Clients never edit or delete; a parent can remove a photo with `remove_photo` (the message stays, marked "Photo removed by …") |
 | `message_reads` | Which messages a user has seen | Each user, for themselves; private |
 | `photo_saves` | A parent's saved-photo album | Each parent, for themselves; private |
 | `concept_flags` | **Concept only**: the demo "child seems off" alert on a photo; nothing analyses photos | Parents set and clear; members read |
@@ -214,8 +214,8 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   path's first folder read; a member uploads only into an open shift of their household whose
   date is in the start window; nobody overwrites or moves a photo. A task is completed only with
   `complete_task(visit, task, photo_path, note, tag)`, which writes the check and the proof
-  message together; proofs and moments re-check the shift under a share lock on the visit, so
-  they cannot slip in after a concurrent `end_visit`. Chat stays open after a shift ends.
+  message together; proofs, moments, and photo messages re-check the shift under a share lock on
+  the visit, so they cannot slip in after a concurrent `end_visit`. Chat stays open after a shift ends.
   Caretakers must attach a photo to complete a task; parents may check off without one (shown as
   done by them, no proof message). Each shift gets one moment prompt (`visits.moment_at`, chosen
   by the database at a random time from 30 minutes after the start to 30 minutes before the usual
@@ -227,19 +227,31 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   minutes from now (demo). Only a sitter posts the moment, once; its photo must have been
   uploaded at or after the prompt (Storage's server-set `created_at`), otherwise
   `moment_photo_too_early`; it is `late` if posted more than 2 minutes after the prompt.
-- Uploads: at most **2 photos per active (not archived) task of the plan + 10** per shift folder
-  (every object in the folder counts, used or not, until it is deleted). Over the cap the upload
-  fails with `photo_limit_reached` (the app shows "Photo limit reached for this shift."); deleting
-  an unused photo frees room. Never at a path a message uses or a parent removed.
+- Uploads: at most **2 photos per active (not archived) task of the plan + 10, + 20 for photo
+  messages** per shift folder (every object in the folder counts, used or not, until it is
+  deleted), so up to 20 photo messages never eat into the room task photos and the moment need.
+  Over the cap the upload fails with
+  `photo_limit_reached` (the app shows "Photo limit reached for this shift."); deleting an unused
+  photo frees room. A sitter cannot delete a photo a message uses (a proof, moment, or photo
+  message), so a used photo keeps its slot until a parent removes and deletes it. Never at a path
+  a message uses or a parent removed.
 - Photo removal: a parent may remove any photo in the family space. `remove_photo(message)`
   clears the message's photo, records `photo_removed_by`/`photo_removed_at` ("Photo removed by
   Mary"; the message, its task check, and the history stay), records the path in
   `removed_photos`, deletes every parent's save of it and its concept flag, and returns the path;
   the client then deletes the object with the Storage API. From the moment of removal, before the
   object is deleted, nobody can download it or sign a URL for it, nobody can upload to that path
-  again, and it cannot be attached to a proof or moment again (`photo_removed`). Saves and flags
+  again, and it cannot be attached to a proof, moment, or photo message again (`photo_removed`). Saves and flags
   cannot be added to a removed photo, including one racing the removal (a trigger locks the
   message and re-checks; `photo_removed`).
+- Photo messages: a `chat` row with `photo_path` and `visit_id` (the shift); the body may be empty.
+  Only the sitter posts one, only into an open shift dated in the window, with a photo they
+  uploaded to that shift's folder and no message uses yet (`not_caretaker`, `visit_ended`,
+  `visit_too_old`, `photo_not_found`, `photo_removed`); it is never a reply. A parent removes its
+  photo with `remove_photo` like any other (the message stays as a tombstone). A shift takes at
+  most **20 live photo messages** (`stamp_message`, serialized per shift with an advisory lock;
+  a removed one frees room); the 21st fails with `photo_limit_reached`. Saves and concept
+  flags remain for proofs and moments only. The Gallery loads the newest 500 photos.
 - Photo deletion: a photo no message uses can be deleted by its uploader (whether or not the
   shift is open) or by any parent; a removed photo only by a parent (the read policy shows it
   to a parent only inside a Storage delete request, using `storage.operation()`). Database
@@ -255,7 +267,7 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 - Orphaned photos (issue #7, P1): a photo is readable only while its path's shift still exists in
   that household, so photos of a deleted shift or family space are hidden from everyone (and so
   cannot be deleted by clients either). But abandoned uploads in a shift that still exists (never
-  attached to a proof or moment) stay readable by the family's members, and every orphan stays
+  attached to a proof, moment, or photo message) stay readable by the family's members, and every orphan stays
   stored, until a cleanup job exists.
 - Known limitation (same as Carekeeper): Supabase Realtime does not apply RLS to DELETE events,
   so a signed-in user subscribed to `task_checks` also receives the primary keys (two random

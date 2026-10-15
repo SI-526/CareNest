@@ -2978,3 +2978,169 @@ body.modal-open {
   font-size: var(--text-xs);
   margin-left: 6px;
 }
+
+/* Seven nav items (with Gallery and Account) on narrow phones: tighter padding and labels. */
+@media (max-width: 400px) {
+  .primary-nav {
+    gap: 0;
+    padding-right: 4px;
+    padding-left: 4px;
+  }
+
+  .nav-item {
+    font-size: 0.625rem;
+    text-align: center;
+  }
+}
+
+/* Gallery (gallery.html) */
+.gallery-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.gallery-filter .tag-option span {
+  min-height: 44px;
+}
+
+.gallery-status {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--blue);
+}
+
+.gallery-status:empty {
+  display: none;
+}
+
+.gallery-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Room so the "+" button never covers the newest photo. */
+body:not([data-role="parent"]) .gallery-list {
+  padding-bottom: 72px;
+}
+
+.gallery-shift-title {
+  margin: 0 0 8px;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  color: var(--blue);
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 768px) {
+  .gallery-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px;
+  }
+}
+
+.gallery-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  margin: 0;
+  padding: 8px;
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.gallery-photo {
+  aspect-ratio: 1 / 1;
+}
+
+.gallery-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.gallery-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  overflow-wrap: anywhere;
+}
+
+.gallery-remove {
+  min-height: 44px;
+  margin-top: auto;
+}
+
+.gallery-remove:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.gallery-add[hidden] {
+  display: none;
+}
+
+/* Floating "+": above the phone nav bar, inside the content column on wide screens. */
+.gallery-fab {
+  position: fixed;
+  z-index: 40;
+  right: max(24px, calc((100vw - var(--max-width)) / 2 + 24px));
+  bottom: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--blue);
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(0, 50, 78, 0.25);
+}
+
+.gallery-fab svg {
+  width: 28px;
+  height: 28px;
+  fill: currentColor;
+}
+
+.gallery-fab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px #ffffff, 0 0 0 6px var(--map-border);
+}
+
+.gallery-fab[aria-disabled="true"] {
+  background: var(--grey);
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+@media (max-width: 767px) {
+  .gallery-fab {
+    right: 16px;
+    bottom: calc(88px + env(safe-area-inset-bottom));
+  }
+}
+
+.gallery-preview-frame {
+  height: 220px;
+}
+
+.gallery-preview-frame .photo-preview {
+  object-fit: contain;
+}

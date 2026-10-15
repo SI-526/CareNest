@@ -23,15 +23,19 @@
 //   saves     message id -> saved time (this parent's photo_saves)
 //   album     this parent's saved photo messages, newest save first
 //   flags     message id -> concept flag text (CONCEPT ONLY: typed by a parent, never analysis)
+//   gallery   the family's photos across shifts, oldest first, removed ones skipped (gallery page):
+//             messages plus source (task|message|moment), title, shiftDate ('YYYY-MM-DD')
 (function () {
   const auth = window.CareNestAuth;
   const store = window.CareNestStore;
   const family = window.CareNestFamily;
   const page = document.body.dataset.page;
-  if (!store || (page !== "home" && page !== "messages" && page !== "parent")) return;
+  if (!store || !["home", "messages", "parent", "gallery"].includes(page)) return;
 
   const MOMENT_WINDOW_MS = 2 * 60 * 1000;
   const THREAD_LIMIT = 300;
+  // ponytail: the gallery shows the newest 500 photos; past that, paginate (load older on scroll).
+  const GALLERY_LIMIT = 500;
   const FORMER = "a former member";
 
   // Server error codes (raise exception '<code>') -> what to tell the person.
@@ -54,7 +58,7 @@
     moment_photo_too_early: "That photo was taken before the moment prompt. Take a new one now.",
     message_not_found: "That photo is no longer available. Reload the page.",
     reply_not_found: "That photo is no longer available.",
-    not_caretaker: "Only the sitter can share a moment.",
+    not_caretaker: "Only the sitter can do that.",
     not_parent: "Only a parent can do that.",
     household_not_found: "Please sign in again.",
     not_authenticated: "Please sign in again.",
@@ -153,7 +157,15 @@
       saves: {},
       album: [],
       flags: {},
+      gallery: [],
     };
+  }
+
+  // A photo for the gallery: task update (proof), photo message (chat with a photo), or moment.
+  function galleryItem(m, title, shiftDate) {
+    const source = m.kind === "task_proof" ? "task" : m.kind === "moment" ? "moment" : "message";
+    const fallback = source === "task" ? "Task" : source === "moment" ? "Moment" : "Photo message";
+    return Object.assign({}, m, { source, title: title || fallback, shiftDate });
   }
 
   // Proofs and moments of the current shift, newest first, with the check's snapshot title.
@@ -189,6 +201,7 @@
     const blobReady = new Map(); // Storage path -> Blob, once downloaded (for a synchronous share)
     const wantParent = page === "parent" && ctx.role === "parent";
     const wantThread = page === "messages" || wantParent;
+    const wantGallery = page === "gallery";
     let state = emptyState();
     let loadSeq = 0;
     let reloadTimer = null;
@@ -242,7 +255,7 @@
       }
 
       const none = { data: [] };
-      const [checksRes, eventsRes, visitMsgsRes, threadRes, readsRes, savesRes, flagsRes] = await Promise.all([
+      const [checksRes, eventsRes, visitMsgsRes, threadRes, readsRes, savesRes, flagsRes, galleryRes] = await Promise.all([
         visit
           ? client
               .from("task_checks")
@@ -286,11 +299,35 @@
               .limit(THREAD_LIMIT)
           : none,
         wantParent ? client.from("concept_flags").select("message_id, text") : none,
+        // Newest first so the ceiling drops the oldest photos; shown oldest first below.
+        wantGallery
+          ? client
+              .from("messages")
+              .select(`${MSG_COLS}, visit:visits(visit_date)`)
+              .eq("household_id", householdId)
+              .not("photo_path", "is", null)
+              .order("created_at", { ascending: false })
+              .limit(GALLERY_LIMIT)
+          : none,
       ]);
-      const failed = [checksRes, eventsRes, visitMsgsRes, threadRes, readsRes, savesRes, flagsRes].find(
+      const failed = [checksRes, eventsRes, visitMsgsRes, threadRes, readsRes, savesRes, flagsRes, galleryRes].find(
         (r) => r.error
       );
       if (failed) throw failed.error;
+      // Past shifts show the task as it was checked off (task_checks snapshot), not the live task.
+      const galleryRows = (galleryRes.data || []).slice().reverse();
+      const proofVisits = Array.from(new Set(galleryRows.filter((r) => r.kind === "task_proof").map((r) => r.visit_id)));
+      // 100 ids per request keeps each URL well under PostgREST/proxy limits on a long history.
+      const visitChunks = [];
+      for (let i = 0; i < proofVisits.length; i += 100) visitChunks.push(proofVisits.slice(i, i + 100));
+      const snapshotResults = await Promise.all(
+        visitChunks.map((ids) => client.from("task_checks").select("visit_id, task_id, task_title").in("visit_id", ids))
+      );
+      const snapshotFailed = snapshotResults.find((r) => r.error);
+      if (snapshotFailed) throw snapshotFailed.error;
+      const snapshotTitles = new Map(
+        snapshotResults.flatMap((r) => r.data || []).map((c) => [`${c.visit_id}/${c.task_id}`, c.task_title])
+      );
       if (seq !== loadSeq) return; // a newer load is on its way
 
       const events = (eventsRes.data || []).map((e) => ({
@@ -362,6 +399,11 @@
           .filter((r) => r.message && r.message.photo_path)
           .map((r) => Object.assign(toMessage(r.message), { title: r.message.kind === "moment" ? "Moment" : (r.message.task && r.message.task.title) || "Task" })),
         flags: Object.fromEntries((flagsRes.data || []).map((r) => [r.message_id, r.text])),
+        gallery: galleryRows.map((r) => {
+          const m = toMessage(r);
+          const title = m.kind === "task_proof" ? snapshotTitles.get(`${r.visit_id}/${r.task_id}`) || m.taskTitle : null;
+          return galleryItem(m, title, r.visit ? r.visit.visit_date : null);
+        }),
       };
       notify();
     }
@@ -535,6 +577,25 @@
         await load();
         return { late: Boolean(row && row.late) };
       },
+      // A photo message (gallery "+"): a chat row with a photo in this shift's folder. The
+      // database allows it only for the sitter, in an open in-window shift; the caption may be empty.
+      async postPhoto({ file, body }) {
+        requireActive();
+        const blob = await store.downscaleImageBlob(file);
+        const path = await uploadPhoto(blob);
+        const { error } = await client.from("messages").insert({
+          household_id: householdId,
+          visit_id: state.visit.id,
+          kind: "chat",
+          body: String(body || "").trim(),
+          photo_path: path,
+        });
+        if (error) {
+          await discardUpload(path);
+          throw error;
+        }
+        await load();
+      },
       // Parents only (the database refuses sitters): moves the prompt to 1-5 minutes from now.
       async triggerMomentNow() {
         if (!state.visit) throw friendly("No shift is open.");
@@ -683,7 +744,7 @@
         const senderRole = m.sender === "parent" ? "parent" : "caretaker";
         const completion = m.kind === "task_proof" ? completions[m.taskId] : null;
         const task = data.schedule.find((s) => s.id === m.taskId);
-        const photo = m.kind === "moment" ? m.photo : completion ? completion.photoDataUrl : null;
+        const photo = m.kind === "task_proof" ? completion && completion.photoDataUrl : m.photo;
         return {
           id: m.id,
           kind: m.kind,
@@ -762,7 +823,16 @@
           .map((m) => Object.assign({}, m, { title: m.kind === "moment" ? "Moment" : m.taskTitle || "Task" }))
           .reverse(),
         flags: Object.fromEntries(Object.entries(store.getInsights()).map(([id, i]) => [id, i.text])),
+        // The demo keeps no shift dates, so a photo's shift date is its local send date.
+        gallery: thread
+          .filter((m) => m.photoPath)
+          .map((m) => galleryItem(m, m.kind === "task_proof" ? m.taskTitle : null, localDay(m.createdAt))),
       };
+    }
+
+    function localDay(ms) {
+      const d = new Date(ms);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     }
 
     function rebuild() {
@@ -817,6 +887,10 @@
         const message = store.postMoment({ photoDataUrl: dataUrl, body });
         return { late: Boolean(message.late) };
       },
+      async postPhoto({ file, body }) {
+        const photoDataUrl = await store.downscaleImage(file);
+        store.postPhoto({ photoDataUrl, body });
+      },
       async triggerMomentNow() {
         if (!store.isShiftActive()) store.resetShift();
         store.triggerMomentNow();
@@ -867,7 +941,7 @@
     } else {
       const asParent =
         page === "parent" ||
-        (page === "messages" && new URLSearchParams(window.location.search).get("as") === "parent");
+        ((page === "messages" || page === "gallery") && new URLSearchParams(window.location.search).get("as") === "parent");
       backend = createDemoBackend(data, asParent ? "parent" : "caretaker");
     }
     await backend.init();
