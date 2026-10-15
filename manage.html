@@ -31,6 +31,18 @@
         </div>
 
         <div class="manage-sections" id="manage-sections" hidden>
+          <section class="card auth-card day-notes-manage" aria-labelledby="day-notes-heading">
+            <h2 class="panel-title" id="day-notes-heading">Important today</h2>
+            <p class="signin-note">
+              Notes for one day: routine changes, special instructions, schedule changes, food or
+              medication reminders. Your sitter sees them at the top of their page on that day.
+            </p>
+            <label class="field-label" for="day-notes-date">Date</label>
+            <input class="text-input" id="day-notes-date" type="date" required />
+            <ul class="people-list" id="list-day-notes"></ul>
+            <button type="button" class="primary-btn" data-add="day-notes">Add a note</button>
+          </section>
+
           <section class="card auth-card" aria-labelledby="child-heading">
             <h2 class="panel-title" id="child-heading">Your child</h2>
             <form class="invite-form" id="child-form" novalidate>

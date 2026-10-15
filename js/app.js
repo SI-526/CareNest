@@ -43,12 +43,14 @@
   // sample data, so it is the one to wait on.
   const readySource = window.CareNestFamily || window.CareNestAuth;
   const authReady = readySource ? readySource.ready : Promise.resolve();
-  authReady.then(() => {
+  authReady.then((ctx) => {
     if ((page === "home" || page === "messages") && window.CareNestShift) {
       window.CareNestShift.ready.then((backend) => {
         shift = backend;
-        if (page === "home") initHome();
-        else initMessages();
+        if (page === "home") {
+          initHome();
+          initDayNotes(ctx);
+        } else initMessages();
       });
     } else if (page === "food") {
       initFood();
@@ -89,6 +91,170 @@
       renderSchedule(document.getElementById("schedule-list"));
       applyShiftLockToCompleteModal();
     });
+  }
+
+  // ---------- Important today (day notes) ----------
+  // Parent-written notes for the session's date: the LOCAL calendar date the open shift started
+  // on, or today's local date when no shift is open (never the UTC date: an evening shift in the
+  // US would lose its notes at UTC midnight). Signed in, they come from public.day_notes and
+  // refresh live; in demo mode they are the sample notes in js/data.js. A load failure only
+  // affects this section.
+  const DAY_NOTE_CATEGORIES = [
+    { key: "routine", label: "Routine change" },
+    { key: "instructions", label: "Special instruction" },
+    { key: "schedule", label: "Schedule change" },
+    { key: "food_meds", label: "Food or medication" },
+    { key: "other", label: "Other" },
+  ];
+
+  function localDateKey(ms) {
+    const d = new Date(ms);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  function clockLabel(ms) {
+    const d = new Date(ms);
+    const h = d.getHours();
+    const time = `${h % 12 === 0 ? 12 : h % 12}:${String(d.getMinutes()).padStart(2, "0")}${h >= 12 ? "pm" : "am"}`;
+    if (localDateKey(ms) === localDateKey(Date.now())) return time;
+    return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
+  }
+
+  function sortDayNotes(notes) {
+    const order = (n) => DAY_NOTE_CATEGORIES.findIndex((c) => c.key === n.category);
+    return notes.slice().sort((a, b) => order(a) - order(b) || a.createdAt - b.createdAt);
+  }
+
+  function dayNoteHtml(note) {
+    const category = DAY_NOTE_CATEGORIES.find((c) => c.key === note.category) || DAY_NOTE_CATEGORIES[4];
+    const updated = note.updatedAt > note.createdAt
+      ? `<span class="badge day-note-updated">Updated ${escapeHtml(clockLabel(note.updatedAt))}</span>`
+      : "";
+    const head = `<span class="tag-chip day-note-chip day-note-chip--${escapeHtml(category.key)}">${escapeHtml(category.label)}</span>
+      <span class="day-note-title">${escapeHtml(note.title)}</span>${updated}`;
+    if (!note.detail) {
+      return `<li class="day-note"><div class="day-note-summary day-note-plain">${head}</div></li>`;
+    }
+    return `<li class="day-note">
+      <details class="day-note-details" data-note-id="${escapeHtml(note.id)}">
+        <summary class="day-note-summary">${head}</summary>
+        <p class="day-note-detail">${escapeHtml(note.detail)}</p>
+      </details>
+    </li>`;
+  }
+
+  function initDayNotes(ctx) {
+    const listEl = document.getElementById("day-notes-list");
+    const statusEl = document.getElementById("day-notes-status");
+    const dateEl = document.getElementById("day-notes-date");
+    if (!listEl || !statusEl) return;
+
+    const live = Boolean(ctx && !ctx.demo && ctx.client && ctx.household && !shift.demo);
+    let shownIds = new Set();
+    let shownDate = null;
+    let reloadTimer = null;
+
+    function sessionDate() {
+      const st = shift.state;
+      if (st && st.active && st.visit && st.visit.startedAt) return localDateKey(st.visit.startedAt);
+      return localDateKey(Date.now());
+    }
+
+    function render(notes, date) {
+      shownDate = date;
+      if (dateEl) {
+        dateEl.textContent = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+        });
+      }
+      // Keep notes the sitter opened open across live refreshes.
+      const open = new Set(
+        Array.from(listEl.querySelectorAll("details[open]")).map((el) => el.dataset.noteId)
+      );
+      const sorted = sortDayNotes(notes);
+      shownIds = new Set(sorted.map((n) => n.id));
+      listEl.innerHTML = sorted.map(dayNoteHtml).join("");
+      listEl.querySelectorAll("details[data-note-id]").forEach((el) => {
+        if (open.has(el.dataset.noteId)) el.open = true;
+      });
+      listEl.hidden = !sorted.length;
+      statusEl.textContent = sorted.length ? "" : "No special updates for today.";
+      statusEl.hidden = Boolean(sorted.length);
+    }
+
+    function showError() {
+      shownIds = new Set();
+      listEl.innerHTML = "";
+      listEl.hidden = true;
+      statusEl.textContent = "Couldn't load today's notes.";
+      statusEl.hidden = false;
+    }
+
+    if (!live) {
+      render(data.dayNotes || [], localDateKey(Date.now()));
+      return;
+    }
+
+    const client = ctx.client;
+    const householdId = ctx.household.id;
+
+    async function load() {
+      const date = sessionDate();
+      try {
+        const { data: rows, error } = await client
+          .from("day_notes")
+          .select("id, category, title, detail, created_at, updated_at")
+          .eq("household_id", householdId)
+          .eq("note_date", date)
+          .order("created_at", { ascending: true });
+        if (error) throw error;
+        render(
+          (rows || []).map((r) => ({
+            id: r.id,
+            category: r.category,
+            title: r.title,
+            detail: r.detail || "",
+            createdAt: Date.parse(r.created_at),
+            updatedAt: Date.parse(r.updated_at),
+          })),
+          date
+        );
+      } catch (error) {
+        console.warn("CareNest: day notes failed to load", error);
+        showError();
+      }
+    }
+
+    function scheduleReload() {
+      clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(load, 250);
+    }
+
+    load();
+    // RLS limits the stream to this household. Realtime cannot filter DELETE events by column,
+    // so deletes arrive unfiltered: reload only when a note on screen was deleted.
+    client
+      .channel(`carenest-day-notes-${householdId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "day_notes", filter: `household_id=eq.${householdId}` },
+        scheduleReload
+      )
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "day_notes" }, (payload) => {
+        if (payload.old && shownIds.has(payload.old.id)) scheduleReload();
+      })
+      .subscribe();
+    // A shift starting or ending (or the clock passing midnight) can change the session date.
+    shift.subscribe(() => {
+      if (sessionDate() !== shownDate) scheduleReload();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") scheduleReload();
+    });
+    window.addEventListener("online", scheduleReload);
   }
 
   function initNavigation() {

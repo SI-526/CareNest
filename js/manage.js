@@ -15,6 +15,34 @@
 
   const SEVERITIES = ["Mild", "Moderate", "Severe"];
 
+  // "Important today" notes (public.day_notes): one calendar date each, shown to the sitter at the
+  // top of their page on that date. Listed in this category order, then oldest first.
+  const DAY_NOTE_CATEGORIES = [
+    { value: "routine", label: "Routine change" },
+    { value: "instructions", label: "Special instruction" },
+    { value: "schedule", label: "Schedule change" },
+    { value: "food_meds", label: "Food or medication" },
+    { value: "other", label: "Other" },
+  ];
+  const DAY_NOTE_FIELDS = [
+    { name: "category", label: "Type", type: "select", options: DAY_NOTE_CATEGORIES, required: true },
+    { name: "title", label: "Title", type: "text", max: 140, required: true },
+    { name: "detail", label: "Details", type: "textarea", max: 2000, optional: true },
+  ];
+
+  // Today's date in the browser's time zone (YYYY-MM-DD), the sitter page's default too.
+  function localToday() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  function clockLabel(iso) {
+    const d = new Date(iso);
+    const h = d.getHours();
+    return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${h % 12 === 0 ? 12 : h % 12}:${String(d.getMinutes()).padStart(2, "0")}${h >= 12 ? "pm" : "am"}`;
+  }
+
   // Field definitions per list. type: text | textarea | time | tel | select.
   const TASK_FIELDS = [
     { name: "time_of_day", label: "Time", type: "time", optional: true },
@@ -68,7 +96,7 @@
 
     const client = ctx.client;
     const householdId = ctx.household.id;
-    const state = { plan: null, tasks: [], care: {}, contacts: [] };
+    const state = { plan: null, tasks: [], care: {}, contacts: [], dayNotes: [], dayNotesError: null };
     CATEGORIES.forEach((c) => (state.care[c.key] = []));
 
     const sectionsEl = document.getElementById("manage-sections");
@@ -111,6 +139,25 @@
           sub: (r) => r.location || r.detail || "",
         };
       }
+      if (key === "day-notes") {
+        return {
+          table: "day_notes",
+          noun: "note",
+          rows: state.dayNotes,
+          fields: DAY_NOTE_FIELDS,
+          reorder: false,
+          empty: state.dayNotesError || "No notes for this day.",
+          summary: (r) => r.title,
+          sub: (r) =>
+            [
+              (DAY_NOTE_CATEGORIES.find((c) => c.value === r.category) || {}).label,
+              Date.parse(r.updated_at) > Date.parse(r.created_at) ? `Updated ${clockLabel(r.updated_at)}` : "",
+              r.detail,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+        };
+      }
       if (key === "contacts") {
         return {
           table: "contacts",
@@ -138,7 +185,7 @@
       const list = document.getElementById(`list-${key}`);
       const rows = config.rows;
       if (!rows.length) {
-        list.innerHTML = '<li class="people-row"><p class="people-sub">No information provided</p></li>';
+        list.innerHTML = `<li class="people-row"><p class="people-sub">${esc(config.empty || "No information provided")}</p></li>`;
         return;
       }
       list.innerHTML = rows
@@ -151,8 +198,8 @@
               ${sub ? `<p class="people-sub manage-sub">${esc(sub)}</p>` : ""}
             </div>
             <div class="manage-actions">
-              <button type="button" class="photo-source-btn manage-icon-btn" data-move="-1" data-list="${key}" data-id="${esc(row.id)}" aria-label="Move ${esc(name)} up"${index === 0 ? " disabled" : ""}>↑</button>
-              <button type="button" class="photo-source-btn manage-icon-btn" data-move="1" data-list="${key}" data-id="${esc(row.id)}" aria-label="Move ${esc(name)} down"${index === rows.length - 1 ? " disabled" : ""}>↓</button>
+              ${config.reorder === false ? "" : `<button type="button" class="photo-source-btn manage-icon-btn" data-move="-1" data-list="${key}" data-id="${esc(row.id)}" aria-label="Move ${esc(name)} up"${index === 0 ? " disabled" : ""}>↑</button>
+              <button type="button" class="photo-source-btn manage-icon-btn" data-move="1" data-list="${key}" data-id="${esc(row.id)}" aria-label="Move ${esc(name)} down"${index === rows.length - 1 ? " disabled" : ""}>↓</button>`}
               <button type="button" class="photo-source-btn people-action" data-edit data-list="${key}" data-id="${esc(row.id)}" aria-label="Edit ${esc(name)}">Edit</button>
               ${key === "tasks"
                 ? `<button type="button" class="danger-btn people-action" data-delete data-list="${key}" data-id="${esc(row.id)}" aria-label="Remove ${esc(name)} from schedule">Remove from schedule</button>`
@@ -164,7 +211,7 @@
     }
 
     function allListKeys() {
-      return ["tasks", "contacts"].concat(CATEGORIES.map((c) => `care-${c.key}`));
+      return ["day-notes", "tasks", "contacts"].concat(CATEGORIES.map((c) => `care-${c.key}`));
     }
 
     function renderAll() {
@@ -185,6 +232,31 @@
         return String(a.created_at).localeCompare(String(b.created_at));
       });
     }
+
+    // Day notes load on their own: a failure here (for example before the day_notes migration is
+    // applied) shows in this list only and leaves the rest of the page editable.
+    const dayNotesDateEl = document.getElementById("day-notes-date");
+    dayNotesDateEl.value = localToday();
+
+    async function loadDayNotes() {
+      const order = (r) => DAY_NOTE_CATEGORIES.findIndex((c) => c.value === r.category);
+      const { data, error } = await client
+        .from("day_notes")
+        .select("id, category, title, detail, created_at, updated_at")
+        .eq("household_id", householdId)
+        .eq("note_date", dayNotesDateEl.value || localToday())
+        .order("created_at", { ascending: true });
+      state.dayNotesError = error ? friendly(error) : null;
+      state.dayNotes = error
+        ? []
+        : data.slice().sort((a, b) => order(a) - order(b) || String(a.created_at).localeCompare(String(b.created_at)));
+    }
+
+    dayNotesDateEl.addEventListener("change", async () => {
+      if (!dayNotesDateEl.value) dayNotesDateEl.value = localToday();
+      await loadDayNotes();
+      renderList("day-notes");
+    });
 
     async function load() {
       loadingEl.hidden = false;
@@ -210,6 +282,7 @@
           .order("position", { ascending: true })
           .order("created_at", { ascending: true })
           .limit(1),
+        loadDayNotes(),
       ]);
       loadingEl.hidden = true;
       const error = household.error || contacts.error || careItems.error || plans.error;
@@ -304,9 +377,10 @@
       if (field.type === "textarea") {
         control = `<textarea class="text-input manage-textarea" id="${id}" name="${field.name}" rows="3"${max}${required}>${esc(value || "")}</textarea>`;
       } else if (field.type === "select") {
-        control = `<select class="text-input" id="${id}" name="${field.name}">
-          <option value="">None</option>
-          ${field.options.map((o) => `<option value="${esc(o)}"${o === value ? " selected" : ""}>${esc(o)}</option>`).join("")}
+        const options = field.options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
+        control = `<select class="text-input" id="${id}" name="${field.name}"${required}>
+          ${field.required ? "" : '<option value="">None</option>'}
+          ${options.map((o) => `<option value="${esc(o.value)}"${o.value === value ? " selected" : ""}>${esc(o.label)}</option>`).join("")}
         </select>`;
       } else {
         const v = field.type === "time" ? (value || "").slice(0, 5) : value || "";
@@ -361,10 +435,13 @@
           const { error } = await client.from(config.table).update(values).eq("id", editing.row.id);
           if (error) throw error;
         } else {
-          const nextPosition = config.rows.reduce((max, r) => Math.max(max, r.position), -1) + 1;
-          const insert = Object.assign({ position: nextPosition }, values);
+          const insert = Object.assign({}, values);
+          if (config.reorder !== false) {
+            insert.position = config.rows.reduce((max, r) => Math.max(max, r.position), -1) + 1;
+          }
           if (config.table === "tasks") insert.plan_id = (await ensurePlan()).id;
           else insert.household_id = householdId;
+          if (config.table === "day_notes") insert.note_date = dayNotesDateEl.value || localToday();
           if (config.category) insert.category = config.category;
           const { error } = await client.from(config.table).insert(insert);
           if (error) throw error;

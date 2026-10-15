@@ -13,6 +13,36 @@ window.CareNestData = {
     shiftTime: "3:00pm - 7:00pm",
   },
 
+  // "Important today": parent-written notes for today's session. Demo only; signed-in
+  // families load them from public.day_notes (js/app.js). Times are relative to page load.
+  dayNotes: [
+    {
+      id: "demo-pickup",
+      category: "schedule",
+      title: "Pick Jack up from soccer at 4:30pm",
+      detail: "Practice runs late on Thursdays. Bring his water bottle; it's by the front door.",
+      createdAt: Date.now() - 3 * 60 * 60 * 1000,
+      updatedAt: Date.now() - 3 * 60 * 60 * 1000,
+    },
+    {
+      id: "demo-meds",
+      category: "food_meds",
+      title: "Amoxicillin with dinner (5 ml)",
+      detail:
+        "The bottle is in the fridge door with the syringe next to it. Shake well first. He had his morning dose at 8am.",
+      createdAt: Date.now() - 3 * 60 * 60 * 1000,
+      updatedAt: Date.now() - 25 * 60 * 1000,
+    },
+    {
+      id: "demo-grandma",
+      category: "other",
+      title: "Grandma may stop by around 6pm",
+      detail: "",
+      createdAt: Date.now() - 2 * 60 * 60 * 1000,
+      updatedAt: Date.now() - 2 * 60 * 60 * 1000,
+    },
+  ],
+
   contacts: [
     {
       id: "mary",
