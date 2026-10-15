@@ -20,6 +20,7 @@
     renderSitterHeader(document.getElementById("sitter-header"));
     renderShift();
     renderSchedule(document.getElementById("schedule-list"));
+    renderEmergencyEntry(document.getElementById("emergency-entry"));
     renderContacts(document.getElementById("contacts-list"));
     renderKnowTiles(document.getElementById("know-grid"));
     initModal();
@@ -31,9 +32,11 @@
     const list = document.getElementById("restriction-list");
     const careNoteEl = document.getElementById("care-note-body");
 
-    list.innerHTML = allergies.items
-      .map(
-        (item) => `
+    const items = allergies.items || [];
+    list.innerHTML = items.length
+      ? items
+          .map(
+            (item) => `
       <article class="restriction-item">
         <img class="restriction-thumb" src="${item.image}" alt="" width="64" height="64" />
         <div class="restriction-content">
@@ -44,10 +47,15 @@
           <p class="restriction-desc">${escapeHtml(item.description)}</p>
         </div>
       </article>`
-      )
-      .join("");
+          )
+          .join("")
+      : emptyStateHtml("");
 
-    careNoteEl.textContent = allergies.careNote;
+    if (allergies.careNote) {
+      careNoteEl.textContent = allergies.careNote;
+    } else {
+      careNoteEl.closest(".care-note").hidden = true;
+    }
   }
 
   function initInfo() {
@@ -58,6 +66,166 @@
     const titleEl = document.getElementById("info-title");
     if (titleEl) titleEl.textContent = title;
     document.title = `CareNest — ${title}`;
+
+    const contentEl = document.getElementById("info-content");
+    if (!contentEl) return;
+
+    if (!category || !categoryHasContent(category)) {
+      contentEl.innerHTML = `<section class="panel">${emptyStateHtml()}</section>`;
+      return;
+    }
+
+    contentEl.innerHTML = [
+      renderEmergencyCallout(category.callout),
+      renderEmergencySteps(category.steps),
+      renderHospital(category.hospital),
+      renderEmergencyContacts(category.contacts),
+      renderInfoItems(category.items),
+    ].join("");
+  }
+
+  function categoryHasContent(category) {
+    return Boolean(
+      (category.items && category.items.length) ||
+        (category.steps && category.steps.length) ||
+        category.hospital ||
+        (category.contacts && category.contacts.length)
+    );
+  }
+
+  function emptyStateHtml(cardClass = "card") {
+    return `<div class="${cardClass} empty-state"><p>No information provided</p></div>`;
+  }
+
+  function renderInfoItems(items) {
+    if (!items || !items.length) return "";
+    return `
+      <section class="panel">
+        <ul class="info-list">
+          ${items
+            .map(
+              (item) => `
+            <li class="info-item">
+              <h2 class="info-item-title">${escapeHtml(item.title)}</h2>
+              ${item.detail ? `<p class="info-item-detail">${escapeHtml(item.detail)}</p>` : ""}
+            </li>`
+            )
+            .join("")}
+        </ul>
+      </section>`;
+  }
+
+  function renderEmergencyCallout(callout) {
+    if (!callout) return "";
+    return `
+      <section class="emergency-callout" aria-label="Call 911">
+        <p>${escapeHtml(callout.text)}</p>
+        <a class="emergency-call-btn" href="${escapeHtml(callout.href)}">${escapeHtml(callout.label)}</a>
+      </section>`;
+  }
+
+  function renderEmergencySteps(steps) {
+    if (!steps || !steps.length) return "";
+    return `
+      <section class="panel" aria-labelledby="steps-heading">
+        <h2 class="panel-title" id="steps-heading">What to do</h2>
+        <div class="card">
+          <ol class="emergency-steps">
+            ${steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+          </ol>
+        </div>
+      </section>`;
+  }
+
+  function renderHospital(hospital) {
+    if (!hospital) return "";
+    const callBtn = hospital.phoneHref
+      ? `<a class="call-btn" href="${escapeHtml(hospital.phoneHref)}" aria-label="Call ${escapeHtml(hospital.name)}">
+          <img src="assets/call.svg" alt="" width="23" height="22" />
+        </a>`
+      : "";
+    const address = hospital.mapHref
+      ? `<a class="hospital-address" href="${escapeHtml(hospital.mapHref)}" target="_blank" rel="noopener">${escapeHtml(hospital.address)}<span class="visually-hidden"> (opens map in a new tab)</span></a>`
+      : `<p class="hospital-address">${escapeHtml(hospital.address)}</p>`;
+    return `
+      <section class="panel" aria-labelledby="hospital-heading">
+        <h2 class="panel-title" id="hospital-heading">Hospital</h2>
+        <div class="card hospital-card">
+          <div class="hospital-meta">
+            <p class="contact-name">${escapeHtml(hospital.name)}</p>
+            ${hospital.system ? `<p class="hospital-system">${escapeHtml(hospital.system)}</p>` : ""}
+            <div class="modal-location">
+              <img src="assets/location.svg" alt="" width="16" height="16" />
+              ${address}
+            </div>
+            ${hospital.phone ? `<p class="contact-phone">${escapeHtml(hospital.phone)}</p>` : ""}
+          </div>
+          ${callBtn}
+        </div>
+      </section>`;
+  }
+
+  function renderEmergencyContacts(contacts) {
+    if (!contacts || !contacts.length) return "";
+    const resolved = contacts
+      .map((c) => {
+        if (!c.contactId) return c;
+        const base = data.contacts.find((d) => d.id === c.contactId);
+        return base ? Object.assign({}, base, c) : null;
+      })
+      .filter(Boolean);
+    if (!resolved.length) return "";
+    return `
+      <section class="panel" aria-labelledby="who-heading">
+        <h2 class="panel-title" id="who-heading">Who to contact</h2>
+        <div class="contacts-list">
+          ${resolved
+            .map((contact) => {
+              const avatar = contact.avatar
+                ? `<img class="contact-avatar" src="${escapeHtml(contact.avatar)}" alt="" width="35" height="35" />`
+                : `<span class="contact-avatar contact-initials" aria-hidden="true">${escapeHtml(initials(contact.name))}</span>`;
+              return `
+            <article class="contact-card">
+              ${avatar}
+              <div class="contact-meta">
+                <p class="contact-name">${escapeHtml(contact.name)}</p>
+                ${contact.role ? `<p class="contact-role">${escapeHtml(contact.role)}</p>` : ""}
+                <p class="contact-phone">${escapeHtml(contact.phone)}</p>
+              </div>
+              <a class="call-btn" href="${escapeHtml(contact.phoneHref)}" aria-label="Call ${escapeHtml(contact.name)}">
+                <img src="assets/call.svg" alt="" width="23" height="22" />
+              </a>
+            </article>`;
+            })
+            .join("")}
+        </div>
+      </section>`;
+  }
+
+  function initials(name) {
+    return String(name)
+      .replace(/^Dr\.\s*/, "")
+      .split(/\s+/)
+      .map((part) => part.charAt(0))
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+  }
+
+  function renderEmergencyEntry(el) {
+    if (!el) return;
+    const emergency = data.categories.emergency;
+    if (!emergency) return;
+    el.innerHTML = `
+      <a class="emergency-card" href="info.html?category=emergency">
+        <span class="emergency-card-icon" aria-hidden="true">
+          <img src="assets/emergency.svg" alt="" width="22" height="22" />
+        </span>
+        <span class="emergency-card-meta">
+          <span class="emergency-card-title">${escapeHtml(emergency.title)}</span>
+          <span class="emergency-card-text">${escapeHtml(emergency.summary)}</span>
+        </span>
+      </a>`;
   }
 
   function renderSitterHeader(el) {
@@ -547,6 +715,13 @@
       careEl.hidden = false;
     } else {
       careEl.hidden = true;
+    }
+
+    const emptyEl = overlay.querySelector("[data-modal-empty]");
+    if (emptyEl) {
+      emptyEl.hidden = Boolean(
+        item.detail || item.location || item.map || item.careNote
+      );
     }
 
     const photoWrap = overlay.querySelector("[data-modal-photo-wrap]");
