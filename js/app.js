@@ -1439,9 +1439,10 @@
       : () => {
           const logged =
             item.check && !item.check.afterReopen && shift.state.events.some((e) => e.kind === "reopened");
+          const photoNote = item.check && item.check.proof ? " The photo message stays in Messages." : "";
           const body = logged
-            ? `${item.title} will go back to not done. Because this shift was reopened, the uncheck is recorded in the shift history. The photo message stays in Messages.`
-            : `${item.title} will go back to not done. The photo message stays in Messages.`;
+            ? `${item.title} will go back to not done. Because this shift was reopened, the uncheck is recorded in the shift history.${photoNote}`
+            : `${item.title} will go back to not done.${photoNote}`;
           const ask = window.CareNestAuth && window.CareNestAuth.confirmDialog
             ? window.CareNestAuth.confirmDialog({ title: "Uncheck this task?", body, confirmLabel: "Uncheck" })
             : Promise.resolve(window.confirm(body));

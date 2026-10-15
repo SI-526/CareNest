@@ -382,9 +382,10 @@
         item.late,
         item.afterReopen,
         item.createdAt,
+        item.senderName,
         state.isNew,
         state.flag,
-        state.replies.map((r) => r.id),
+        state.replies.map((r) => [r.id, r.senderName]),
       ]);
       if (sig !== entry.sig) {
         entry.sig = sig;
