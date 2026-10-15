@@ -21,7 +21,7 @@
   // messages.html?as=parent (a second tab in the same browser stays in sync via the store).
   const role =
     page === "parent" ||
-    (page === "messages" && new URLSearchParams(window.location.search).get("as") === "parent")
+    ((page === "messages" || page === "gallery") && new URLSearchParams(window.location.search).get("as") === "parent")
       ? "parent"
       : "sitter";
   if (role === "parent") document.body.dataset.role = "parent";
@@ -1496,6 +1496,18 @@
         </li>`;
     }
 
+    // Photo message (sent from the gallery): the photo, then the caption if there is one.
+    if (message.photoPath || message.photoRemoved) {
+      return `
+      <li class="msg ${side}" id="msg-${escapeHtml(message.id)}">
+        <article class="msg-card photo-msg-card" aria-label="Photo from ${escapeHtml(message.senderName)}">
+          ${threadPhotoHtml(message, `Photo message from ${message.senderName}`)}
+          ${message.body ? `<p class="msg-card-note">${escapeHtml(message.body)}</p>` : ""}
+          ${threadMeta(message)}
+        </article>
+      </li>`;
+    }
+
     const target = message.replyTo ? byId[message.replyTo] : null;
     const replyRef = message.replyTo
       ? target
@@ -1751,6 +1763,12 @@
       href: "parent.html#album",
       label: "Album",
       icon: '<path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2ZM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5Z" />',
+    },
+    {
+      id: "gallery",
+      href: "gallery.html?as=parent",
+      label: "Gallery",
+      icon: '<path d="M22 16V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2Zm-11-4 2.03 2.71L16 11l4 5H8l3-4ZM2 6v14a2 2 0 0 0 2 2h14v-2H4V6H2Z" />',
     },
     {
       id: "messages",

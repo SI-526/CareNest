@@ -270,6 +270,25 @@
       return message;
     },
 
+    // Photo message (gallery "+"): a sitter's chat message with a photo; the caption may be empty.
+    postPhoto({ photoDataUrl, body }) {
+      const state = read();
+      requireActiveShift(state);
+      if (!isPhotoDataUrl(photoDataUrl)) throw new Error("A photo is required.");
+      const message = {
+        id: newId(),
+        kind: "chat",
+        body: String(body || "").trim(),
+        photo: photoDataUrl,
+        shiftId: state.shift.id,
+        sender: "sitter",
+        sentAt: Date.now(),
+      };
+      state.messages.push(message);
+      write(state);
+      return message;
+    },
+
     // Parent read receipts: messageId -> { messageId, reader, seenAt }.
     getReads() {
       return read().reads;
