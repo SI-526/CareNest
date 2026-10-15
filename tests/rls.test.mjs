@@ -6,7 +6,7 @@
 // random throwaway passwords and are deleted when the run ends.
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
@@ -918,10 +918,22 @@ test("unchecking an original-shift task after a reopen is logged; later checks a
   assert.equal((await uncheck(fam.parent, t[1])).data?.length, 1, "parent unchecks an original check");
   assert.equal((await uncheck(fam.sitter, t[4])).data?.length, 1, "sitter unchecks a post-reopen check");
 
-  // Deleting a task cascades its (original-shift) check away without logging an uncheck.
-  const deletedTask = await p.from("tasks").delete().eq("id", t[2]).select();
-  assert.ifError(deletedTask.error);
-  assert.equal(deletedTask.data.length, 1);
+  // Members cannot delete a task at all; archiving one keeps its original-shift check and
+  // logs no uncheck.
+  assertPermissionDenied(await p.from("tasks").delete().eq("id", t[2]).select(), "parent deletes a task");
+  const archived = await p
+    .from("tasks")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("id", t[2])
+    .select();
+  assert.ifError(archived.error);
+  assert.equal(archived.data.length, 1);
+  const { count: t2Checks } = await admin
+    .from("task_checks")
+    .select("*", { count: "exact", head: true })
+    .eq("visit_id", id)
+    .eq("task_id", t[2]);
+  assert.equal(t2Checks, 1, "archiving a task keeps its check");
 
   const history = (user) =>
     user.client
@@ -942,19 +954,177 @@ test("unchecking an original-shift task after a reopen is logged; later checks a
     assert.deepEqual(data, expected, "only original-shift unchecks are logged, with task and actor");
   }
 
-  // A deleted task's 'unchecked' event stays, with task_id null.
-  assert.ifError((await p.from("tasks").delete().eq("id", t[0])).error);
-  const { data: afterTaskDelete } = await history(fam.parent);
-  assert.deepEqual(afterTaskDelete[2], { kind: "unchecked", actor_id: fam.sitter.id, task_id: null });
+  // An archived task's 'unchecked' event keeps its task.
+  assert.ifError(
+    (await p.from("tasks").update({ archived_at: new Date().toISOString() }).eq("id", t[0])).error,
+  );
+  const { data: afterArchive } = await history(fam.parent);
+  assert.deepEqual(afterArchive, expected, "archiving a task leaves its history untouched");
 
-  // Deleting the plan (the reopened shift still holds an original check, t[3]) succeeds and
-  // takes the shift's history with it, logging nothing.
-  const before = await countEvents();
-  const deletedPlan = await p.from("plans").delete().eq("id", fam.planId).select();
+  // The service role (no signed-in member) removing an original check after the reopen is not
+  // a member's uncheck and logs nothing.
+  const serviceDelete = await admin
+    .from("task_checks")
+    .delete()
+    .eq("visit_id", id)
+    .eq("task_id", t[3])
+    .select();
+  assert.ifError(serviceDelete.error);
+  assert.equal(serviceDelete.data.length, 1);
+  assert.equal(await countEvents((q) => q.eq("visit_id", id)), expected.length, "service delete logged nothing");
+
+  // A plan with shifts cannot be deleted (its shifts' checks and history would go with it).
+  assertDenied(await p.from("plans").delete().eq("id", fam.planId).select(), "delete plan with shifts");
+  const { count: planCount } = await admin
+    .from("plans")
+    .select("*", { count: "exact", head: true })
+    .eq("id", fam.planId);
+  assert.equal(planCount, 1, "the plan survived");
+  assert.equal(await countEvents((q) => q.eq("visit_id", id)), expected.length);
+
+  // A plan with no shifts yet can still be deleted (its tasks go with it).
+  const fresh = await newFamily("fresh-plan", 2);
+  const deletedPlan = await fresh.parent.client.from("plans").delete().eq("id", fresh.planId).select();
   assert.ifError(deletedPlan.error);
   assert.equal(deletedPlan.data.length, 1);
-  assert.equal(await countEvents((q) => q.eq("visit_id", id)), 0);
-  assert.equal(await countEvents(), before - expected.length, "plan deletion logged nothing");
+  const { count: freshTasks } = await admin
+    .from("tasks")
+    .select("*", { count: "exact", head: true })
+    .in("id", fresh.taskIds);
+  assert.equal(freshTasks, 0);
+});
+
+test("re-checking a task after a reopen and unchecking it after a second reopen logs nothing", async () => {
+  const fam = await newFamily("recheck", 1);
+  const [x] = fam.taskIds;
+  const s = fam.sitter.client;
+  const visit = await s.from("visits").insert({ plan_id: fam.planId }).select().single();
+  assert.ifError(visit.error);
+  const id = visit.data.id;
+  const rpc = (name) => s.rpc(name, { target_visit_id: id });
+  assert.ifError((await rpc("end_visit")).error);
+  assert.ifError((await rpc("reopen_visit")).error);
+  assert.ifError((await s.from("task_checks").insert({ visit_id: id, task_id: x })).error);
+  assert.ifError((await rpc("end_visit")).error);
+  assert.ifError((await rpc("reopen_visit")).error);
+  const unchecked = await s.from("task_checks").delete().eq("visit_id", id).eq("task_id", x).select();
+  assert.equal(unchecked.data?.length, 1);
+  const { data } = await s.from("shift_events").select("kind").eq("visit_id", id).order("created_at");
+  assert.deepEqual(
+    data.map((e) => e.kind),
+    ["ended", "reopened", "ended", "reopened"],
+    "a check made after the first end is not an original-shift check",
+  );
+});
+
+test("a parent archives a task: its past checks and history stay, and it cannot be checked again", async () => {
+  const fam = await newFamily("archive", 2);
+  const [t0, t1] = fam.taskIds;
+  const s = fam.sitter.client;
+  const p = fam.parent.client;
+  const visit = await s.from("visits").insert({ plan_id: fam.planId }).select().single();
+  assert.ifError(visit.error);
+  const id = visit.data.id;
+  assert.ifError((await s.from("task_checks").insert({ visit_id: id, task_id: t0 })).error);
+  assert.ifError((await s.rpc("end_visit", { target_visit_id: id })).error);
+
+  // A caretaker cannot archive (or delete) a task.
+  assertDenied(
+    await s.from("tasks").update({ archived_at: new Date().toISOString() }).eq("id", t0).select(),
+    "caretaker archives a task",
+  );
+  assertPermissionDenied(await s.from("tasks").delete().eq("id", t0).select(), "caretaker deletes a task");
+  const { data: stillActive } = await admin.from("tasks").select("archived_at").eq("id", t0).single();
+  assert.equal(stillActive.archived_at, null, "caretaker's archive was refused");
+
+  const archived = await p
+    .from("tasks")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("id", t0)
+    .select();
+  assert.ifError(archived.error);
+  assert.equal(archived.data.length, 1);
+  assert.ok(archived.data[0].archived_at);
+
+  // The past check and the shift's history remain, and members still read the archived task.
+  for (const member of [fam.parent, fam.sitter]) {
+    const checks = await member.client.from("task_checks").select("task_id").eq("visit_id", id);
+    assert.deepEqual(checks.data, [{ task_id: t0 }], "the past check remains");
+    const events = await member.client.from("shift_events").select("kind").eq("visit_id", id);
+    assert.deepEqual(events.data, [{ kind: "ended" }], "the shift's history remains");
+    const task = await member.client.from("tasks").select("id, archived_at").eq("id", t0);
+    assert.equal(task.data?.length, 1, "members still read the archived task");
+    const schedule = await member.client
+      .from("tasks")
+      .select("id")
+      .eq("plan_id", fam.planId)
+      .is("archived_at", null);
+    assert.deepEqual(schedule.data, [{ id: t1 }], "the schedule shows only active tasks");
+  }
+
+  // After a reopen, the archived task cannot be checked; an active task can.
+  assert.ifError((await s.rpc("reopen_visit", { target_visit_id: id })).error);
+  assert.ifError((await s.from("task_checks").delete().eq("visit_id", id).eq("task_id", t0)).error);
+  assertDenied(
+    await s.from("task_checks").insert({ visit_id: id, task_id: t0 }).select(),
+    "check on an archived task",
+  );
+  const active = await s.from("task_checks").insert({ visit_id: id, task_id: t1 }).select();
+  assert.ifError(active.error);
+  assert.equal(active.data.length, 1);
+
+  // Even the service role cannot delete a task that still has checks: the foreign key no longer
+  // cascades, so history cannot be erased by deleting a task.
+  const serviceDelete = await admin.from("tasks").delete().eq("id", t1).select();
+  assert.equal(serviceDelete.error?.code, "23503", "a checked task cannot be deleted");
+  const { count } = await admin
+    .from("task_checks")
+    .select("*", { count: "exact", head: true })
+    .eq("visit_id", id);
+  assert.equal(count, 1);
+});
+
+test("an uncheck that races end_visit is refused once the shift has ended", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this two-session test needs a direct database connection");
+    return;
+  }
+  const fam = await newFamily("race", 1);
+  const [task] = fam.taskIds;
+  const s = fam.sitter.client;
+  const visit = await s.from("visits").insert({ plan_id: fam.planId }).select().single();
+  assert.ifError(visit.error);
+  const id = visit.data.id;
+  assert.ifError((await s.from("task_checks").insert({ visit_id: id, task_id: task })).error);
+
+  // Session 1 (psql, as the parent): end the shift and hold the transaction open.
+  const marker = `race-${randomUUID()}`;
+  const claims = JSON.stringify({ sub: uuid(fam.parent.id), role: "authenticated" });
+  const session = spawnPsql(`
+    begin;
+    set local role authenticated;
+    select set_config('request.jwt.claims', '${claims}', true);
+    select public.end_visit('${uuid(id)}');
+    select pg_sleep(4) /* ${marker} */;
+    commit;`);
+  // Wait until session 1 has ended the shift (it is now sleeping, holding the visit's lock).
+  await waitFor(() =>
+    psqlQuery(`select count(*) from pg_stat_activity where state = 'active' and query like '%${marker}%' and query not like '%pg_stat_activity%'`) === "1",
+  );
+
+  // Session 2 (the sitter, through the API): the delete policy still sees the shift open, so
+  // the uncheck waits on the visit's lock and, once the end commits, is refused.
+  const raced = await s.from("task_checks").delete().eq("visit_id", id).eq("task_id", task).select();
+  assert.equal(await session, 0, "session 1 committed");
+  assert.ok(raced.error, "the racing uncheck is refused");
+  assert.match(raced.error.message, /visit_ended/);
+  const { count } = await admin
+    .from("task_checks")
+    .select("*", { count: "exact", head: true })
+    .eq("visit_id", id);
+  assert.equal(count, 1, "the check survived on the ended shift");
+  const { data: ended } = await admin.from("visits").select("ended_at").eq("id", id).single();
+  assert.ok(ended.ended_at);
 });
 
 test("a shift dated outside yesterday..tomorrow (UTC) is read-only, under any session time zone", async () => {
@@ -962,7 +1132,8 @@ test("a shift dated outside yesterday..tomorrow (UTC) is read-only, under any se
   const [t0, t1] = fam.taskIds;
   const visitOn = {};
   // Clients cannot start these shifts, so the local SQL helper does: open shifts 2 days before
-  // and after the database's UTC date, and an open shift 3 days old with one check on it.
+  // and after the database's UTC date, and an open shift 3 days old, each with one check on it
+  // (so the refused unchecks below have a row to refuse).
   for (const offset of [-3, -2, 2]) {
     [{ id: visitOn[offset] }] = localSql(`
       insert into public.visits (plan_id, visit_date, started_by)
@@ -972,7 +1143,8 @@ test("a shift dated outside yesterday..tomorrow (UTC) is read-only, under any se
   }
   localSql(`
     insert into public.task_checks (visit_id, task_id, checked_by)
-    values ('${uuid(visitOn[-3])}', '${uuid(t0)}', '${uuid(fam.sitter.id)}')
+    select v.id, '${uuid(t0)}', '${uuid(fam.sitter.id)}'
+      from unnest(array['${uuid(visitOn[-3])}', '${uuid(visitOn[-2])}', '${uuid(visitOn[2])}']::uuid[]) as v(id)
     returning task_id::text as task_id`);
   for (const offset of [-1, 1]) {
     const v = await fam.sitter.client
@@ -1023,7 +1195,11 @@ test("a shift dated outside yesterday..tomorrow (UTC) is read-only, under any se
     .from("task_checks")
     .select("task_id")
     .in("visit_id", [visitOn[-3], visitOn[-2], visitOn[2]]);
-  assert.deepEqual(oldChecks, [{ task_id: t0 }], "the old shift's check survived the refusals");
+  assert.deepEqual(
+    oldChecks,
+    [{ task_id: t0 }, { task_id: t0 }, { task_id: t0 }],
+    "every out-of-window shift's check survived the refusals",
+  );
 
   // A shift nobody ended can still be ended for the record, in or out of the window...
   for (const offset of [-3, -2, 2, -1, 1]) {
@@ -1323,6 +1499,48 @@ async function countEvents(filter = (q) => q) {
   );
   assert.ifError(error);
   return count;
+}
+
+// Two-session tests talk to the local database directly with psql (status.DB_URL is local-only,
+// checked below), because one PostgREST request cannot hold a transaction open.
+const dbUrl = status.DB_URL;
+if (dbUrl && !["127.0.0.1", "localhost"].includes(new URL(dbUrl).hostname)) {
+  throw new Error("Refusing to use a non-local database URL");
+}
+
+function psqlAvailable() {
+  try {
+    execFileSync("psql", ["--version"], { stdio: "ignore" });
+    return Boolean(dbUrl);
+  } catch {
+    return false;
+  }
+}
+
+function psqlQuery(sql) {
+  return execFileSync("psql", [dbUrl, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c", sql], {
+    encoding: "utf8",
+  }).trim();
+}
+
+// Runs `sql` in its own psql session; resolves to psql's exit code.
+function spawnPsql(sql) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("psql", [dbUrl, "-Xq", "-v", "ON_ERROR_STOP=1"], {
+      stdio: ["pipe", "ignore", "inherit"],
+    });
+    child.on("error", reject);
+    child.on("exit", resolve);
+    child.stdin.end(sql);
+  });
+}
+
+async function waitFor(condition, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    assert.ok(Date.now() < deadline, "timed out waiting for the other session");
+    await new Promise((r) => setTimeout(r, 50));
+  }
 }
 
 // Catalog checks run as the local superuser through the Supabase CLI (`--local` only), so they
