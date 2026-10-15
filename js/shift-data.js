@@ -23,12 +23,16 @@
 //   saves     message id -> saved time (this parent's photo_saves)
 //   album     this parent's saved photo messages, newest save first
 //   flags     message id -> concept flag text (CONCEPT ONLY: typed by a parent, never analysis)
+//   logs      this shift's care logs, oldest first [{ id, taskId, category, note, mealAmount,
+//             bottleOz, authorName, authorRole, createdAt }] (append-only; SI-28)
+//   canLog    care logs can be added (a shift dated in the window, open or ended)
 //   gallery   the family's photos across shifts, oldest first, removed ones skipped (gallery page):
 //             messages plus source (task|message|moment), title, shiftDate ('YYYY-MM-DD')
 (function () {
   const auth = window.CareNestAuth;
   const store = window.CareNestStore;
   const family = window.CareNestFamily;
+  const careLog = window.CareNestCareLog;
   const page = document.body.dataset.page;
   if (!store || !["home", "messages", "parent", "gallery"].includes(page)) return;
 
@@ -64,6 +68,11 @@
     not_parent: "Only a parent can do that.",
     household_not_found: "Please sign in again.",
     not_authenticated: "Please sign in again.",
+    task_not_completed: "Complete this task before adding details.",
+    // CHECK constraints on care_logs (Postgres names them in the 23514 message).
+    care_logs_not_empty: "No information provided",
+    care_logs_bottle_oz_check: "Enter between 0.5 and 16 oz.",
+    care_logs_note_check: "Keep the note to 1000 characters or fewer.",
   };
 
   function friendly(message) {
@@ -159,8 +168,18 @@
       saves: {},
       album: [],
       flags: {},
+      logs: [],
+      canLog: false,
       gallery: [],
     };
+  }
+
+  // Client-side check before any write; the database enforces the same rules (care_logs CHECKs).
+  function checkCareLog(input) {
+    if (!careLog) return input;
+    const result = careLog.validate(input);
+    if (result.error) throw friendly(result.error);
+    return Object.assign({ taskId: input.taskId }, result.entry);
   }
 
   // A photo for the gallery: task update (proof), photo message (chat with a photo), or moment.
@@ -257,7 +276,7 @@
       }
 
       const none = { data: [] };
-      const [checksRes, eventsRes, visitMsgsRes, threadRes, readsRes, savesRes, flagsRes, galleryRes] = await Promise.all([
+      const [checksRes, eventsRes, visitMsgsRes, threadRes, readsRes, savesRes, flagsRes, logsRes, galleryRes] = await Promise.all([
         visit
           ? client
               .from("task_checks")
@@ -301,6 +320,13 @@
               .limit(THREAD_LIMIT)
           : none,
         wantParent ? client.from("concept_flags").select("message_id, text") : none,
+        visit && (page === "home" || page === "parent")
+          ? client
+              .from("care_logs")
+              .select("id, task_id, category, note, meal_amount, bottle_oz, author_id, author_role, created_at")
+              .eq("visit_id", visit.id)
+              .order("created_at", { ascending: true })
+          : none,
         // Newest first so the ceiling drops the oldest photos; shown oldest first below.
         wantGallery
           ? client
@@ -312,7 +338,7 @@
               .limit(GALLERY_LIMIT)
           : none,
       ]);
-      const failed = [checksRes, eventsRes, visitMsgsRes, threadRes, readsRes, savesRes, flagsRes, galleryRes].find(
+      const failed = [checksRes, eventsRes, visitMsgsRes, threadRes, readsRes, savesRes, flagsRes, logsRes, galleryRes].find(
         (r) => r.error
       );
       if (failed) throw failed.error;
@@ -401,6 +427,19 @@
           .filter((r) => r.message && r.message.photo_path)
           .map((r) => Object.assign(toMessage(r.message), { title: r.message.kind === "moment" ? "Moment" : (r.message.task && r.message.task.title) || "Task" })),
         flags: Object.fromEntries((flagsRes.data || []).map((r) => [r.message_id, r.text])),
+        logs: (logsRes.data || []).map((r) => ({
+          id: r.id,
+          taskId: r.task_id,
+          category: r.category,
+          note: r.note || "",
+          mealAmount: r.meal_amount || null,
+          bottleOz: r.bottle_oz == null ? null : Number(r.bottle_oz),
+          authorName: nameOf(r.author_id),
+          authorRole: r.author_role,
+          mine: r.author_id === me,
+          createdAt: Date.parse(r.created_at),
+        })),
+        canLog: inWindow,
         gallery: galleryRows.map((r) => {
           const m = toMessage(r);
           const title = m.kind === "task_proof" ? snapshotTitles.get(`${r.visit_id}/${r.task_id}`) || m.taskTitle : null;
@@ -430,6 +469,11 @@
         .on("postgres_changes", Object.assign({ event: "*", schema: "public", table: "visits" }, visitsFilter), scheduleReload)
         .on("postgres_changes", { event: "*", schema: "public", table: "task_checks" }, scheduleReload)
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "shift_events" }, scheduleReload)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "care_logs", filter: `household_id=eq.${householdId}` },
+          scheduleReload
+        )
         .subscribe();
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") scheduleReload();
@@ -533,6 +577,24 @@
           await discardUpload(path);
           throw error;
         }
+        await load();
+      },
+      // Care details under a completed task (SI-28). Append-only: an edit is another entry. Open or
+      // ended shifts both work while the shift's date is in the window. Only the insertable columns
+      // are sent; the database stamps the household, author, role, and time.
+      async addCareLog(input) {
+        if (!state.visit) throw friendly("Start your shift first.");
+        if (state.tooOld) throw friendly(ERRORS.visit_too_old);
+        const entry = checkCareLog(input);
+        const { error } = await client.from("care_logs").insert({
+          visit_id: state.visit.id,
+          task_id: entry.taskId,
+          category: entry.category,
+          note: entry.note || "",
+          meal_amount: entry.mealAmount || null,
+          bottle_oz: entry.bottleOz == null ? null : entry.bottleOz,
+        });
+        if (error) throw error;
         await load();
       },
       async uncheckTask(taskId) {
@@ -831,6 +893,23 @@
           .map((m) => Object.assign({}, m, { title: m.kind === "moment" ? "Moment" : m.taskTitle || "Task" }))
           .reverse(),
         flags: Object.fromEntries(Object.entries(store.getInsights()).map(([id, i]) => [id, i.text])),
+        logs: store
+          .getLogs()
+          .filter((l) => l.shiftId === shift.id)
+          .map((l) => ({
+            id: l.id,
+            taskId: l.taskId,
+            category: l.category,
+            note: l.note || "",
+            mealAmount: l.mealAmount || null,
+            bottleOz: l.bottleOz == null ? null : l.bottleOz,
+            authorName: l.author === "parent" ? parentName() : sitter,
+            authorRole: l.author === "parent" ? "parent" : "caretaker",
+            mine: (l.author === "parent") === (role === "parent"),
+            createdAt: l.createdAt,
+          }))
+          .sort((a, b) => a.createdAt - b.createdAt),
+        canLog: true,
         // The demo keeps no shift dates, so a photo's shift date is its local send date.
         gallery: thread
           .filter((m) => m.photoPath)
@@ -883,6 +962,10 @@
       async completeTask({ taskId, file, note, tag }) {
         const photoDataUrl = await store.downscaleImage(file, DEMO_PHOTO_SIDE, 0.7);
         store.completeTask({ taskId, photoDataUrl, note, tag });
+      },
+      async addCareLog(input) {
+        const entry = checkCareLog(input);
+        store.addCareLog(Object.assign({}, entry, { author: role === "parent" ? "parent" : "sitter" }));
       },
       async uncheckTask(taskId) {
         const task = data.schedule.find((s) => s.id === taskId);

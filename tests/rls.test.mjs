@@ -129,6 +129,8 @@ const tables = [
   "message_reads",
   "photo_saves",
   "concept_flags",
+  // SI-28 (20261016000000_carenest_care_logs.sql); tested in care-logs.test.mjs.
+  "care_logs",
   // 20261016100000_carenest_day_notes.sql; tested in "day notes: ...".
   "day_notes",
 ];

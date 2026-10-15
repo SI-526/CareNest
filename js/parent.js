@@ -98,6 +98,7 @@
       if (st.loadError) showError(st.loadError);
       renderStatus(st);
       renderSchedule(st);
+      renderCareLog(st);
 
       const items = view === "album" ? st.album : st.feed;
       const visibleIds = new Set(items.map((i) => i.id));
@@ -146,6 +147,17 @@
       document.getElementById("feed-heading").textContent = view === "album" ? "Album" : "Photos";
       document.getElementById("day-status").hidden = view === "album";
       document.getElementById("parent-schedule").hidden = view === "album";
+      document.getElementById("parent-care-log").hidden = view === "album";
+    }
+
+    // SI-28/SI-36: read-only care log, completed tasks in check-time order with the sitter's
+    // details under each (js/care-log.js escapes every user-written field).
+    function renderCareLog(st) {
+      const el = document.getElementById("parent-care-log-list");
+      const careLog = window.CareNestCareLog;
+      if (!el || !careLog) return;
+      const live = st.visit && !st.canStart;
+      el.innerHTML = careLog.timelineHtml(live ? st : { checks: {}, logs: [] }, { canAdd: false, schedule: data.schedule });
     }
 
     // not started / active / reopened / ended

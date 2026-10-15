@@ -2979,6 +2979,166 @@ body.modal-open {
   margin-left: 6px;
 }
 
+/* ---------- Care log (SI-28): completed tasks with their care details ---------- */
+
+.care-log-card {
+  padding: 4px 16px;
+}
+
+.care-log-list,
+.care-log-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.care-log-task {
+  padding: 12px 0;
+  border-top: 1px solid #eceef1;
+}
+
+.care-log-task:first-child {
+  border-top: 0;
+}
+
+.care-log-task-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.care-log-task-main {
+  min-width: 0;
+  flex: 1 1 160px;
+}
+
+.care-log-add {
+  width: auto;
+  padding: 6px 14px;
+}
+
+.care-log-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.care-log-entry {
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.care-log-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--blue);
+}
+
+.care-log-cat {
+  font-weight: var(--weight-semibold);
+}
+
+.care-log-update {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #eaf0ff;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+
+.care-log-note {
+  margin: 4px 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  color: var(--blue);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.care-log-empty {
+  margin: 0;
+  padding: 12px 0;
+}
+
+.care-log-modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.care-log-modal-section[hidden],
+.care-log-field[hidden],
+.care-log-form button[hidden],
+.care-log-form .tag-picker[hidden] {
+  display: none;
+}
+
+.care-log-modal-section .care-log-entries {
+  margin-top: 0;
+}
+
+.care-log-modal-section .care-log-add {
+  align-self: flex-start;
+}
+
+.care-log-form,
+.care-log-field {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.care-log-field {
+  gap: 8px;
+}
+
+.care-log-oz {
+  max-width: 140px;
+}
+
+/* Visible at once on open (the fade stays) so focus can move into the dialog synchronously. */
+#log-modal.is-open {
+  transition: opacity 0.2s ease;
+}
+
+/* Signed-in sitters have seven nav items (Home, Schedule, Log, Contacts, Messages, Profile,
+   Account). On phones, tighten the bar so "Messages" still fits its slot at 375px. */
+@media (max-width: 439px) {
+  .primary-nav:has(> .nav-item:nth-child(7)) {
+    gap: 0;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .primary-nav:has(> .nav-item:nth-child(7)) .nav-item {
+    padding-left: 0;
+    padding-right: 0;
+    font-size: 0.625rem;
+  }
+}
+
+/* Eight nav items (signed-in sitter: Log, Gallery and Account) on phones: 9px labels so
+   "Messages" fits its ~47px slot at 375px. ponytail: tight; fewer items is the real fix. */
+@media (max-width: 439px) {
+  .primary-nav:has(> .nav-item:nth-child(8)) {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .primary-nav:has(> .nav-item:nth-child(8)) .nav-item {
+    font-size: 0.5625rem;
+  }
+}
+
 /* Seven nav items (with Gallery and Account) on narrow phones: tighter padding and labels. */
 @media (max-width: 400px) {
   .primary-nav {
