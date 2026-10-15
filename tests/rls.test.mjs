@@ -66,6 +66,22 @@ function assertRpcError(result, code) {
   assert.match(result.error.message, new RegExp(code));
 }
 
+// Postgres "insufficient_privilege" (missing GRANT), as PostgREST reports it.
+function assertPermissionDenied(result, message) {
+  assert.ok(result.error, message);
+  assert.ok(
+    result.error.code === "42501" || /permission denied/i.test(result.error.message),
+    `${message}: expected permission denied, got ${result.error.code} ${result.error.message}`,
+  );
+}
+
+// A calendar date `offsetDays` from today (UTC, the database's time zone on Supabase).
+function isoDate(offsetDays) {
+  return new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
+}
+
+const DEMO_HOUSEHOLD_ID = "00000000-0000-4000-8000-00000000c0de";
+
 const tables = [
   "households",
   "household_members",
@@ -83,6 +99,7 @@ const rpcs = [
   ["create_invite", { target_household_id: randomUUID(), invite_email: "x@example.test" }],
   ["accept_invite", { invite_token: "x" }],
   ["end_visit", { target_visit_id: randomUUID() }],
+  ["reopen_visit", { target_visit_id: randomUUID() }],
   ["delete_my_account", {}],
   ["is_member", { target_household_id: randomUUID() }],
   ["is_parent", { target_household_id: randomUUID() }],
@@ -330,6 +347,16 @@ test("parent B cannot read or modify household A", async () => {
 });
 
 test("a signed-in user with no household sees nothing, including the seeded demo family", async () => {
+  // Without this, the test would also pass if seed.sql had not loaded.
+  const demo = await admin.from("households").select("id").eq("id", DEMO_HOUSEHOLD_ID);
+  assert.ifError(demo.error);
+  assert.equal(demo.data.length, 1, "seed.sql loaded the demo household (run `npm run db:reset`)");
+  const { count: demoItems } = await admin
+    .from("care_items")
+    .select("*", { count: "exact", head: true })
+    .eq("household_id", DEMO_HOUSEHOLD_ID);
+  assert.ok(demoItems > 0, "seed.sql loaded the demo care items");
+
   for (const table of tables) {
     const { data, error } = await outsider.client.from(table).select("*");
     assert.ifError(error);
@@ -374,6 +401,22 @@ test("invite acceptance enforces email, expiry, revocation, and single use", asy
   assertRpcError(await accept(caretaker, superseded.data), "invite_revoked");
   assertRpcError(await accept(outsider, good.data), "invite_wrong_email");
   assertRpcError(await accept(caretaker, "not-a-real-token"), "invite_not_found");
+
+  // The right address is not enough: it must also be verified.
+  const setConfirmed = (value) =>
+    localSql(`
+      with u as (
+        update auth.users set email_confirmed_at = ${value}
+         where id = '${uuid(caretaker.id)}'
+        returning id
+      )
+      select count(*)::int as n from u`);
+  assert.equal(setConfirmed("null")[0].n, 1);
+  try {
+    assertRpcError(await accept(caretaker, good.data), "invite_wrong_email");
+  } finally {
+    assert.equal(setConfirmed("now()")[0].n, 1);
+  }
 
   const accepted = await accept(caretaker, good.data);
   assert.ifError(accepted.error);
@@ -508,13 +551,22 @@ test("caretaker can start a shift, check tasks, and write the handoff", async ()
   const c = caretaker.client;
   const forgedEnd = await c
     .from("visits")
-    .insert({ plan_id: planA.id, visit_date: "2026-10-04", ended_at: new Date().toISOString() })
+    .insert({ plan_id: planA.id, visit_date: isoDate(0), ended_at: new Date().toISOString() })
     .select();
   assert.ok(forgedEnd.error, "ended_at cannot be set when starting a shift");
 
+  // A shift can only be started for yesterday, today, or tomorrow.
+  for (const offset of [-2, 2, 365]) {
+    const outOfRange = await c
+      .from("visits")
+      .insert({ plan_id: planA.id, visit_date: isoDate(offset) })
+      .select();
+    assert.ok(outOfRange.error, `a shift ${offset} days away is refused`);
+  }
+
   const visit = await c
     .from("visits")
-    .insert({ plan_id: planA.id, visit_date: "2026-10-05" })
+    .insert({ plan_id: planA.id, visit_date: isoDate(0) })
     .select()
     .single();
   assert.ifError(visit.error);
@@ -637,13 +689,48 @@ test("a shift ends once, only by a member, and its checks are then frozen", asyn
   // A parent can start and end a shift too.
   const parentVisit = await parentA.client
     .from("visits")
-    .insert({ plan_id: planA.id, visit_date: "2026-10-06" })
+    .insert({ plan_id: planA.id, visit_date: isoDate(-1) })
     .select()
     .single();
   assert.ifError(parentVisit.error);
   parentVisitId = parentVisit.data.id;
   assert.ifError(
     (await parentA.client.rpc("end_visit", { target_visit_id: parentVisitId })).error,
+  );
+});
+
+test("only a parent of the household can reopen an ended shift", async () => {
+  const reopen = (user, id) => user.client.rpc("reopen_visit", { target_visit_id: id });
+
+  assertRpcError(await reopen(caretaker, visitId), "not_parent");
+  assertRpcError(await reopen(parentB, visitId), "visit_not_found");
+  assertRpcError(await reopen(outsider, visitId), "visit_not_found");
+  assertRpcError(await reopen(parentA, randomUUID()), "visit_not_found");
+  const stillEnded = await admin.from("visits").select("ended_at").eq("id", visitId).single();
+  assert.ok(stillEnded.data.ended_at, "a refused reopen leaves the shift ended");
+
+  assert.ifError((await reopen(parentA, visitId)).error);
+  const { data: reopened } = await admin
+    .from("visits")
+    .select("ended_at, ended_by, handoff_note")
+    .eq("id", visitId)
+    .single();
+  assert.deepEqual(reopened, {
+    ended_at: null,
+    ended_by: null,
+    handoff_note: "Added after the shift.",
+  });
+  assertRpcError(await reopen(parentA, visitId), "visit_not_ended");
+
+  // Open again: the caretaker can check tasks, then the shift ends again.
+  const c = caretaker.client;
+  assert.ifError(
+    (await c.from("task_checks").insert({ visit_id: visitId, task_id: taskIds[1] })).error,
+  );
+  assert.ifError((await c.rpc("end_visit", { target_visit_id: visitId })).error);
+  assertDenied(
+    await c.from("task_checks").delete().eq("visit_id", visitId).select(),
+    "checks are frozen again after the second end",
   );
 });
 
@@ -669,7 +756,7 @@ test("anonymous visitors can read nothing and call no RPC", async () => {
     assert.ok(error || data.length === 0, `anon read ${table}`);
   }
   for (const [name, args] of rpcs) {
-    assert.ok((await anon.rpc(name, args)).error, `anon called ${name}`);
+    assertPermissionDenied(await anon.rpc(name, args), `anon called ${name}`);
   }
   assertDenied(
     await anon.from("care_items").insert({ household_id: householdA, category: "where", title: "x" }).select(),
@@ -698,7 +785,7 @@ test("parent can remove a caretaker, who then loses access", async () => {
       .select(),
   );
   assertDenied(
-    await caretaker.client.from("visits").insert({ plan_id: planA.id, visit_date: "2026-10-07" }).select(),
+    await caretaker.client.from("visits").insert({ plan_id: planA.id, visit_date: isoDate(1) }).select(),
   );
 });
 
@@ -808,23 +895,49 @@ function localSql(sql) {
   return Array.isArray(parsed) ? parsed : (parsed.rows ?? parsed.data ?? parsed.result);
 }
 
-test("every table in public has RLS enabled and grants anon nothing", () => {
+test("every relation in public has RLS (tables), invoker rights (views), and grants anon nothing", () => {
+  // Views, materialized views, and foreign tables are included: they are reachable through the
+  // API like tables, and materialized/foreign tables cannot have RLS at all.
   const rows = localSql(`
-    select c.relname as table_name,
+    select c.relname as name,
+           c.relkind as kind,
            c.relrowsecurity as rls,
-           has_table_privilege('anon', c.oid, 'select, insert, update, delete, truncate, references, trigger') as anon_any
+           exists (
+             select 1 from pg_options_to_table(c.reloptions) o
+              where o.option_name = 'security_invoker'
+                and lower(o.option_value) in ('true', 'on', 'yes', '1')
+           ) as security_invoker,
+           (has_table_privilege('anon', c.oid, 'select, insert, update, delete, truncate, references, trigger')
+             or has_any_column_privilege('anon', c.oid, 'select, insert, update, references')) as anon_any,
+           (has_table_privilege('authenticated', c.oid, 'select, insert, update, delete, truncate, references, trigger')
+             or has_any_column_privilege('authenticated', c.oid, 'select, insert, update, references')) as authenticated_any
       from pg_class c
       join pg_namespace n on n.oid = c.relnamespace
-     where n.nspname = 'public' and c.relkind in ('r', 'p')
+     where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f')
      order by 1`);
   assert.deepEqual(
-    rows.map((r) => r.table_name).sort(),
+    rows
+      .filter((r) => r.kind === "r" || r.kind === "p")
+      .map((r) => r.name)
+      .sort(),
     [...tables].sort(),
     "the test's table list matches the schema",
   );
   for (const row of rows) {
-    assert.equal(row.rls, true, `RLS disabled on public.${row.table_name}`);
-    assert.equal(row.anon_any, false, `anon has privileges on public.${row.table_name}`);
+    assert.equal(row.anon_any, false, `anon has privileges on public.${row.name}`);
+    if (row.kind === "r" || row.kind === "p") {
+      assert.equal(row.rls, true, `RLS disabled on public.${row.name}`);
+    }
+    if (row.kind === "v") {
+      assert.equal(row.security_invoker, true, `view public.${row.name} lacks security_invoker=true`);
+    }
+    if (row.kind === "m" || row.kind === "f") {
+      assert.equal(
+        row.authenticated_any,
+        false,
+        `public.${row.name} bypasses RLS but is granted to authenticated`,
+      );
+    }
   }
 
   const anonFunctions = localSql(`
@@ -834,7 +947,8 @@ test("every table in public has RLS enabled and grants anon nothing", () => {
      where n.nspname = 'public' and has_function_privilege('anon', p.oid, 'execute')`);
   assert.deepEqual(anonFunctions, [], "anon can execute a public function");
 
-  // Tables created by later migrations must start closed.
+  // Objects created by later migrations must start closed: no schema-scoped default grant to
+  // anon/authenticated in public...
   const defaults = localSql(`
     select count(*)::int as open_defaults
       from pg_default_acl d
@@ -844,7 +958,33 @@ test("every table in public has RLS enabled and grants anon nothing", () => {
        and d.defaclrole = 'postgres'::regrole
        and a.grantee in ('anon'::regrole, 'authenticated'::regrole)`);
   assert.equal(defaults[0].open_defaults, 0, "default privileges still open new objects");
+
+  // ...and a global (all-schema) default for postgres's functions that drops Postgres's
+  // built-in EXECUTE for PUBLIC, which a schema-scoped revoke cannot remove.
+  const globalFunctionDefaults = localSql(`
+    select d.defaclacl::text as acl,
+           exists (
+             select 1 from aclexplode(d.defaclacl) a
+              where a.privilege_type = 'EXECUTE'
+                and a.grantee in (0, 'anon'::regrole, 'authenticated'::regrole)
+           ) as open_execute
+      from pg_default_acl d
+     where d.defaclnamespace = 0
+       and d.defaclobjtype = 'f'
+       and d.defaclrole = 'postgres'::regrole`);
+  assert.equal(globalFunctionDefaults.length, 1, "no global default ACL for postgres functions");
+  assert.equal(
+    globalFunctionDefaults[0].open_execute,
+    false,
+    `new functions are still executable by PUBLIC: ${globalFunctionDefaults[0].acl}`,
+  );
 });
+
+// Only ever interpolate ids this run created.
+function uuid(value) {
+  assert.match(value, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  return value;
+}
 
 function sha256(text) {
   return createHash("sha256").update(text).digest("hex");

@@ -4,14 +4,18 @@
 --
 -- Ported from Carekeeper's schema; every security property is kept:
 --   * Row Level Security is enabled on every table; with no matching policy, access is denied.
---   * anon gets no table privileges and cannot execute any function.
+--   * anon gets no table privileges and cannot execute any function in public.
 --   * authenticated gets only the table/column privileges the app needs; RLS narrows rows.
 --   * Households, memberships, and invites are created only through SECURITY DEFINER RPCs,
 --     each with a fixed empty search_path.
 --   * Invite tokens are random 256-bit values; only their SHA-256 hash is stored.
 -- Added for CareNest:
---   * Future tables and functions in public start with no anon/authenticated privileges
---     (default privileges revoked), so a later migration must grant access explicitly.
+--   * Future tables, sequences, and functions in public start with no anon/authenticated
+--     privileges (schema-scoped default privileges revoked), and functions that postgres creates
+--     later in ANY schema no longer get Postgres's built-in EXECUTE for PUBLIC (global default
+--     privilege revoked). A later migration must grant access explicitly.
+--   * A shift can only be started for yesterday, today, or tomorrow (database date, UTC on
+--     Supabase), and only a parent can reopen an ended shift (reopen_visit).
 
 create extension if not exists pgcrypto with schema extensions;
 
@@ -329,7 +333,9 @@ create policy "Parents can delete tasks"
   ));
 
 -- visits: members read, start, and write the handoff note (column grants limit updates;
--- ending a shift goes through end_visit()).
+-- ending a shift goes through end_visit(), reopening through reopen_visit()). A shift can be
+-- started only for yesterday, today, or tomorrow, so a client cannot claim (and, by ending
+-- it, block) a plan's far-future or past dates.
 create policy "Members can read visits"
   on public.visits for select to authenticated
   using (exists (
@@ -341,6 +347,7 @@ create policy "Members can start visits"
   on public.visits for insert to authenticated
   with check (
     started_by = (select auth.uid())
+    and visit_date between current_date - 1 and current_date + 1
     and exists (
       select 1 from public.plans p
       where p.id = visits.plan_id and public.is_member(p.household_id)
@@ -583,6 +590,47 @@ begin
 end;
 $$;
 
+-- Reopens an ended shift so its tasks can be checked again (e.g. a sitter ended it by mistake).
+-- Parents only; the handoff note and existing checks are kept.
+create function public.reopen_visit(target_visit_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller uuid := auth.uid();
+  visit_household_id uuid;
+  current_ended_at timestamptz;
+begin
+  if caller is null then
+    raise exception 'not_authenticated';
+  end if;
+
+  select p.household_id, v.ended_at
+    into visit_household_id, current_ended_at
+    from public.visits v
+    join public.plans p on p.id = v.plan_id
+   where v.id = target_visit_id
+   for update of v;
+
+  -- Visits in other households look the same as visits that do not exist.
+  if not found or not public.is_member(visit_household_id) then
+    raise exception 'visit_not_found';
+  end if;
+  if not public.is_parent(visit_household_id) then
+    raise exception 'not_parent';
+  end if;
+  if current_ended_at is null then
+    raise exception 'visit_not_ended';
+  end if;
+
+  update public.visits
+     set ended_at = null, ended_by = null
+   where id = target_visit_id;
+end;
+$$;
+
 -- Deletes households where the caller is the only parent (cascading all their data),
 -- the caller's remaining memberships, and finally the caller's auth account.
 create function public.delete_my_account()
@@ -631,6 +679,7 @@ grant update (revoked_at) on public.invites to authenticated;
 grant delete on public.household_members to authenticated;
 
 revoke execute on all functions in schema public from public, anon;
+revoke execute on function public.reopen_visit(uuid) from public, anon;
 grant execute on function
   public.is_member(uuid),
   public.is_parent(uuid),
@@ -638,6 +687,7 @@ grant execute on function
   public.create_invite(uuid, text),
   public.accept_invite(text),
   public.end_visit(uuid),
+  public.reopen_visit(uuid),
   public.delete_my_account()
 to authenticated;
 
@@ -648,7 +698,12 @@ alter default privileges for role postgres in schema public
 alter default privileges for role postgres in schema public
   revoke all on sequences from anon, authenticated;
 alter default privileges for role postgres in schema public
-  revoke execute on functions from public, anon, authenticated;
+  revoke execute on functions from anon, authenticated;
+-- EXECUTE for PUBLIC is a built-in default that applies in every schema, so a schema-scoped
+-- revoke cannot remove it (it is a no-op). This global revoke does: every function postgres
+-- creates from here on, in any schema, needs an explicit grant to be callable by other roles.
+alter default privileges for role postgres
+  revoke execute on functions from public;
 
 -- ---------------------------------------------------------------------------
 -- Realtime: shifts and checks stream to household members (RLS applies).
