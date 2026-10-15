@@ -2604,3 +2604,114 @@ body.modal-open {
   padding: 24px;
   text-align: center;
 }
+
+/* T2c: family data loading layer, setup nudge, Family info (manage.html) */
+.data-status {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 16px;
+  background: var(--bg);
+}
+
+.data-status-text {
+  margin: 20vh 0 0;
+  color: var(--grey);
+  font-size: var(--text-sm);
+}
+
+.badge--moderate {
+  background: #ffd6a5;
+}
+
+.profile-avatar.contact-initials,
+.sitter-avatar.contact-initials,
+.shift-avatar.contact-initials {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.profile-avatar.contact-initials {
+  width: 56px;
+  height: 56px;
+}
+
+.empty-state-link,
+.setup-nudge a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: var(--weight-semibold);
+}
+
+.setup-nudge {
+  margin: 0 0 12px;
+}
+
+.manage-main .auth-card {
+  margin-bottom: 14px;
+}
+
+.manage-row {
+  flex-wrap: wrap;
+}
+
+.manage-row .people-meta {
+  flex: 1 1 180px;
+}
+
+.manage-sub {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.manage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.manage-icon-btn {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+
+.manage-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.manage-actions .people-action {
+  min-height: 44px;
+}
+
+.manage-dialog {
+  max-width: 440px;
+}
+
+.manage-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.manage-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.manage-textarea {
+  resize: vertical;
+}
+
+.manage-sections[hidden],
+.auth-fatal[hidden],
+.profile-address[hidden] {
+  display: none;
+}

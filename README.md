@@ -17,9 +17,13 @@ revoke invites, remove sitters), `invite.html#<token>` (accept an invite), and `
 `food-allergies`) loads `js/auth.js`, which keeps the page hidden until it has checked the
 session: signed out goes to `signin.html`, no family space goes to `onboarding.html`, a parent's
 home is `parent.html`, a sitter's is `index.html`, and a page for the other role redirects to the
-right one. The Account item in the nav signs out or deletes the account and its data. In this
-slice the schedule, care info, photos, and messages still come from `js/data.js` and
-`js/store.js`; only names (child, parent, sitter) come from the family space.
+right one. The Account item in the nav signs out or deletes the account and its data. The child's
+name and age, the schedule, care info (Good to know, food and allergies, emergency steps) and
+contacts come from the family space in Supabase (`js/family-data.js` loads them into the shape
+`js/data.js` defines); parents edit them on `manage.html` ("Family info" in the parent nav).
+Photos, task completions, and messages still live in this browser (`js/store.js`) until T3.
+Outside demo mode the bundled sample family is discarded before anything renders, so a
+signed-in person never sees sample content; an empty family shows "No information provided".
 
 `?demo=1` (remembered for the browser tab) skips sign-in and shows the sample family with a
 "Demo mode" banner, as before accounts existed. It reads only the bundled sample data; signed-out

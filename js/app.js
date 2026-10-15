@@ -37,7 +37,10 @@
 
   // Render only after the auth guard (js/auth.js) has checked the session and role and filled in
   // real names. Without the guard (no js/auth.js on the page) render straight away.
-  const authReady = window.CareNestAuth ? window.CareNestAuth.ready : Promise.resolve();
+  // js/family-data.js (when the page loads it) resolves after the family's data has replaced the
+  // sample data, so it is the one to wait on.
+  const readySource = window.CareNestFamily || window.CareNestAuth;
+  const authReady = readySource ? readySource.ready : Promise.resolve();
   authReady.then(() => {
     if (page === "home") {
       initHome();
@@ -54,6 +57,16 @@
     initNavigation();
     const profileHeading = document.getElementById("profile-heading");
     if (profileHeading) profileHeading.textContent = `Welcome ${data.babysitter.name}`;
+    // The profile card's static markup is the sample sitter; replace it with real data.
+    const profileAvatar = document.querySelector(".profile-avatar");
+    if (profileAvatar) {
+      profileAvatar.outerHTML = avatarHtml(data.babysitter.avatar, data.babysitter.name, "profile-avatar", 56);
+    }
+    const profileAddress = document.querySelector(".profile-address");
+    if (profileAddress) {
+      profileAddress.textContent = data.babysitter.address || "";
+      profileAddress.hidden = !data.babysitter.address;
+    }
     renderSitterHeader(document.getElementById("sitter-header"));
     renderShift();
     renderShiftControls();
@@ -103,13 +116,13 @@
           .map(
             (item) => `
       <article class="restriction-item">
-        <img class="restriction-thumb" src="${item.image}" alt="" width="64" height="64" />
+        ${item.image ? `<img class="restriction-thumb" src="${escapeHtml(item.image)}" alt="" width="64" height="64" />` : ""}
         <div class="restriction-content">
           <div class="restriction-top">
             <h3 class="restriction-name">${escapeHtml(item.name)}</h3>
-            <span class="badge ${item.severityClass}">${escapeHtml(item.severity)}</span>
+            ${item.severity ? `<span class="badge ${escapeHtml(item.severityClass || "")}">${escapeHtml(item.severity)}</span>` : ""}
           </div>
-          <p class="restriction-desc">${escapeHtml(item.description)}</p>
+          ${item.description ? `<p class="restriction-desc">${escapeHtml(item.description)}</p>` : ""}
         </div>
       </article>`
           )
@@ -136,7 +149,11 @@
     if (!contentEl) return;
 
     if (!category || !categoryHasContent(category)) {
-      contentEl.innerHTML = `<section class="panel">${emptyStateHtml()}</section>`;
+      // The "Call 911" callout is static, so it shows even when the family hasn't filled in
+      // emergency steps or contacts yet.
+      contentEl.innerHTML =
+        renderEmergencyCallout(category && category.callout) +
+        `<section class="panel">${emptyStateHtml()}</section>`;
       return;
     }
 
@@ -158,8 +175,13 @@
     );
   }
 
+  // Parents (signed in) also get a link to add the missing info; sitters see only the notice.
   function emptyStateHtml(cardClass = "card") {
-    return `<div class="${cardClass} empty-state"><p>No information provided</p></div>`;
+    const nudge =
+      data.viewerRole === "parent"
+        ? ' <a class="empty-state-link" href="manage.html">Add it in Family info</a>'
+        : "";
+    return `<div class="${cardClass} empty-state"><p>No information provided.${nudge}</p></div>`;
   }
 
   function renderInfoItems(items) {
@@ -196,10 +218,32 @@
         <h2 class="panel-title" id="steps-heading">What to do</h2>
         <div class="card">
           <ol class="emergency-steps">
-            ${steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+            ${steps.map((step) => `<li>${stepHtml(step)}</li>`).join("")}
           </ol>
         </div>
       </section>`;
+  }
+
+  // Sample steps are strings; signed-in steps are care items ({ title, detail }).
+  function stepHtml(step) {
+    if (typeof step === "string") return escapeHtml(step);
+    const title = `<strong>${escapeHtml(step.title)}</strong>`;
+    return step.detail ? `${title} ${escapeHtml(step.detail)}` : title;
+  }
+
+  // A photo when there is one, otherwise the person's initials.
+  function avatarHtml(src, name, className, size) {
+    if (src) {
+      return `<img class="${className}" src="${escapeHtml(src)}" alt="" width="${size}" height="${size}" />`;
+    }
+    return `<span class="${className} contact-initials" aria-hidden="true">${escapeHtml(initials(name || ""))}</span>`;
+  }
+
+  function callButtonHtml(contact) {
+    if (!contact.phoneHref) return "";
+    return `<a class="call-btn" href="${escapeHtml(contact.phoneHref)}" aria-label="Call ${escapeHtml(contact.name)}">
+          <img src="assets/call.svg" alt="" width="23" height="22" />
+        </a>`;
   }
 
   function renderHospital(hospital) {
@@ -209,7 +253,9 @@
           <img src="assets/call.svg" alt="" width="23" height="22" />
         </a>`
       : "";
-    const address = hospital.mapHref
+    const address = !hospital.address
+      ? ""
+      : hospital.mapHref
       ? `<a class="hospital-address" href="${escapeHtml(hospital.mapHref)}" target="_blank" rel="noopener">${escapeHtml(hospital.address)}<span class="visually-hidden"> (opens map in a new tab)</span></a>`
       : `<p class="hospital-address">${escapeHtml(hospital.address)}</p>`;
     return `
@@ -219,10 +265,10 @@
           <div class="hospital-meta">
             <p class="contact-name">${escapeHtml(hospital.name)}</p>
             ${hospital.system ? `<p class="hospital-system">${escapeHtml(hospital.system)}</p>` : ""}
-            <div class="modal-location">
+            ${address ? `<div class="modal-location">
               <img src="assets/location.svg" alt="" width="16" height="16" />
               ${address}
-            </div>
+            </div>` : ""}
             ${hospital.phone ? `<p class="contact-phone">${escapeHtml(hospital.phone)}</p>` : ""}
           </div>
           ${callBtn}
@@ -246,20 +292,16 @@
         <div class="contacts-list">
           ${resolved
             .map((contact) => {
-              const avatar = contact.avatar
-                ? `<img class="contact-avatar" src="${escapeHtml(contact.avatar)}" alt="" width="35" height="35" />`
-                : `<span class="contact-avatar contact-initials" aria-hidden="true">${escapeHtml(initials(contact.name))}</span>`;
+              const avatar = avatarHtml(contact.avatar, contact.name, "contact-avatar", 35);
               return `
             <article class="contact-card">
               ${avatar}
               <div class="contact-meta">
                 <p class="contact-name">${escapeHtml(contact.name)}</p>
                 ${contact.role ? `<p class="contact-role">${escapeHtml(contact.role)}</p>` : ""}
-                <p class="contact-phone">${escapeHtml(contact.phone)}</p>
+                ${contact.phone ? `<p class="contact-phone">${escapeHtml(contact.phone)}</p>` : ""}
               </div>
-              <a class="call-btn" href="${escapeHtml(contact.phoneHref)}" aria-label="Call ${escapeHtml(contact.name)}">
-                <img src="assets/call.svg" alt="" width="23" height="22" />
-              </a>
+              ${callButtonHtml(contact)}
             </article>`;
             })
             .join("")}
@@ -297,10 +339,10 @@
     if (!el) return;
     const sitter = data.babysitter;
     el.innerHTML = `
-      <img class="sitter-avatar" src="${sitter.avatar}" alt="${escapeHtml(sitter.name)}" width="39" height="39" />
+      ${avatarHtml(sitter.avatar, sitter.name, "sitter-avatar", 39)}
       <div class="sitter-meta">
         <p class="sitter-welcome">Welcome ${escapeHtml(sitter.name)}</p>
-        <p class="sitter-address">${escapeHtml(sitter.address)}</p>
+        ${sitter.address ? `<p class="sitter-address">${escapeHtml(sitter.address)}</p>` : ""}
       </div>`;
   }
 
@@ -312,13 +354,13 @@
     cardEl.innerHTML = `
       <div class="shift-timing">
         <p class="shift-date">${escapeHtml(child.dateLabel)}</p>
-        <p class="shift-hours">${escapeHtml(child.shiftTime)}</p>
+        ${child.shiftTime ? `<p class="shift-hours">${escapeHtml(child.shiftTime)}</p>` : ""}
       </div>
       <div class="shift-child">
-        <img class="shift-avatar" src="${child.avatar}" alt="${escapeHtml(child.name)}" width="60" height="60" />
+        ${avatarHtml(child.avatar, child.name, "shift-avatar", 60)}
         <div class="shift-meta">
           <p class="shift-name">${escapeHtml(child.name)}</p>
-          <p class="shift-age">${escapeHtml(child.age)}</p>
+          ${child.age ? `<p class="shift-age">${escapeHtml(child.age)}</p>` : ""}
         </div>
       </div>`;
   }
@@ -346,6 +388,11 @@
     const lockNote = document.getElementById("schedule-locked");
     if (lockNote) lockNote.hidden = shiftActive;
     const items = scheduleWithCompletions();
+
+    if (!items.length) {
+      el.innerHTML = `<li>${emptyStateHtml("")}</li>`;
+      return;
+    }
 
     el.innerHTML = items
       .map((item, index) => {
@@ -424,18 +471,21 @@
 
   function renderContacts(el) {
     if (!el) return;
+    if (!data.contacts.length) {
+      el.innerHTML = emptyStateHtml();
+      return;
+    }
     el.innerHTML = data.contacts
       .map(
         (contact) => `
       <article class="contact-card">
-        <img class="contact-avatar" src="${contact.avatar}" alt="${escapeHtml(contact.name)}" width="35" height="35" />
+        ${avatarHtml(contact.avatar, contact.name, "contact-avatar", 35)}
         <div class="contact-meta">
           <p class="contact-name">${escapeHtml(contact.name)}</p>
-          <p class="contact-phone">${escapeHtml(contact.phone)}</p>
+          ${contact.role ? `<p class="contact-role">${escapeHtml(contact.role)}</p>` : ""}
+          ${contact.phone ? `<p class="contact-phone">${escapeHtml(contact.phone)}</p>` : ""}
         </div>
-        <a class="call-btn" href="${contact.phoneHref}" aria-label="Call ${escapeHtml(contact.name)}">
-          <img src="assets/call.svg" alt="" width="23" height="22" />
-        </a>
+        ${callButtonHtml(contact)}
       </article>`
       )
       .join("");
@@ -1137,6 +1187,12 @@
       href: "messages.html?as=parent",
       label: "Messages",
       icon: '<path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8.4L4.6 21.2A1 1 0 0 1 3 20.4V5a2 2 0 0 1 1-2Zm3 6a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 7 9Zm5 0a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 12 9Zm5 0a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 17 9Z" />',
+    },
+    {
+      id: "manage",
+      href: "manage.html",
+      label: "Family info",
+      icon: '<path d="M14.06 4.94 19.06 9.94 8 21H3v-5L14.06 4.94Zm1.41-1.41 1.42-1.42a2 2 0 0 1 2.83 0l2.17 2.17a2 2 0 0 1 0 2.83l-1.42 1.42-5-5Z" />',
     },
     {
       id: "people",

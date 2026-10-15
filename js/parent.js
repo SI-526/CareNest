@@ -3,7 +3,7 @@
 // ponytail: same localStorage store as the sitter side; a sitter tab and a parent tab in one
 // browser stay in sync through the store's `storage` event until the real backend lands.
 // Waits for the auth guard (js/auth.js), which fills in real names first.
-(window.CareNestAuth ? window.CareNestAuth.ready : Promise.resolve()).then(function () {
+((window.CareNestFamily || window.CareNestAuth) ? (window.CareNestFamily || window.CareNestAuth).ready : Promise.resolve()).then(function () {
   const data = window.CareNestData;
   const store = window.CareNestStore;
   const ui = window.CareNestUI;
@@ -34,7 +34,18 @@
 
   document.getElementById("parent-greeting").textContent = `Hi ${data.viewerFirstName || parentContact.firstName || "there"}`;
   const avatar = document.getElementById("parent-child-avatar");
-  if (data.child.avatar) avatar.src = data.child.avatar;
+  // Only the demo family has a child photo; signed in there is none yet, so none is shown.
+  if (data.child.avatar) {
+    avatar.src = data.child.avatar;
+    avatar.hidden = false;
+  }
+  // A new family has nothing for the sitter yet: point the parent at Family info.
+  if (data.isEmpty) {
+    document.querySelector(".parent-header").insertAdjacentHTML(
+      "afterend",
+      `<p class="auth-status setup-nudge">Your sitter will see your child's schedule, care info, allergies, and emergency contacts once you add them. <a href="manage.html">Add family info</a></p>`
+    );
+  }
 
   // ---------- data ----------
 

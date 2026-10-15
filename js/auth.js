@@ -17,6 +17,7 @@
     home: ["caretaker"],
     parent: ["parent"],
     people: ["parent"],
+    manage: ["parent"],
     messages: ["parent", "caretaker"],
     info: ["parent", "caretaker"],
     food: ["parent", "caretaker"],

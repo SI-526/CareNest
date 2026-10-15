@@ -1,7 +1,7 @@
 // BeReal-style "moment": at a random time during the shift, prompt the sitter to share
 // a back-camera + front-camera photo within 2:00. Posts after the window are marked Late.
 // Waits for the auth guard (js/auth.js), which fills in real names first.
-(window.CareNestAuth ? window.CareNestAuth.ready : Promise.resolve()).then(function () {
+((window.CareNestFamily || window.CareNestAuth) ? (window.CareNestFamily || window.CareNestAuth).ready : Promise.resolve()).then(function () {
   const store = window.CareNestStore;
   const data = window.CareNestData;
   const page = document.body.dataset.page;
