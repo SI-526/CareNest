@@ -136,8 +136,8 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   key; there is no service-role or secret key in the app.
 - Signed-in users get only the table and column privileges the app needs, and RLS narrows rows
   to their own household. Only parents change care info, contacts, plans, and tasks. Caretakers
-  read everything in their household, start shifts, check and uncheck tasks, and write the
-  handoff note. Later migrations start closed too: new tables, sequences, and functions in
+  read everything in their household, start shifts, check and uncheck tasks, add care logs to
+  checked tasks, and write the handoff note. Later migrations start closed too: new tables, sequences, and functions in
   `public` get no anon/authenticated privileges (schema-scoped default privileges revoked).
   Postgres also gives every new function `EXECUTE` to `PUBLIC` in every schema by default, which
   a schema-scoped revoke cannot remove, so the migration additionally revokes that globally for
@@ -193,18 +193,24 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 - **Care logs (SI-28).** After a task is checked in a shift, any member (sitter or parent) can
   add a `care_logs` entry to it: `meal` (an amount, a note, or both), `bottle` (ounces, more than
   0 and at most 16, required), or `care` (a note, required); a note is at most 1000 characters.
-  An empty entry is refused by `CHECK` constraints (the app says "No information provided"), and
-  a meal amount or ounces on the wrong category is refused too. A `BEFORE INSERT` trigger
-  (`stamp_care_log`, `SECURITY DEFINER`, empty `search_path`) requires a signed-in member of the
-  shift's household (`household_not_found`), the shift's date in the window whether it is open
-  or ended, like the handoff note (`visit_too_old`), and the task checked in that shift at that
-  moment, read under a share lock that serialises with a concurrent uncheck
-  (`task_not_completed`); it sets the household, author, role, and time whatever the client
-  sent (those columns are not even insertable). Append-only: members have no `UPDATE` or
-  `DELETE` privilege, an edit is a new row under the same task (the app lists every entry, oldest first, later ones labelled "Update"), and
-  the task's check and its `checked_at` are never touched; a later uncheck leaves earlier logs in
-  place. Members read all logs of their household; anon nothing. Published to Realtime (the
-  DELETE-event limitation below applies: one random UUID per log removed with a family space).
+  An empty entry is refused by `CHECK` constraints (the app shows "No information provided"
+  instead of saving it), and a meal amount or ounces on the wrong category is refused too. Ounces
+  are `numeric(3,1)`, so a value is rounded to 0.1 before the range check (the app rounds to 0.1
+  as well). A `BEFORE INSERT` trigger (`stamp_care_log`, `SECURITY DEFINER`, empty `search_path`)
+  requires a signed-in user (`not_authenticated`; the service role is refused too) who is a
+  member of the shift's household (`visit_not_found`: a shift of another family looks the same
+  as one that does not exist, as in `complete_task`), the shift's date in the window whether it
+  is open or ended, like the handoff note (`visit_too_old`), a task of the shift's plan
+  (`task_not_found`, as in `complete_task`; this is checked even if a `task_checks` row says
+  otherwise), and the task checked in that shift at that moment, read under a share lock that
+  serialises with a concurrent uncheck (`task_not_completed`); it sets the household, author,
+  role, and time whatever the client sent (those columns are not even insertable). Two-session
+  tests cover a log racing an uncheck in both orders. Append-only: members have no `UPDATE` or
+  `DELETE` privilege, and an edit is a new row under the same task: the app keeps every entry
+  visible under its task, oldest first, with later ones labelled "Update". The task's check and
+  its `checked_at` are never touched; a later uncheck leaves earlier logs in place. Members
+  read all logs of their household; anon nothing. Published to Realtime (the DELETE-event
+  limitation below applies: one random UUID per log removed with a family space).
   `delete_my_account` cascades a sole parent's logs away; a departed sitter's logs stay without
   their name.
 - Each check stores a snapshot of the task as it was when it was checked (`task_title`,
@@ -270,7 +276,8 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   so a signed-in user subscribed to `task_checks` also receives the primary keys (two random
   UUIDs, no content) of unchecks in other family spaces. The same applies to `visits` and
   `shift_events` rows removed when a family space or plan is deleted (one random UUID each), and
-  to `messages` (one random UUID each; clients never delete messages, so only cascades emit them).
+  to `messages` and `care_logs` (one random UUID each; clients never delete messages or care
+  logs, so only cascades emit them).
   Clients must ignore events for shifts they are not showing.
 
 ## Deploying to a hosted Supabase project

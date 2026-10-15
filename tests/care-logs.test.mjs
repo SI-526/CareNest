@@ -7,7 +7,7 @@
 // random throwaway passwords and are deleted when the run ends.
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
@@ -161,6 +161,71 @@ function localSql(sql) {
   return Array.isArray(parsed) ? parsed : (parsed.rows ?? parsed.data ?? parsed.result);
 }
 
+// Two-session tests talk to the local database directly with psql (status.DB_URL is local-only,
+// checked below), because one PostgREST request cannot hold a transaction open. Same helpers as
+// rls.test.mjs.
+const dbUrl = status.DB_URL;
+if (dbUrl && !["127.0.0.1", "localhost"].includes(new URL(dbUrl).hostname)) {
+  throw new Error("Refusing to use a non-local database URL");
+}
+
+function psqlAvailable() {
+  try {
+    execFileSync("psql", ["--version"], { stdio: "ignore" });
+    return Boolean(dbUrl);
+  } catch {
+    return false;
+  }
+}
+
+function psqlQuery(sql) {
+  return execFileSync("psql", [dbUrl, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c", sql], {
+    encoding: "utf8",
+  }).trim();
+}
+
+// Runs `sql` in its own psql session; resolves to { code, stderr }.
+function spawnPsql(sql) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("psql", [dbUrl, "-Xq", "-v", "ON_ERROR_STOP=1"], {
+      stdio: ["pipe", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stderr }));
+    child.stdin.end(sql);
+  });
+}
+
+async function waitFor(condition, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    assert.ok(Date.now() < deadline, "timed out waiting for the other session");
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
+// Session 1 of a race: runs `statement` as `user` (role authenticated, their JWT claims) and
+// then sleeps inside the still-open transaction. Resolves once that session is sleeping, to
+// { session }: a promise (wrapped, so awaiting holdOpenAs does not wait for it) that settles with
+// psql's { code, stderr } when the session commits.
+async function holdOpenAs(user, statement) {
+  const marker = `cl-race-${randomUUID()}`;
+  const claims = JSON.stringify({ sub: uuid(user.id), role: "authenticated" });
+  const session = spawnPsql(`
+    begin;
+    set local role authenticated;
+    select set_config('request.jwt.claims', '${claims}', true);
+    ${statement}
+    select pg_sleep(4) /* ${marker} */;
+    commit;`);
+  await waitFor(() =>
+    psqlQuery(`select count(*) from pg_stat_activity where state = 'active' and query like '%${marker}%' and query not like '%pg_stat_activity%'`) === "1",
+  );
+  return { session };
+}
+
 // Only ever interpolate ids this run created.
 function uuid(value) {
   assert.match(value, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
@@ -303,9 +368,10 @@ test("outsiders and anonymous visitors cannot read or add logs", async () => {
       [],
       "another family reads household A's logs",
     );
+    // A shift of another family looks the same as a shift that does not exist.
     assertRpcError(
       await addLog(user, { visit_id: visitId, task_id: fam.taskIds[0], category: "care", note: "x" }),
-      "household_not_found",
+      "visit_not_found",
     );
   }
   const anonRead = await anon.from("care_logs").select("*");
@@ -321,16 +387,39 @@ test("outsiders and anonymous visitors cannot read or add logs", async () => {
   assert.equal(count, 2, "nothing slipped in");
 });
 
+test("the service role cannot add a log: every log needs a signed-in member", async () => {
+  assertRpcError(
+    await admin.from("care_logs").insert({
+      visit_id: visitId,
+      task_id: fam.taskIds[0],
+      category: "care",
+      note: "x",
+      household_id: fam.householdId,
+      author_id: fam.parent.id,
+      author_role: "parent",
+    }),
+    "not_authenticated",
+  );
+  const { count } = await admin
+    .from("care_logs")
+    .select("*", { count: "exact", head: true })
+    .eq("household_id", fam.householdId);
+  assert.equal(count, 2, "nothing slipped in");
+});
+
 test("only a task checked in that shift can be logged; the shift must exist", async () => {
   assertRpcError(
     await addLog(fam.sitter, { visit_id: visitId, task_id: fam.taskIds[2], category: "care", note: "x" }),
     "task_not_completed",
   );
-  // famB's task is not part of this shift (and never checked in it).
-  assertRpcError(
-    await addLog(fam.sitter, { visit_id: visitId, task_id: famB.taskIds[0], category: "care", note: "x" }),
-    "task_not_completed",
-  );
+  // famB's task is not part of this shift's plan (and never checked in it); neither is a task
+  // that does not exist.
+  for (const taskId of [famB.taskIds[0], randomUUID()]) {
+    assertRpcError(
+      await addLog(fam.sitter, { visit_id: visitId, task_id: taskId, category: "care", note: "x" }),
+      "task_not_found",
+    );
+  }
   assertRpcError(
     await addLog(fam.sitter, { visit_id: randomUUID(), task_id: fam.taskIds[0], category: "care", note: "x" }),
     "visit_not_found",
@@ -357,6 +446,124 @@ test("only a task checked in that shift can be logged; the shift must exist", as
     .select("*", { count: "exact", head: true })
     .eq("task_id", fam.taskIds[3]);
   assert.equal(count, 1, "an uncheck leaves the earlier log in place");
+});
+
+test("a check pairing the shift with another family's task cannot be logged on", async () => {
+  // task_checks itself does not tie the task to the shift's plan: the service role can write
+  // such a row. The log trigger must not trust it.
+  const cross = await admin
+    .from("task_checks")
+    .insert({ visit_id: visitId, task_id: famB.taskIds[0] })
+    .select("visit_id, task_id")
+    .single();
+  assert.ifError(cross.error);
+  try {
+    for (const user of [fam.sitter, fam.parent]) {
+      assertRpcError(
+        await addLog(user, { visit_id: visitId, task_id: famB.taskIds[0], category: "care", note: "x" }),
+        "task_not_found",
+      );
+    }
+    const { count } = await admin
+      .from("care_logs")
+      .select("*", { count: "exact", head: true })
+      .eq("task_id", famB.taskIds[0]);
+    assert.equal(count, 0, "no log landed on another family's task");
+  } finally {
+    const removed = await admin
+      .from("task_checks")
+      .delete()
+      .eq("visit_id", visitId)
+      .eq("task_id", famB.taskIds[0]);
+    assert.ifError(removed.error);
+  }
+});
+
+test("a log that races an uncheck waits for it and is then refused", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this two-session test needs a direct database connection");
+    return;
+  }
+  const race = await newFamily("cl-race1", 1);
+  const [task] = race.taskIds;
+  const v = await race.parent.client
+    .from("visits")
+    .insert({ plan_id: race.planId, visit_date: isoDate(0) })
+    .select()
+    .single();
+  assert.ifError(v.error);
+  const id = v.data.id;
+  assert.ifError((await parentCheck(race.parent, id, task)).error);
+
+  // Session 1 (psql, as the parent): uncheck the task and hold the transaction open.
+  const { session } = await holdOpenAs(
+    race.parent,
+    `delete from public.task_checks where visit_id = '${uuid(id)}' and task_id = '${uuid(task)}';`,
+  );
+  // Session 2 (the sitter, through the API): the trigger's share lock on the check waits for the
+  // uncheck, then finds the check gone.
+  const startedAt = Date.now();
+  const raced = await addLog(race.sitter, { visit_id: id, task_id: task, category: "care", note: "Nap" });
+  const waitedMs = Date.now() - startedAt;
+  const { code, stderr } = await session;
+  assert.equal(code, 0, `session 1 committed: ${stderr}`);
+  assert.ok(waitedMs > 1500, `the log waited for the uncheck (${waitedMs} ms)`);
+  assertRpcError(raced, "task_not_completed");
+  const { count: checks } = await admin
+    .from("task_checks")
+    .select("*", { count: "exact", head: true })
+    .eq("visit_id", id);
+  assert.equal(checks, 0, "the uncheck committed");
+  const { count: logs } = await admin
+    .from("care_logs")
+    .select("*", { count: "exact", head: true })
+    .eq("visit_id", id);
+  assert.equal(logs, 0, "no log landed on the unchecked task");
+});
+
+test("an uncheck that races a log waits for it; the log survives", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this two-session test needs a direct database connection");
+    return;
+  }
+  const race = await newFamily("cl-race2", 1);
+  const [task] = race.taskIds;
+  const v = await race.parent.client
+    .from("visits")
+    .insert({ plan_id: race.planId, visit_date: isoDate(0) })
+    .select()
+    .single();
+  assert.ifError(v.error);
+  const id = v.data.id;
+  assert.ifError((await parentCheck(race.parent, id, task)).error);
+
+  // Session 1 (psql, as the sitter): add a log and hold the transaction open (the trigger holds
+  // a share lock on the check).
+  const { session } = await holdOpenAs(
+    race.sitter,
+    `insert into public.care_logs (visit_id, task_id, category, note)
+     values ('${uuid(id)}', '${uuid(task)}', 'care', 'Nap 1h');`,
+  );
+  // Session 2 (the parent, through the API): the uncheck waits for the log's transaction.
+  const startedAt = Date.now();
+  const unchecked = await race.parent.client
+    .from("task_checks")
+    .delete()
+    .eq("visit_id", id)
+    .eq("task_id", task)
+    .select();
+  const waitedMs = Date.now() - startedAt;
+  const { code, stderr } = await session;
+  assert.equal(code, 0, `session 1 committed: ${stderr}`);
+  assert.ok(waitedMs > 1500, `the uncheck waited for the log (${waitedMs} ms)`);
+  assert.ifError(unchecked.error);
+  assert.equal(unchecked.data.length, 1, "the uncheck went through after the log committed");
+  const { data: logs, error } = await admin
+    .from("care_logs")
+    .select("author_id, author_role, note")
+    .eq("visit_id", id);
+  assert.ifError(error);
+  assert.deepEqual(logs, [{ author_id: race.sitter.id, author_role: "caretaker", note: "Nap 1h" }], "the log survives the uncheck");
 });
 
 test("logs are accepted only while the shift's date is in the window", async () => {

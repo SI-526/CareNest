@@ -12,7 +12,7 @@
 --     log, and logging never touches the task's check (task_checks keeps its own time).
 --   * A log is accepted only while the shift's date is in the window (database UTC date ±1),
 --     whether the shift is open or ended (an end-of-session recap, like the handoff note), and
---     only for a task that is checked in that shift at insert time. The author, the author's
+--     only for a task of the shift's plan that is checked in that shift at insert time. The author, the author's
 --     role, the household, and the time are set by the database, whatever the client sent.
 --   * Members of the household read every log of their household; nobody else does.
 
@@ -26,7 +26,8 @@
 -- window, and the task's check). There is no foreign key to task_checks: a log is a record of
 -- what happened, so a later uncheck leaves it in place (the share lock in the trigger only
 -- serialises the insert with a concurrent uncheck). Append-only: members have no UPDATE or
--- DELETE privilege; "editing" is a new row and the app shows the latest per task.
+-- DELETE privilege; "editing" is a new row, and the app lists every log of a task oldest first
+-- (later ones labelled "Update").
 -- created_at uses clock_timestamp(), taken after the trigger holds its locks, so time order
 -- matches the order the logs landed. A deleted member's logs stay with author_id null ("a former
 -- member"). task_id has no cascade, for the same reason as task_checks: a logged task can never
@@ -41,6 +42,9 @@ create table public.care_logs (
   category text not null check (category in ('meal', 'bottle', 'care')),
   note text not null default '' check (char_length(note) <= 1000),
   meal_amount text,
+  -- numeric(3, 1) rounds the value to 0.1 on input, before any CHECK runs: 16.04 is stored and
+  -- checked as 16.0 (accepted), 16.05 as 16.1 (refused), 0.04 as 0.0 (refused). The client
+  -- rounds to 0.1 too, so what the sitter sees is what is stored.
   bottle_oz numeric(3, 1),
   author_id uuid references auth.users (id) on delete set null,
   author_role text not null check (author_role in ('parent', 'caretaker')),
@@ -61,6 +65,9 @@ create table public.care_logs (
 
 create index care_logs_visit_id_idx on public.care_logs (visit_id, created_at);
 create index care_logs_task_id_idx on public.care_logs (task_id);
+-- RLS filters every read by household_id (is_member), and the app reads a household's logs in
+-- time order.
+create index care_logs_household_id_idx on public.care_logs (household_id, created_at);
 
 -- ---------------------------------------------------------------------------
 -- Insert trigger
@@ -70,6 +77,11 @@ create index care_logs_task_id_idx on public.care_logs (task_id);
 -- other rows. Runs as the owner so it can read the visit, the membership, and the check. It
 -- needs no EXECUTE grant: trigger functions are not checked for EXECUTE when they fire.
 -- Every insert needs a signed-in member (the service role has no auth.uid() and is refused too).
+-- Error codes, in the order they are checked: not_authenticated; visit_not_found (no such shift,
+-- or a shift in another household: the two look the same, as in complete_task, end_visit, and
+-- reopen_visit, so a log attempt cannot probe for shifts of other families); visit_too_old;
+-- task_not_found (the task is not in the shift's plan, as in complete_task, whether it exists
+-- elsewhere or not); task_not_completed (the task is not checked in this shift right now).
 create function public.stamp_care_log()
 returns trigger
 language plpgsql
@@ -80,33 +92,42 @@ declare
   caller uuid := auth.uid();
   caller_role text;
   visit_household_id uuid;
+  visit_plan_id uuid;
   visit_day date;
 begin
   if caller is null then
     raise exception 'not_authenticated';
   end if;
 
-  select p.household_id, v.visit_date
-    into visit_household_id, visit_day
+  select p.household_id, v.plan_id, v.visit_date
+    into visit_household_id, visit_plan_id, visit_day
     from public.visits v
     join public.plans p on p.id = v.plan_id
    where v.id = new.visit_id
      for share of v;
-  if not found then
-    raise exception 'visit_not_found';
-  end if;
 
+  -- Visits in other households look the same as visits that do not exist.
   select m.role into caller_role
     from public.household_members m
    where m.household_id = visit_household_id and m.user_id = caller;
-  if not found then
-    raise exception 'household_not_found';
+  if visit_household_id is null or caller_role is null then
+    raise exception 'visit_not_found';
   end if;
 
   -- Open or ended, but only while the shift's date is in the window (same as the handoff note).
   if visit_day not between (now() at time zone 'utc')::date - 1
                        and (now() at time zone 'utc')::date + 1 then
     raise exception 'visit_too_old';
+  end if;
+
+  -- The task must belong to the shift's plan. task_checks has no such constraint (a row written
+  -- by the service role or the superuser could pair a shift with another family's task), so it
+  -- is checked here rather than trusted from the check below.
+  perform 1
+     from public.tasks t
+    where t.id = new.task_id and t.plan_id = visit_plan_id;
+  if not found then
+    raise exception 'task_not_found';
   end if;
 
   -- The task must be checked in this shift now. The share lock waits for a concurrent uncheck
