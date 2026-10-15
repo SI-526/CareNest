@@ -1,6 +1,7 @@
 // BeReal-style "moment": at a random time during the shift, prompt the sitter to share
 // a back-camera + front-camera photo within 2:00. Posts after the window are marked Late.
-(function () {
+// Waits for the auth guard (js/auth.js), which fills in real names first.
+(window.CareNestAuth ? window.CareNestAuth.ready : Promise.resolve()).then(function () {
   const store = window.CareNestStore;
   const data = window.CareNestData;
   const page = document.body.dataset.page;
@@ -8,7 +9,7 @@
   if (document.body.dataset.role === "parent") return; // moments are the sitter's prompt
   if (!document.createElement("dialog").showModal) return;
 
-  const parent = (data.contacts && data.contacts[0] && data.contacts[0].firstName) || "the parent";
+  const parent = (data.parentName && data.parentName.split(/\s+/)[0]) || (data.contacts && data.contacts[0] && data.contacts[0].firstName) || "the parent";
   const LOCKED_TEXT = "This shift has ended. Photos can't be added after a shift.";
 
   // Static markup only; dynamic text is set with textContent below.
@@ -288,4 +289,4 @@
   store.subscribe(tick);
   tick();
   setInterval(tick, 1000);
-})();
+});

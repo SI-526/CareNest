@@ -35,18 +35,25 @@
     }
   }
 
-  if (page === "home") {
-    initHome();
-  } else if (page === "food") {
-    initFood();
-  } else if (page === "info") {
-    initInfo();
-  } else if (page === "messages") {
-    initMessages();
-  }
+  // Render only after the auth guard (js/auth.js) has checked the session and role and filled in
+  // real names. Without the guard (no js/auth.js on the page) render straight away.
+  const authReady = window.CareNestAuth ? window.CareNestAuth.ready : Promise.resolve();
+  authReady.then(() => {
+    if (page === "home") {
+      initHome();
+    } else if (page === "food") {
+      initFood();
+    } else if (page === "info") {
+      initInfo();
+    } else if (page === "messages") {
+      initMessages();
+    }
+  });
 
   function initHome() {
     initNavigation();
+    const profileHeading = document.getElementById("profile-heading");
+    if (profileHeading) profileHeading.textContent = `Welcome ${data.babysitter.name}`;
     renderSitterHeader(document.getElementById("sitter-header"));
     renderShift();
     renderShiftControls();
@@ -501,6 +508,7 @@
   }
 
   function parentFirstName() {
+    if (data.parentName) return data.parentName.split(/\s+/)[0];
     const contact = data.contacts && data.contacts[0];
     return (contact && contact.firstName) || "parent";
   }
@@ -874,6 +882,7 @@
 
   function senderName(sender) {
     if (sender === "parent") {
+      if (data.parentName) return data.parentName;
       const contact = data.contacts && data.contacts[0];
       return (contact && contact.name) || "Parent";
     }
@@ -1129,6 +1138,12 @@
       label: "Messages",
       icon: '<path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8.4L4.6 21.2A1 1 0 0 1 3 20.4V5a2 2 0 0 1 1-2Zm3 6a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 7 9Zm5 0a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 12 9Zm5 0a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 17 9Z" />',
     },
+    {
+      id: "people",
+      href: "people.html",
+      label: "People",
+      icon: '<path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-1a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM9 13c-3.87 0-7 2.24-7 5v3h14v-3c0-2.76-3.13-5-7-5Zm8.24.05c-.45-.03-.91-.05-1.38-.05a11.5 11.5 0 0 0-2.66.3c1.73.96 2.8 2.37 2.8 4V21H22v-3c0-2.42-2.1-4.47-4.76-4.95Z" />',
+    },
   ];
   }
 
@@ -1137,6 +1152,7 @@
     const nav = document.querySelector(".primary-nav");
     if (!nav) return;
     nav.setAttribute("aria-label", "Parent navigation");
+    const account = nav.querySelector("[data-account-button]"); // added by js/auth.js
     nav.innerHTML = parentNavItems().map(
       (item) => `
         <a class="nav-item" href="${item.href}" data-nav="${item.id}"${item.id === current ? ' aria-current="page"' : ""}>
@@ -1144,6 +1160,7 @@
           <span>${item.label}</span>
         </a>`
     ).join("");
+    if (account) nav.appendChild(account);
   }
 
   // Shared helpers for js/parent.js.

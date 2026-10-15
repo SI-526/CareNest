@@ -8,6 +8,52 @@ The site itself is plain HTML, CSS, and JavaScript served as static files (Verce
 step). There is deliberately **no `package.json` at the repo root**; database tooling lives in
 `tests/`, and `.vercelignore` keeps `supabase/` and `tests/` off the deployed site.
 
+## Accounts and sign-in
+
+Pages: `signin.html` (Google sign-in, the data notice), `onboarding.html` (create a family space;
+requires ticking the at-your-own-risk acknowledgement), `people.html` (parents: invite a sitter,
+revoke invites, remove sitters), `invite.html#<token>` (accept an invite), and `privacy.html` /
+`terms.html`. Every app page (`index`, `parent`, `people`, `messages`, `info`,
+`food-allergies`) loads `js/auth.js`, which keeps the page hidden until it has checked the
+session: signed out goes to `signin.html`, no family space goes to `onboarding.html`, a parent's
+home is `parent.html`, a sitter's is `index.html`, and a page for the other role redirects to the
+right one. The Account item in the nav signs out or deletes the account and its data. In this
+slice the schedule, care info, photos, and messages still come from `js/data.js` and
+`js/store.js`; only names (child, parent, sitter) come from the family space.
+
+`?demo=1` (remembered for the browser tab) skips sign-in and shows the sample family with a
+"Demo mode" banner, as before accounts existed. It reads only the bundled sample data; signed-out
+requests can read nothing from the database.
+
+Config is in `js/config.js` and is public by design: the Supabase URL, the publishable key, and
+the Google OAuth client ID. On `localhost`/`127.0.0.1` the app uses the local stack
+(`http://127.0.0.1:55321`, the CLI's built-in local publishable key) and shows a password
+"Local development sign-in" form; every other host uses the hosted project. Run it locally with
+`python3 -m http.server 8000` from the repo root and open `http://localhost:8000/signin.html`.
+
+### Sign-in architecture
+
+Google is the only sign-in method, through Supabase Auth with Google Identity Services (GIS):
+
+- `signin.html` and `invite.html` load `https://accounts.google.com/gsi/client` and render
+  Google's button on our own origin (`js/signin-widget.js`), popup or FedCM only: no One Tap and
+  no auto-select. Google returns an ID token; `supabase.auth.signInWithIdToken` exchanges it for a
+  session. No redirect, so no tokens ever appear in the URL (`detectSessionInUrl: false`).
+- Nonce: each page load makes a random 256-bit raw nonce and its SHA-256 hex. Google gets the
+  **hash** (it copies it into the ID token); Supabase gets the **raw** value, hashes it, and
+  compares, so an ID token from another page load is rejected.
+- supabase-js is the UMD build from jsDelivr pinned to an exact version (2.117.2, matching
+  `tests/package.json`) with a Subresource Integrity hash, so a changed file is refused. Google's
+  GIS script is evergreen and cannot be pinned or hashed.
+- Invite links put the token in the URL **fragment** (`invite.html#<token>`), which browsers never
+  send to a server, and `invite.html` sets `<meta name="referrer" content="strict-origin">` so only
+  the origin ever leaves in a Referer. After accepting, the page `replace`s itself, so the token
+  leaves the tab's history.
+- Hosted project setup: Supabase → Auth → Providers → Google enabled with this client ID listed;
+  the Email provider OFF (see below). The Google OAuth client must list each site origin (the
+  Vercel URL, and `http://localhost:8000` for local Google testing) as an authorized JavaScript
+  origin.
+
 ## Local database
 
 The Supabase schema is in `supabase/migrations/`. Everything below runs against a **local**

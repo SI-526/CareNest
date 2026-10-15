@@ -1,0 +1,380 @@
+// Shared sign-in state, the auth guard, role routing, the account menu, and the data notice.
+//
+// Every app page loads, in order: the pinned supabase-js UMD build, js/config.js,
+// js/supabase.js, then this file, then its own scripts. Pages start hidden (class
+// "auth-pending" on <html>); this file checks the session and the family space, redirects when
+// the page is wrong for this person, fills in names, and only then reveals the page and resolves
+// CareNestAuth.ready, which the page scripts wait on before rendering.
+//
+// The guard is a convenience, not the security boundary: Row Level Security in the database
+// decides what each signed-in person can read and change.
+(function () {
+  const client = window.CareNestSupabase;
+  const page = document.body.dataset.page;
+
+  // Which roles may open which app page. Pages not listed here are not guarded.
+  const PAGE_ROLES = {
+    home: ["caretaker"],
+    parent: ["parent"],
+    people: ["parent"],
+    messages: ["parent", "caretaker"],
+    info: ["parent", "caretaker"],
+    food: ["parent", "caretaker"],
+  };
+  const HOME = { parent: "parent.html", caretaker: "index.html" };
+
+  const ERRORS = {
+    not_authenticated: "Please sign in again.",
+    risk_not_acknowledged:
+      "Please read the notice and tick the box before creating your family space.",
+    already_member:
+      "This account already belongs to a family space. CareNest supports one family space per account for now.",
+    not_parent: "Only a parent can do that.",
+    invalid_email: "Please enter a valid email address.",
+    invite_not_found: "We couldn't find this invite. Check that you opened the whole link.",
+    invite_revoked: "This invite was cancelled. Ask the family to send you a new link.",
+    invite_used: "This invite has already been used.",
+    invite_expired: "This invite has expired. Ask the family to send you a new link.",
+    invite_wrong_email:
+      "This invite was sent to a different email address. Use a different account, then sign in with the Google account for the invited address.",
+  };
+
+  // Turns a Supabase/Postgres error into a sentence a parent or sitter can act on.
+  function friendlyError(error) {
+    const message = (error && error.message) || "";
+    const code = Object.keys(ERRORS).find((key) => message.includes(key));
+    if (code) return ERRORS[code];
+    if (message.includes("check constraint")) return "One of the fields is too long or empty.";
+    if (/fetch|network/i.test(message)) {
+      return "We couldn't reach CareNest. Check your connection and try again.";
+    }
+    return "Something went wrong. Please try again.";
+  }
+
+  // ?demo=1 (remembered for this tab) shows the sample family without signing in, as before
+  // accounts existed. It reads only the bundled sample data in js/data.js and this browser's
+  // localStorage; signed-out requests can read nothing from the database (RLS).
+  function demoMode() {
+    try {
+      if (new URLSearchParams(window.location.search).has("demo")) {
+        sessionStorage.setItem("carenest:demo", "1");
+      }
+      return sessionStorage.getItem("carenest:demo") === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function go(path) {
+    window.location.replace(path);
+    // Keep the page hidden and the guard pending while the browser navigates away.
+    return new Promise(() => {});
+  }
+
+  function reveal() {
+    document.documentElement.classList.remove("auth-pending");
+  }
+
+  function firstName(member) {
+    if (!member) return "";
+    const name = (member.display_name || "").trim();
+    if (name) return name.split(/\s+/)[0];
+    return (member.email || "").split("@")[0];
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // Loads who is signed in and their family space. Returns null when signed out.
+  // getUser() asks the auth server (so a deleted or revoked account counts as signed out);
+  // the roster query runs alongside it so the check costs one round trip, not two.
+  async function loadContext() {
+    if (!client) throw new Error("sign-in unavailable");
+    const { data: sessionData } = await client.auth.getSession();
+    if (!sessionData.session) return null;
+
+    const [userResult, rosterResult] = await Promise.all([
+      client.auth.getUser(),
+      // RLS returns only the caller's own family space (one per account).
+      client
+        .from("household_members")
+        .select("household_id, user_id, role, email, display_name, households(id, name, child_name, child_age_label)")
+        .order("created_at", { ascending: true }),
+    ]);
+
+    if (userResult.error || !userResult.data.user) {
+      const status = userResult.error && userResult.error.status;
+      if (!userResult.error || status === 401 || status === 403 || status === 404) {
+        await client.auth.signOut({ scope: "local" });
+        return null;
+      }
+      throw userResult.error;
+    }
+    if (rosterResult.error) throw rosterResult.error;
+
+    const user = userResult.data.user;
+    const members = rosterResult.data || [];
+    const me = members.find((m) => m.user_id === user.id) || null;
+    return {
+      client,
+      user,
+      email: user.email || "",
+      membership: me,
+      role: me ? me.role : null,
+      household: me ? me.households : null,
+      members,
+    };
+  }
+
+  // Where a signed-in person belongs: their role's home, or onboarding with no family space.
+  function homeFor(ctx) {
+    return ctx.role ? HOME[ctx.role] : "onboarding.html";
+  }
+
+  // Replaces the sample names in js/data.js with real ones where that is trivial. Schedule,
+  // care info, contacts, and photos stay sample data until T2c/T3 move them to Supabase.
+  function fillNames(ctx) {
+    const data = window.CareNestData;
+    if (!data || !ctx.household) return;
+    if (ctx.household.child_name) data.child.name = ctx.household.child_name;
+    if (ctx.household.child_age_label) data.child.age = ctx.household.child_age_label;
+    const sitter =
+      ctx.role === "caretaker" ? ctx.membership : ctx.members.find((m) => m.role === "caretaker");
+    if (sitter) data.babysitter.name = firstName(sitter);
+    data.viewerFirstName = firstName(ctx.membership);
+    const parent = ctx.members.find((m) => m.role === "parent");
+    if (parent) data.parentName = (parent.display_name || "").trim() || firstName(parent);
+  }
+
+  function showFatal(message) {
+    reveal();
+    const box = document.createElement("div");
+    box.className = "auth-fatal";
+    box.setAttribute("role", "alert");
+    box.innerHTML = `<p>${escapeHtml(message)}</p>
+      <button type="button" class="primary-btn">Try again</button>`;
+    box.querySelector("button").addEventListener("click", () => window.location.reload());
+    document.body.replaceChildren(box);
+  }
+
+  // The auth guard for app pages (index, parent, people, messages, info, food).
+  async function guard() {
+    if (demoMode()) {
+      reveal();
+      showDemoBanner();
+      return { demo: true, role: null };
+    }
+    let ctx;
+    try {
+      ctx = await loadContext();
+    } catch (e) {
+      showFatal("We couldn't reach CareNest. Check your connection and try again.");
+      return new Promise(() => {});
+    }
+    if (!ctx) return go("signin.html");
+    if (!ctx.role) return go("onboarding.html");
+
+    const allowed = PAGE_ROLES[page] || [];
+    if (!allowed.includes(ctx.role)) return go(HOME[ctx.role]);
+
+    // messages.html is shared; ?as=parent selects the parent's side of the thread.
+    if (page === "messages") {
+      const params = new URLSearchParams(window.location.search);
+      const asParent = params.get("as") === "parent";
+      if (ctx.role === "parent" && !asParent) return go("messages.html?as=parent");
+      if (ctx.role === "caretaker" && asParent) return go("messages.html");
+    }
+
+    fillNames(ctx);
+    mountChrome(ctx);
+    reveal();
+    return ctx;
+  }
+
+  function showDemoBanner() {
+    const banner = document.createElement("p");
+    banner.className = "demo-banner";
+    banner.innerHTML =
+      'Demo mode: sample family, not signed in. <a href="signin.html">Sign in</a>';
+    document.body.prepend(banner);
+  }
+
+  // ---------- account menu, footer ----------
+
+  const ACCOUNT_ICON =
+    '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Zm0 14a8 8 0 0 1-6.16-2.9C7.1 15.8 9.4 15 12 15s4.9.8 6.16 2.1A8 8 0 0 1 12 20Z" />';
+
+  function mountChrome(ctx) {
+    const nav = document.querySelector(".primary-nav");
+    if (nav && !nav.querySelector("[data-account-button]")) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "nav-item nav-account";
+      button.dataset.accountButton = "";
+      button.setAttribute("aria-haspopup", "dialog");
+      button.innerHTML = `<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">${ACCOUNT_ICON}</svg><span>Account</span>`;
+      nav.appendChild(button);
+      button.addEventListener("click", () => openAccountMenu(ctx, button));
+    }
+    const app = document.querySelector(".app");
+    if (app && !document.querySelector(".legal-footer")) {
+      app.insertAdjacentHTML("beforeend", legalFooterHtml());
+    }
+  }
+
+  function legalFooterHtml() {
+    return `<footer class="legal-footer">
+      <a href="privacy.html">Privacy</a><span aria-hidden="true">·</span><a href="terms.html">Terms</a>
+    </footer>`;
+  }
+
+  let accountDialog = null;
+
+  function openAccountMenu(ctx, opener) {
+    if (!accountDialog) {
+      accountDialog = document.createElement("dialog");
+      accountDialog.className = "confirm-dialog account-dialog";
+      accountDialog.setAttribute("aria-labelledby", "account-title");
+      const roleLabel = ctx.role === "parent" ? "Parent" : "Sitter";
+      const familyName = ctx.household ? ctx.household.name : "";
+      accountDialog.innerHTML = `
+        <div class="confirm-dialog-body">
+          <h2 class="panel-title" id="account-title">Your account</h2>
+          <p class="account-who">Signed in as <strong>${escapeHtml(ctx.email)}</strong></p>
+          <p class="account-meta">${escapeHtml(roleLabel)}${familyName ? ` in ${escapeHtml(familyName)}` : ""}</p>
+          ${ctx.role === "parent" ? '<a class="photo-source-btn" href="people.html">People and invites</a>' : ""}
+          <button type="button" class="photo-source-btn" data-sign-out>Sign out</button>
+          <button type="button" class="danger-btn" data-delete-account>Delete my account and data</button>
+          <p class="form-error" role="alert" hidden data-account-error></p>
+          <p class="account-links"><a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a></p>
+          <form method="dialog"><button class="text-btn" value="close">Close</button></form>
+        </div>`;
+      document.body.appendChild(accountDialog);
+      accountDialog.addEventListener("close", () => opener.focus());
+      accountDialog.querySelector("[data-sign-out]").addEventListener("click", async (e) => {
+        e.currentTarget.disabled = true;
+        await signOut();
+      });
+      accountDialog
+        .querySelector("[data-delete-account]")
+        .addEventListener("click", () => deleteAccount(ctx));
+    }
+    accountDialog.showModal();
+  }
+
+  async function signOut() {
+    if (client) await client.auth.signOut();
+    window.location.replace("signin.html");
+  }
+
+  async function deleteAccount(ctx) {
+    const consequence =
+      ctx.role === "parent"
+        ? "If you are the only parent, your family space and everything in it (care info, schedule, shifts, task checks, notes, and invites) is permanently deleted, and your sitters lose access."
+        : ctx.role === "caretaker"
+          ? "You leave the family space. Task checks and notes you wrote stay in the family's history without your name."
+          : "Your account is permanently deleted.";
+    const ok = await confirmDialog({
+      title: "Delete your account and data?",
+      body: `${consequence} Your sign-in account is deleted too. This cannot be undone.`,
+      confirmLabel: "Delete everything",
+      danger: true,
+    });
+    if (!ok) return;
+    const errorEl = accountDialog && accountDialog.querySelector("[data-account-error]");
+    const { error } = await client.rpc("delete_my_account");
+    if (error) {
+      if (errorEl) {
+        errorEl.textContent = friendlyError(error);
+        errorEl.hidden = false;
+      }
+      return;
+    }
+    // This browser's own copies (sample shift, photos, messages) go too.
+    try {
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith("carenest:"))
+        .forEach((key) => localStorage.removeItem(key));
+    } catch (e) {
+      /* storage unavailable: nothing to clear */
+    }
+    // The account no longer exists, so only the local session needs clearing.
+    await client.auth.signOut({ scope: "local" });
+    window.location.replace("signin.html?deleted=1");
+  }
+
+  // A native <dialog> confirmation. Resolves true when confirmed.
+  function confirmDialog({ title, body, confirmLabel, danger }) {
+    return new Promise((resolve) => {
+      const dialog = document.createElement("dialog");
+      dialog.className = "confirm-dialog";
+      dialog.setAttribute("aria-labelledby", "confirm-title");
+      dialog.setAttribute("aria-describedby", "confirm-desc");
+      dialog.innerHTML = `
+        <form method="dialog" class="confirm-dialog-body">
+          <h2 class="panel-title" id="confirm-title">${escapeHtml(title)}</h2>
+          <p class="confirm-desc" id="confirm-desc">${escapeHtml(body)}</p>
+          <div class="moment-dialog-actions">
+            <button class="${danger ? "danger-btn" : "primary-btn"}" value="confirm">${escapeHtml(confirmLabel)}</button>
+            <button class="photo-source-btn" value="cancel" autofocus>Cancel</button>
+          </div>
+        </form>`;
+      const returnFocus = document.activeElement;
+      dialog.addEventListener("close", () => {
+        resolve(dialog.returnValue === "confirm");
+        dialog.remove();
+        if (returnFocus && returnFocus.focus) returnFocus.focus();
+      });
+      document.body.appendChild(dialog);
+      dialog.showModal();
+    });
+  }
+
+  // ---------- data notice ----------
+
+  function riskNoticeHtml() {
+    return `<section class="card risk-notice" aria-labelledby="risk-notice-title">
+      <h2 class="panel-title" id="risk-notice-title">How your information is handled</h2>
+      <ul>
+        <li>CareNest is a student class project. It is <strong>not HIPAA-compliant</strong> and <strong>not a medical service</strong>.</li>
+        <li>Data is stored with Supabase on a free plan with <strong>no backups</strong>. It could be lost.</li>
+        <li>It stores what your family enters, including <strong>photos of your child</strong> that sitters take during a shift.</li>
+        <li>You enter real information at your own risk.</li>
+        <li><strong>Only invite people you trust.</strong> Everyone in your family space can see its care info, schedule, and photos.</li>
+        <li>You can delete your account and data at any time from the Account menu.</li>
+        <li>The details are in our <a href="privacy.html">privacy policy</a> and <a href="terms.html">terms</a>.</li>
+      </ul>
+    </section>`;
+  }
+
+  // ---------- public API ----------
+
+  const isGuardedPage = Object.prototype.hasOwnProperty.call(PAGE_ROLES, page);
+  const ready = isGuardedPage ? guard() : Promise.resolve(null);
+
+  window.CareNestAuth = {
+    client,
+    ready,
+    whenReady(fn) {
+      ready.then(fn);
+    },
+    loadContext,
+    homeFor,
+    friendlyError,
+    confirmDialog,
+    riskNoticeHtml,
+    legalFooterHtml,
+    escapeHtml,
+    firstName,
+    reveal,
+    go,
+    signOut,
+    mountChrome,
+  };
+})();

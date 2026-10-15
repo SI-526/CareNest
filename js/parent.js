@@ -2,7 +2,8 @@
 // and moments, replies, saving photos, and an album of saved photos.
 // ponytail: same localStorage store as the sitter side; a sitter tab and a parent tab in one
 // browser stay in sync through the store's `storage` event until the real backend lands.
-(function () {
+// Waits for the auth guard (js/auth.js), which fills in real names first.
+(window.CareNestAuth ? window.CareNestAuth.ready : Promise.resolve()).then(function () {
   const data = window.CareNestData;
   const store = window.CareNestStore;
   const ui = window.CareNestUI;
@@ -31,7 +32,7 @@
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const coarsePointer = window.matchMedia("(pointer: coarse)");
 
-  document.getElementById("parent-greeting").textContent = `Hi ${parentContact.firstName || "there"}`;
+  document.getElementById("parent-greeting").textContent = `Hi ${data.viewerFirstName || parentContact.firstName || "there"}`;
   const avatar = document.getElementById("parent-child-avatar");
   if (data.child.avatar) avatar.src = data.child.avatar;
 
@@ -587,4 +588,4 @@
   store.subscribe(render);
   render();
   window.setInterval(refreshRelativeTimes, 30000);
-})();
+});
