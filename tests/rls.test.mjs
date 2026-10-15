@@ -87,6 +87,12 @@ function isoDate(offsetDays) {
   return date.toISOString().slice(0, 10);
 }
 
+// Multi-row inserts whose rows set different columns. supabase-js defaults to defaultToNull:
+// true, which makes PostgREST send NULL for a column a row omits (and NOT NULL columns with a
+// default then fail). defaultToNull: false sends `Prefer: missing=default`, so omitted columns
+// take their column default, exactly as a single-row insert does.
+const BULK_INSERT = { defaultToNull: false };
+
 const DEMO_HOUSEHOLD_ID = "00000000-0000-4000-8000-00000000c0de";
 
 const tables = [
@@ -237,7 +243,7 @@ test("parent can create plans, tasks, care items, and contacts", async () => {
         care_note: "Pack snacks",
         position: 1,
       },
-    ])
+    ], BULK_INSERT)
     .select();
   assert.ifError(tasks.error);
   taskIds = tasks.data.map((t) => t.id);
@@ -249,7 +255,7 @@ test("parent can create plans, tasks, care items, and contacts", async () => {
       { household_id: householdA, category: "preferences", title: "Comfort item", detail: "Ellie" },
       { household_id: householdA, category: "food", title: "Nut-free", severity: "Severe" },
       { household_id: householdA, category: "emergency", title: "Call 911", position: 1 },
-    ])
+    ], BULK_INSERT)
     .select();
   assert.ifError(items.error);
   careItemIds = items.data.map((i) => i.id);
@@ -259,7 +265,7 @@ test("parent can create plans, tasks, care items, and contacts", async () => {
     .insert([
       { household_id: householdA, name: "Mary Ann Thomas", role: "Parent", phone: "588-909-3489" },
       { household_id: householdA, name: "Mott", role: "Hospital", address: "1540 E Hospital Dr" },
-    ])
+    ], BULK_INSERT)
     .select();
   assert.ifError(contacts.error);
   contactIds = contacts.data.map((c) => c.id);
@@ -287,6 +293,9 @@ test("parent can create plans, tasks, care items, and contacts", async () => {
 });
 
 test("parent B cannot read or modify household A", async () => {
+  assert.ok(householdA, "householdA was not created by an earlier test");
+  assert.ok(planA?.id, "planA was not created by an earlier test");
+  assert.ok(taskIds?.length, "taskIds were not created by an earlier test");
   const b = parentB.client;
   for (const table of tables) {
     const { data, error } = await b.from(table).select("*");
@@ -1036,6 +1045,13 @@ test("a shift dated outside yesterday..tomorrow (UTC) is read-only, under any se
 });
 
 test("after shifts exist, parent B still sees nothing of household A", async () => {
+  // Every household A id must exist first: an undefined id would match any row lacking that
+  // column (undefined === undefined) and report a false leak instead of the real cause.
+  for (const [name, id] of Object.entries({ householdA, visitId, parentVisitId, oldVisitId })) {
+    assert.ok(id, `${name} was not created by an earlier test`);
+  }
+  assert.ok(planA?.id, "planA was not created by an earlier test");
+  assert.ok(taskIds?.length, "taskIds were not created by an earlier test");
   const b = parentB.client;
   for (const table of tables) {
     const { data, error } = await b.from(table).select("*");
