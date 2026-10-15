@@ -12,7 +12,8 @@
 // a throwaway local user, so flows can be tested without Google.
 (function () {
   const GIS_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
-  const GIS_LOAD_TIMEOUT_MS = 5000;
+  // After this long the widget says the button is slow, but keeps waiting for it.
+  const GIS_SLOW_MS = 5000;
   const DEV_PASSWORD = "local-dev-only-password";
 
   async function sha256Hex(input) {
@@ -35,6 +36,7 @@
     return "Google sign-in didn't finish. Please try again.";
   }
 
+  // Loads Google's script once. A failed load is not cached, so a later mount can retry.
   let gisScript = null;
   function loadGis() {
     if (!gisScript) {
@@ -50,9 +52,14 @@
           window.google && window.google.accounts && window.google.accounts.id
             ? resolve(window.google.accounts.id)
             : reject(new Error("gis missing"));
-        script.onerror = () => reject(new Error("gis blocked"));
+        script.onerror = () => {
+          script.remove();
+          reject(new Error("gis blocked"));
+        };
         document.head.appendChild(script);
-        window.setTimeout(() => reject(new Error("gis timeout")), GIS_LOAD_TIMEOUT_MS);
+      });
+      gisScript.catch(() => {
+        gisScript = null;
       });
     }
     return gisScript;
@@ -114,9 +121,19 @@
       });
     }
 
+    // Slow network: say so at 5s, but keep waiting and render the button whenever it arrives.
+    const slowTimer = window.setTimeout(() => {
+      if (buttonEl.hasAttribute("aria-busy")) {
+        note.textContent =
+          "Google's sign-in button is taking a while to load. You can keep waiting; if it doesn't appear, a browser extension may be blocking accounts.google.com.";
+      }
+    }, GIS_SLOW_MS);
+
     (async () => {
       try {
         const [id, nonce] = await Promise.all([loadGis(), createNonce()]);
+        window.clearTimeout(slowTimer);
+        if (buttonEl.hasAttribute("aria-busy")) note.textContent = "";
         id.initialize({
           client_id: config.googleClientId,
           callback: (response) => void finishGoogle(response.credential, nonce.raw),
@@ -131,6 +148,7 @@
         buttonEl.removeAttribute("aria-busy");
         if (window.ResizeObserver) new ResizeObserver(() => render(id)).observe(buttonEl);
       } catch (e) {
+        window.clearTimeout(slowTimer);
         buttonEl.removeAttribute("aria-busy");
         buttonEl.hidden = true;
         note.textContent =

@@ -22,8 +22,8 @@
         <p>
           CareNest is a student class project for the University of Michigan course SI 526, run by
           the CareNest student team ("we", "us"). This page explains, in plain language, what
-          CareNest collects, how it is used, who can see it, and how to delete it. Questions, or a request to
-          delete your data: email <a href="mailto:SI-526-Care@umich.edu">SI-526-Care@umich.edu</a>.
+          CareNest collects, how it is used, who can see it, and how to delete it. Questions,
+          privacy requests, and deletion requests: email <a href="mailto:SI-526-Care@umich.edu">SI-526-Care@umich.edu</a>.
         </p>
 
         <h2>What we collect</h2>
@@ -45,9 +45,12 @@
           <li>Invites: the email address a parent invites, who sent it, and when it was sent, accepted, or revoked. The invite link itself is stored only in a scrambled (hashed) form.</li>
         </ul>
         <p>
-          While we finish moving features to our database, some of this (currently the schedule
-          check-offs, photos, and messages) is kept only in the browser on the device where it was
-          entered. Once moved, it is stored with Supabase as described here.
+          <strong>Stored only on your device, for now.</strong> Photos, messages, task check-offs,
+          and moments are currently stored only in the browser on the device that took or wrote
+          them. They are not uploaded to our servers yet, so the other members of your family space
+          do not see them on their own phones. The next update moves them to our database, where
+          they will be stored with Supabase as described here. Each account's copy on a device is
+          kept separately and is removed from that device when you sign out.
         </p>
         <p>
           <strong>Technical basics.</strong> Signing in stores a sign-in token in your browser's
@@ -87,7 +90,7 @@
         <h2>Who can see your information</h2>
         <ul>
           <li><strong>Members of your family space.</strong> The parent and the sitters they invite can see the family space's care info, schedule, shifts, check-offs, notes, photos, and messages, and each other's names and email addresses. Only the parent can see invites. Members of other family spaces cannot see any of it; the database enforces this, not just the app.</li>
-          <li><strong>Service providers.</strong> Supabase (database and sign-in hosting, in the United States) stores the data. Vercel hosts the website. They process data only to provide those services to us.</li>
+          <li><strong>Service providers.</strong> Supabase (database and sign-in hosting, in the United States: US East, N. Virginia) stores the data. Vercel hosts the website. They process data only to provide those services to us.</li>
           <li><strong>If the law requires it.</strong> We would share information only if legally required to.</li>
         </ul>
 
@@ -100,17 +103,19 @@
         </ul>
 
         <h2>Keeping and deleting your data</h2>
-        <p>We keep your information until you delete it, or until we shut the service down (see <a href="terms.html">Terms</a>). Signing out does not delete anything.</p>
+        <p>We keep your information until you delete it, or until we shut the service down (see <a href="terms.html">Terms</a>). Signing out doesn't delete anything on our servers; it removes this account's device-only photos, messages, and check-offs from that browser.</p>
         <p><strong>Delete my account and data</strong> is in the Account menu in the app's navigation. It takes effect immediately and cannot be undone:</p>
         <ul>
           <li><strong>If you are a family space's only parent</strong>, that family space is deleted with everything in it: care info, contacts, schedule, shifts, check-offs, notes, and invites, including what sitters wrote there. Sitters lose access.</li>
           <li><strong>If you are a sitter</strong>, you leave the family space. Check-offs and notes you wrote stay in the family's history but are no longer linked to you. The record of the invite you accepted, which includes your email address, stays with the family space until it is deleted.</li>
           <li>In every case, your membership and your sign-in account (including the name, email, and profile details from Google) are deleted, and CareNest clears its data from the browser you deleted from.</li>
+          <li><strong>Only that device is cleared.</strong> Photos, messages, check-offs, and moments that are still stored only on a device (see above) are cleared only from the device you delete your account on. To remove them from another phone or computer, sign out there, or clear CareNest's site data in that browser.</li>
         </ul>
-        <p>Removing CareNest's access in your Google account settings stops future sign-ins but does not delete your data. Our providers' routine logs expire on their own schedules.</p>
+        <p>Removing CareNest's access in your Google account settings stops future sign-ins but does not delete your data. Our providers' routine logs expire on their own schedules. In particular, our sign-in provider's security logs (such as its sign-in audit log) may keep your email address after your account is deleted, until the provider purges them.</p>
+        <p>If you can't use the Account menu, email <a href="mailto:SI-526-Care@umich.edu">SI-526-Care@umich.edu</a> from the address you signed in with and we will delete your account and data.</p>
 
         <h2>Children</h2>
-        <p>CareNest is for adults: parents and the sitters they invite. It holds information and photos about children, entered by their parents and sitters, but it is not directed to children and children should not have accounts. If you believe a child has signed up, contact us and we will delete the account.</p>
+        <p>CareNest is for adults: parents and the sitters they invite. It holds information and photos about children, entered by their parents and sitters, but it is not directed to children and children should not have accounts. If you believe a child has signed up, email <a href="mailto:SI-526-Care@umich.edu">SI-526-Care@umich.edu</a> and we will delete the account.</p>
 
         <h2>Changes to this policy</h2>
         <p>If we change this policy, we will update this page and its effective date.</p>
