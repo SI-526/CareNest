@@ -6,8 +6,10 @@
 -- moments (stamp_message). It cannot be a reply. A parent can remove its photo with remove_photo
 -- (the message stays as "Photo removed by ..."), and remove_all_photos already covers every
 -- message with a photo. Saves (Album) and concept flags stay limited to proofs and moments.
--- Storage needs no change: uploads and reads are decided by the shift folder, and the upload cap
--- (2 per active task + 10 per shift) counts these photos too.
+-- A shift takes at most 20 live photo messages (stamp_message; a parent's removal frees room),
+-- and the shift folder's upload cap grows by the same 20 (can_upload_photo: 2 per active task +
+-- 10 + 20), so task photos and the moment keep their full room however many the sitter shares.
+-- Reads are still decided by the shift folder.
 
 -- The two chat checks from 20261015 are unnamed; Postgres named them messages_check and
 -- messages_check1. Refuse to run if those names mean something else here.
@@ -43,8 +45,9 @@ alter table public.messages
     or (visit_id is not null and reply_to is null and (photo_path is null) = (photo_removed_at is not null))
   );
 
--- stamp_message() from 20261015, plus: a photo message is the sitter's and follows the proof
--- and moment photo rules. Grants and the trigger are kept by create or replace.
+-- stamp_message() from 20261015, plus: a photo message is the sitter's, follows the proof and
+-- moment photo rules, and a shift takes at most 20 live ones. Grants and the trigger are kept
+-- by create or replace.
 create or replace function public.stamp_message()
 returns trigger
 language plpgsql
@@ -62,6 +65,9 @@ declare
   parent_kind text;
   parent_household_id uuid;
   photo_created_at timestamptz;
+  -- Live photo messages a shift takes. can_upload_photo() adds the same 20 to the folder cap,
+  -- so change both together.
+  photo_message_cap constant int := 20;
 begin
   if caller is null then
     raise exception 'not_authenticated';
@@ -126,6 +132,19 @@ begin
        and o.owner_id = caller::text;
     if not found then
       raise exception 'photo_not_found';
+    end if;
+  end if;
+
+  -- At most photo_message_cap live photo messages per shift (a removed one frees room). The
+  -- visit's share lock does not serialize two inserts, so a per-visit advisory lock (held to the
+  -- end of the transaction) makes the count and the insert one step.
+  if new.kind = 'chat' and new.photo_path is not null then
+    perform pg_catalog.pg_advisory_xact_lock(
+      pg_catalog.hashtextextended('carenest:photo_msgs:' || new.visit_id::text, 0));
+    if (select count(*) from public.messages m
+         where m.visit_id = new.visit_id and m.kind = 'chat' and m.photo_path is not null)
+       >= photo_message_cap then
+      raise exception 'photo_limit_reached';
     end if;
   end if;
 
@@ -213,5 +232,56 @@ begin
   delete from public.concept_flags where message_id = target_message_id;
 
   return old_path;
+end;
+$$;
+
+-- can_upload_photo() from 20261015, with room for the shift's photo messages: the folder cap is
+-- 2 per active task + 10 (proofs, the moment, retakes) + 20 (stamp_message()'s photo-message
+-- cap), so photo messages never eat into task photos or the moment. Security definer, the
+-- search_path, the grant and the storage policy that calls it are kept by create or replace.
+create or replace function public.can_upload_photo(object_name text)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  target_household_id uuid;
+  target_visit_id uuid;
+  target_plan_id uuid;
+  photo_cap int;
+  photo_count int;
+begin
+  select p.household_id, v.id, v.plan_id
+    into target_household_id, target_visit_id, target_plan_id
+    from public.photo_path_parts(object_name) parts
+    join public.visits v on v.id = parts.visit_id
+    join public.plans p on p.id = v.plan_id and p.household_id = parts.household_id
+   where v.ended_at is null
+     and v.visit_date between (now() at time zone 'utc')::date - 1
+                          and (now() at time zone 'utc')::date + 1
+     and public.is_member(p.household_id);
+  if not found then
+    return false;
+  end if;
+  if exists (select 1 from public.messages m where m.photo_path = object_name)
+     or exists (select 1 from public.removed_photos r where r.path = object_name) then
+    return false;
+  end if;
+
+  -- + 20: room for stamp_message()'s photo-message cap; change both together.
+  select 2 * count(*) + 10 + 20 into photo_cap
+    from public.tasks t
+   where t.plan_id = target_plan_id and t.archived_at is null;
+  select count(*) into photo_count
+    from storage.objects o
+   where o.bucket_id = 'photos'
+     and o.name like target_household_id::text || '/' || target_visit_id::text || '/%';
+  if photo_count >= photo_cap then
+    -- 42501 so storage-api passes the message through (403) instead of a generic database error.
+    raise exception 'photo_limit_reached' using errcode = '42501';
+  end if;
+  return true;
 end;
 $$;

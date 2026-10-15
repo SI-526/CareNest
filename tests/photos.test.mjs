@@ -788,13 +788,14 @@ test("a save or concept flag racing remove_photo is refused once the photo is re
   assert.equal((await parent.client.storage.from(BUCKET).remove([path])).data?.length, 1);
 });
 
-test("at most 2 photos per active task + 10 per shift folder; photos of a deleted shift are unreadable", async () => {
+test("at most 2 photos per active task + 10 (+ 20 for photo messages) per shift folder; photos of a deleted shift are unreadable", async () => {
   const v = await caretaker.client.from("visits").insert({ plan_id: planA.id, visit_date: isoDate(-1) }).select().single();
   assert.ifError(v.error);
   const capVisit = v.data.id;
   const activeTasks = async () =>
     (await admin.from("tasks").select("id").eq("plan_id", planA.id).is("archived_at", null)).data.length;
-  const cap = 2 * (await activeTasks()) + 10;
+  // 2 per active task + 10 for proofs, the moment and retakes, + 20 for photo messages.
+  const cap = 2 * (await activeTasks()) + 10 + 20;
   const paths = Array.from({ length: cap }, () => photoPath(householdA, capVisit));
   for (let i = 0; i < paths.length; i += 10) {
     const results = await Promise.all(paths.slice(i, i + 10).map((p) => upload(caretaker, p)));
@@ -820,7 +821,7 @@ test("at most 2 photos per active task + 10 per shift folder; photos of a delete
   assert.ifError(
     (await parent.client.from("tasks").update({ archived_at: new Date().toISOString() }).eq("id", extra.data.id)).error,
   );
-  assert.equal(2 * (await activeTasks()) + 10, cap);
+  assert.equal(2 * (await activeTasks()) + 10 + 20, cap);
 
   assert.ifError((await parent.client.storage.from(BUCKET).download(paths[1])).error);
   assert.ifError((await admin.from("visits").delete().eq("id", capVisit)).error);
@@ -1167,4 +1168,46 @@ test("a photo message racing end_visit is refused once the shift has ended", asy
   assert.equal(count, 0, "no photo message landed on the ended shift");
   // The unused photo is still the sitter's to delete.
   assert.equal((await sitter.client.storage.from(BUCKET).remove([path])).data?.length, 1);
+});
+
+test("a shift takes at most 20 live photo messages; task photos keep their room", async () => {
+  const { mom, sitter, hh, task, visit } = await photoFamily("pmcap");
+  const send = (path) =>
+    sitter.client
+      .from("messages")
+      .insert({ household_id: hh, visit_id: visit.id, kind: "chat", photo_path: path })
+      .select()
+      .single();
+  const paths = Array.from({ length: 21 }, () => photoPath(hh, visit.id));
+  for (let i = 0; i < paths.length; i += 10) {
+    const results = await Promise.all(paths.slice(i, i + 10).map((p) => upload(sitter, p)));
+    for (const r of results) assert.ifError(r.error);
+  }
+  const first = await Promise.all(paths.slice(0, 10).map(send));
+  for (const r of first) assert.ifError(r.error);
+  // The last 11 race each other: the per-shift lock lets exactly 10 in.
+  const rest = await Promise.all(paths.slice(10).map(send));
+  const refused = rest.filter((r) => r.error);
+  assert.equal(refused.length, 1, "the 21st photo message is refused");
+  assertRpcError(refused[0], "photo_limit_reached");
+  const leftover = paths.slice(10)[rest.findIndex((r) => r.error)];
+  const { count } = await admin
+    .from("messages")
+    .select("*", { count: "exact", head: true })
+    .eq("visit_id", visit.id)
+    .eq("kind", "chat")
+    .not("photo_path", "is", null);
+  assert.equal(count, 20, "20 photo messages landed");
+
+  // Task photos keep their room: the sitter can still upload and complete a task with a photo.
+  const proofPhoto = await uploadOk(sitter, hh, visit.id);
+  assert.ifError((await complete(sitter, visit.id, task.id, proofPhoto)).error);
+
+  // A parent removing one frees room for one more.
+  const removed = await mom.client.rpc("remove_photo", { target_message_id: first[0].data.id });
+  assert.ifError(removed.error);
+  const again = await send(leftover);
+  assert.ifError(again.error);
+  const extra = await uploadOk(sitter, hh, visit.id);
+  assertRpcError(await send(extra), "photo_limit_reached");
 });

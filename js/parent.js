@@ -32,7 +32,8 @@
 
     const entries = new Map(); // message id -> { li, article, body, sig, refs, item }
     let known = null; // what the previous state held, for alerts: { feed:Set, events:Set, visitId }
-    let pendingNew = [];
+    let pendingNew = []; // new feed photos (proofs, moments) the banner's View scrolls to
+    let pendingMessagePhotos = 0; // new photo messages: not in the feed, so View opens the Gallery
     let view = viewFromHash("today");
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const coarsePointer = window.matchMedia("(pointer: coarse)");
@@ -612,12 +613,19 @@
       return `${e.actorName} unchecked ${e.taskTitle || "a task"} at ${at}`;
     }
 
-    function showBanner(text, itemId) {
+    // href: where View goes when there is no feed item to scroll to (photo messages: the Gallery).
+    function showBanner(text, itemId, href) {
       bannerText.textContent = text;
-      bannerLink.hidden = !itemId;
+      bannerLink.hidden = !itemId && !href;
       if (itemId) bannerLink.href = `#item-${itemId}`;
+      else if (href) bannerLink.href = href;
       banner.hidden = false;
       announce(text);
+    }
+
+    // The sitter's photo messages (the Gallery's "+"): chat with a photo, from someone else.
+    function isPhotoMessage(m) {
+      return m.kind === "chat" && Boolean(m.photoPath) && m.senderRole === "caretaker" && !m.mine;
     }
 
     function detectChanges(st) {
@@ -625,6 +633,7 @@
       const now = {
         feed: new Set(st.feed.map((i) => i.id)),
         events: new Set(st.events.map(eventKey)),
+        photoMessages: new Set(st.thread.filter(isPhotoMessage).map((m) => m.id)),
         visitId: st.visit ? st.visit.id : null,
       };
       const before = known;
@@ -637,19 +646,30 @@
       }
       const freshEvents = st.events.filter((e) => !e.mine && !before.events.has(eventKey(e)));
       const freshPhotos = st.feed.filter((i) => !i.mine && !before.feed.has(i.id));
-      if (freshPhotos.length) {
+      const freshMessagePhotos = st.thread.filter((m) => isPhotoMessage(m) && !before.photoMessages.has(m.id));
+      const anyFreshPhoto = freshPhotos.length > 0 || freshMessagePhotos.length > 0;
+      if (anyFreshPhoto) {
         pendingNew = freshPhotos.map((i) => i.id).concat(pendingNew);
-        const from = freshPhotos[0].senderName;
-        const text =
-          pendingNew.length > 1 ? `${pendingNew.length} new photos from ${from}` : `New photo from ${from}`;
-        showBanner(text, pendingNew[0]);
-        bannerLink.setAttribute("aria-label", `View new photo: ${freshPhotos[0].title}`);
+        pendingMessagePhotos += freshMessagePhotos.length;
+        const total = pendingNew.length + pendingMessagePhotos;
+        const from = (freshPhotos[0] || freshMessagePhotos[0]).senderName;
+        const text = total > 1 ? `${total} new photos from ${from}` : `New photo from ${from}`;
+        if (pendingNew.length) {
+          // A feed photo is on this page: View scrolls to the newest one.
+          const target = st.feed.find((i) => i.id === pendingNew[0]);
+          showBanner(text, pendingNew[0]);
+          bannerLink.setAttribute("aria-label", target ? `View new photo: ${target.title}` : "View new photo");
+        } else {
+          showBanner(text, null, "gallery.html?as=parent");
+          bannerLink.setAttribute("aria-label", "View new photo in the Gallery");
+        }
       }
       if (freshEvents.length) {
         const latest = freshEvents[freshEvents.length - 1];
-        if (freshPhotos.length) announce(eventText(latest));
+        if (anyFreshPhoto) announce(eventText(latest));
         else {
           pendingNew = [];
+          pendingMessagePhotos = 0;
           showBanner(eventText(latest));
         }
       }
@@ -658,9 +678,12 @@
     function hideBanner() {
       banner.hidden = true;
       pendingNew = [];
+      pendingMessagePhotos = 0;
     }
 
     bannerLink.addEventListener("click", (e) => {
+      // Only photo messages are new: let the link open the Gallery.
+      if (!pendingNew.length) return;
       e.preventDefault();
       const id = pendingNew[0];
       hideBanner();
