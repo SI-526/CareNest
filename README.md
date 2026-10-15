@@ -120,6 +120,7 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 | `visits` | One babysitting shift per plan per date (yesterday, today, or tomorrow); start, handoff note, current end, moment time | Members start and write the note (dates in the window only); any member can `end_visit` and `reopen_visit` |
 | `task_checks` | Which tasks are done in a shift, by whom, and when (`checked_at`) | Only `complete_task` (photo required for caretakers, optional for parents), while the shift is open and in the window; members uncheck |
 | `shift_events` | Append-only shift history: ends, reopens, and unchecks of original-shift tasks after a reopen, with who, which task, and when | Nobody directly; only `end_visit`, `reopen_visit`, and the uncheck trigger write it. Members read |
+| `care_logs` | Structured care details on a task completed in a shift: `meal` (amount all/most/some/none and/or a note), `bottle` (ounces, optional note), or `care` (a note); who wrote it, their role, and when | Members add logs to a checked task while the shift's date is in the window (open or ended). Author, role, household, and time are set by the database. Append-only: nobody edits or deletes; an edit is a new row |
 | `messages` | Chat, task proofs (photo, note, tag), and moments (photo, `late`); replies to a photo | Members post chat; sitters post the shift's moment; proofs only via `complete_task`. Sender, role, time, and `late` are set by the database. Clients never edit or delete; a parent can remove a photo with `remove_photo` (the message stays, marked "Photo removed by …") |
 | `message_reads` | Which messages a user has seen | Each user, for themselves; private |
 | `photo_saves` | A parent's saved-photo album | Each parent, for themselves; private |
@@ -188,6 +189,23 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   (`for share`, which waits for `end_visit`'s `for update`) and re-checks the end and the date
   window for every signed-in insert, whatever path made it; `complete_task` also takes the same
   lock. Two-session tests cover both RPC paths and a raw insert.
+- **Care logs (SI-28).** After a task is checked in a shift, any member (sitter or parent) can
+  add a `care_logs` entry to it: `meal` (an amount, a note, or both), `bottle` (ounces, more than
+  0 and at most 16, required), or `care` (a note, required); a note is at most 1000 characters.
+  An empty entry is refused by `CHECK` constraints (the app says "No information provided"), and
+  a meal amount or ounces on the wrong category is refused too. A `BEFORE INSERT` trigger
+  (`stamp_care_log`, `SECURITY DEFINER`, empty `search_path`) requires a signed-in member of the
+  shift's household (`household_not_found`), the shift's date in the window whether it is open
+  or ended, like the handoff note (`visit_too_old`), and the task checked in that shift at that
+  moment, read under a share lock that serialises with a concurrent uncheck
+  (`task_not_completed`); it sets the household, author, role, and time whatever the client
+  sent (those columns are not even insertable). Append-only: members have no `UPDATE` or
+  `DELETE` privilege, an edit is a new row under the same task (the app shows the latest), and
+  the task's check and its `checked_at` are never touched; a later uncheck leaves earlier logs in
+  place. Members read all logs of their household; anon nothing. Published to Realtime (the
+  DELETE-event limitation below applies: one random UUID per log removed with a family space).
+  `delete_my_account` cascades a sole parent's logs away; a departed sitter's logs stay without
+  their name.
 - Each check stores a snapshot of the task as it was when it was checked (`task_title`,
   `task_time_of_day`, `task_detail`, `task_location`, `task_care_note`), filled by the database.
   **Frontend: past shifts render the snapshot, not the live task.** Archived tasks are frozen
