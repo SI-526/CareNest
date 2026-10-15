@@ -7,7 +7,7 @@
 // random throwaway passwords and are deleted (with their photos) when the run ends.
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
@@ -96,6 +96,48 @@ function localSql(sql) {
   if (!/^\s*[[{]/.test(out)) return [];
   const parsed = JSON.parse(out);
   return Array.isArray(parsed) ? parsed : (parsed.rows ?? parsed.data ?? parsed.result);
+}
+
+// Two-session tests talk to the local database directly with psql (status.DB_URL is local-only,
+// checked here), because one PostgREST request cannot hold a transaction open.
+const dbUrl = status.DB_URL;
+if (dbUrl && !["127.0.0.1", "localhost"].includes(new URL(dbUrl).hostname)) {
+  throw new Error("Refusing to use a non-local database URL");
+}
+
+function psqlAvailable() {
+  try {
+    execFileSync("psql", ["--version"], { stdio: "ignore" });
+    return Boolean(dbUrl);
+  } catch {
+    return false;
+  }
+}
+
+function psqlQuery(sql) {
+  return execFileSync("psql", [dbUrl, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c", sql], {
+    encoding: "utf8",
+  }).trim();
+}
+
+// Runs `sql` in its own psql session; resolves to psql's exit code.
+function spawnPsql(sql) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("psql", [dbUrl, "-Xq", "-v", "ON_ERROR_STOP=1"], {
+      stdio: ["pipe", "ignore", "inherit"],
+    });
+    child.on("error", reject);
+    child.on("exit", resolve);
+    child.stdin.end(sql);
+  });
+}
+
+async function waitFor(condition, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    assert.ok(Date.now() < deadline, "timed out waiting for the other session");
+    await new Promise((r) => setTimeout(r, 50));
+  }
 }
 
 // Only ever interpolate ids this run created.
@@ -264,7 +306,8 @@ test("the moment falls between 30 minutes in and 30 minutes before the usual end
   const rows = localSql(`
     select label, (h).start_time::text as s, (h).end_time::text as e
       from (values ('3:00pm - 7:00pm'), ('3-7pm'), ('11-1pm'), ('9am to 1pm'), ('15:00–19:00'),
-                   ('10pm - 6am'), ('Afternoons'), (''), ('13pm-2pm')) as l(label),
+                   ('10pm - 6am'), ('Afternoons'), (''), ('13pm-2pm'), ('9-5'), ('9am-5pm'),
+                   ('10pm-6am'), ('11-1'), ('garbage'), ('３-７pm'), ('٣-٧'), ('३-७pm')) as l(label),
            lateral (select public.schedule_hours(label) as h) x`);
   const parsed = Object.fromEntries(rows.map((r) => [r.label, [r.s, r.e]]));
   assert.deepEqual(parsed["3:00pm - 7:00pm"], ["15:00:00", "19:00:00"]);
@@ -273,7 +316,12 @@ test("the moment falls between 30 minutes in and 30 minutes before the usual end
   assert.deepEqual(parsed["9am to 1pm"], ["09:00:00", "13:00:00"]);
   assert.deepEqual(parsed["15:00–19:00"], ["15:00:00", "19:00:00"]);
   assert.deepEqual(parsed["10pm - 6am"], ["22:00:00", "06:00:00"]);
-  for (const label of ["Afternoons", "", "13pm-2pm"]) {
+  assert.deepEqual(parsed["9-5"], ["09:00:00", "17:00:00"], "no am/pm, end before start: a day shift");
+  assert.deepEqual(parsed["9am-5pm"], ["09:00:00", "17:00:00"]);
+  assert.deepEqual(parsed["10pm-6am"], ["22:00:00", "06:00:00"], "genuinely overnight");
+  assert.deepEqual(parsed["11-1"], ["11:00:00", "13:00:00"]);
+  // Full-width, Arabic-Indic, and Devanagari digits are not ASCII digits: unknown hours, no error.
+  for (const label of ["Afternoons", "", "13pm-2pm", "garbage", "３-７pm", "٣-٧", "३-७pm"]) {
     assert.deepEqual(parsed[label], [null, null], `"${label}" is not understood`);
   }
 
@@ -282,7 +330,7 @@ test("the moment falls between 30 minutes in and 30 minutes before the usual end
   const [range] = localSql(`
     with draws as (
       select label, public.moment_delay(label) as delay
-        from (values ('3:00pm - 7:00pm'), ('10pm - 6am'), ('')) as l(label), generate_series(1, 200)
+        from (values ('3:00pm - 7:00pm'), ('10pm - 6am'), ('9-5'), ('')) as l(label), generate_series(1, 200)
     )
     select json_object_agg(label, json_build_array(min_s, max_s)) as r
       from (select label, extract(epoch from min(delay))::int as min_s,
@@ -293,7 +341,19 @@ test("the moment falls between 30 minutes in and 30 minutes before the usual end
     assert.ok(r[label][0] >= lo && r[label][1] <= hi, `${label || "(none)"}: ${r[label]} not in ${lo}..${hi}`);
   within("3:00pm - 7:00pm", 1800, 3.5 * 3600);
   within("10pm - 6am", 1800, 7.5 * 3600);
+  within("9-5", 1800, 7.5 * 3600);
   within("", 1800, 3 * 3600);
+});
+
+test("an odd schedule label (non-ASCII digits, garbage) never blocks a shift; default timing", async () => {
+  for (const [label, date] of [["３-７pm", isoDate(-1)], ["garbage", isoDate(1)]]) {
+    assert.ifError((await parentB.client.from("plans").update({ schedule: label }).eq("id", planB.id)).error);
+    const v = await parentB.client.from("visits").insert({ plan_id: planB.id, visit_date: date }).select().single();
+    assert.ifError(v.error, `"${label}": the shift starts`);
+    const delay = (Date.parse(v.data.moment_at) - Date.parse(v.data.started_at)) / 1000;
+    assert.ok(delay >= 30 * 60 && delay <= 3 * 3600, `"${label}": fallback timing, ${delay}s`);
+  }
+  assert.ifError((await parentB.client.from("plans").update({ schedule: "" }).eq("id", planB.id)).error);
 });
 
 test("a parent can bring the moment forward for a demo; nobody else, and not after it is posted", async () => {
@@ -499,9 +559,14 @@ test("chat senders, roles, and times are stamped by the server", async () => {
 });
 
 test("one moment per shift, from the sitter, on time or labelled late by the server", async () => {
+  const early = await uploadOk(caretaker, householdA, visitId);
+  assertRpcError(await postMoment(caretaker, householdA, visitId, early), "moment_not_due");
+  // The parent brings the prompt forward; it fires (moment_at = the database's now, after the
+  // early photo was uploaded). A photo taken before the prompt cannot be the moment.
+  assert.ifError((await parent.client.rpc("trigger_moment_now", { target_visit_id: visitId })).error);
+  localSql(`update public.visits set moment_at = now() where id = '${uuid(visitId)}'`);
+  assertRpcError(await postMoment(caretaker, householdA, visitId, early), "moment_photo_too_early");
   const path = await uploadOk(caretaker, householdA, visitId);
-  assertRpcError(await postMoment(caretaker, householdA, visitId, path), "moment_not_due");
-  localSql(`update public.visits set moment_at = now() - interval '1 minute' where id = '${uuid(visitId)}'`);
 
   assertRpcError(
     await postMoment(parent, householdA, visitId, await uploadOk(parent, householdA, visitId)),
@@ -514,6 +579,10 @@ test("one moment per shift, from the sitter, on time or labelled late by the ser
   momentId = onTime.data.id;
   assert.equal(onTime.data.late, false);
   assert.equal(onTime.data.sender_role, "caretaker");
+  assertRpcError(
+    await parent.client.rpc("trigger_moment_now", { target_visit_id: visitId }),
+    "moment_already_posted",
+  );
   assertRpcError(
     await postMoment(caretaker, householdA, visitId, await uploadOk(caretaker, householdA, visitId)),
     "moment_already_posted",
@@ -632,9 +701,28 @@ test("a parent removes any photo: the bytes go, the message stays marked, saves 
   );
   assertRpcError(await parent.client.rpc("remove_photo", { target_message_id: momentId }), "photo_already_removed");
 
+  // Removed: nobody reads it any more, even before its object is deleted.
+  for (const user of [parent, caretaker]) {
+    assert.ok((await user.client.storage.from(BUCKET).download(momentPath)).error, "removed photo unreadable");
+    assert.ok((await user.client.storage.from(BUCKET).createSignedUrl(momentPath, 60)).error, "no signed URL");
+    assert.equal((await user.client.rpc("can_read_photo", { object_name: momentPath })).data, false);
+  }
+  // It cannot be attached again (the uploader tries it as a proof), and its uploader cannot
+  // delete it; only a parent can.
+  assertRpcError(await complete(caretaker, visitId, taskIds[1], momentPath), "photo_removed");
+  assert.equal(
+    (await admin.from("task_checks").select("*").eq("visit_id", visitId).eq("task_id", taskIds[1])).data.length,
+    0,
+    "the refused proof left no check",
+  );
+  assert.deepEqual((await caretaker.client.storage.from(BUCKET).remove([momentPath])).data ?? [], [], "sitter");
+  assert.deepEqual((await parentB.client.storage.from(BUCKET).remove([momentPath])).data ?? [], [], "other family");
+
   const erased = await parent.client.storage.from(BUCKET).remove([momentPath]);
   assert.equal(erased.data?.length, 1, "the parent then erases the object");
   assert.ok((await admin.storage.from(BUCKET).download(momentPath)).error, "the bytes are gone");
+  assert.ok((await upload(caretaker, momentPath)).error, "a removed path is never uploaded to again");
+  assert.equal((await caretaker.client.rpc("can_upload_photo", { object_name: momentPath })).data, false);
 
   // A proof keeps its task check when its photo is removed.
   const bathPath = await uploadOk(caretaker, householdA, visitId);
@@ -662,18 +750,77 @@ test("a path a message uses cannot be uploaded again, even if its object is gone
   assert.equal((await caretaker.client.rpc("can_upload_photo", { object_name: path })).data, false);
 });
 
-test("at most 200 objects per shift folder; photos of a deleted shift are unreadable", async () => {
+test("a save or concept flag racing remove_photo is refused once the photo is removed", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this two-session test needs a direct database connection");
+    return;
+  }
+  const task = (await parent.client.from("tasks").insert({ plan_id: planA.id, title: "Snack" }).select().single()).data;
+  const path = await uploadOk(parent, householdA, visitId);
+  const done = await complete(parent, visitId, task.id, path);
+  assert.ifError(done.error);
+  const messageId = done.data;
+
+  // Session 1 (psql, as the parent): remove the photo and hold the transaction open.
+  const marker = `photorace-${randomUUID()}`;
+  const claims = JSON.stringify({ sub: uuid(parent.id), role: "authenticated" });
+  const session = spawnPsql(`
+    begin;
+    set local role authenticated;
+    select set_config('request.jwt.claims', '${claims}', true);
+    select public.remove_photo('${uuid(messageId)}');
+    select pg_sleep(4) /* ${marker} */;
+    commit;`);
+  await waitFor(() =>
+    psqlQuery(`select count(*) from pg_stat_activity where state = 'active' and query like '%${marker}%' and query not like '%pg_stat_activity%'`) === "1",
+  );
+  // Session 2 (through the API): the RLS check's snapshot still shows the photo; the trigger
+  // waits on the message lock and, once the removal commits, refuses.
+  const [save, flag] = await Promise.all([
+    parent.client.from("photo_saves").insert({ message_id: messageId }).select(),
+    parent.client.from("concept_flags").insert({ message_id: messageId, text: "Seems off" }).select(),
+  ]);
+  assert.equal(await session, 0, "session 1 committed");
+  assertRpcError(save, "photo_removed");
+  assertRpcError(flag, "photo_removed");
+  assert.equal((await admin.from("photo_saves").select("*").eq("message_id", messageId)).data.length, 0);
+  assert.equal((await admin.from("concept_flags").select("*").eq("message_id", messageId)).data.length, 0);
+  assert.equal((await parent.client.storage.from(BUCKET).remove([path])).data?.length, 1);
+});
+
+test("at most 2 photos per active task + 10 per shift folder; photos of a deleted shift are unreadable", async () => {
   const v = await caretaker.client.from("visits").insert({ plan_id: planA.id, visit_date: isoDate(-1) }).select().single();
   assert.ifError(v.error);
   const capVisit = v.data.id;
-  const paths = Array.from({ length: 200 }, () => photoPath(householdA, capVisit));
-  for (let i = 0; i < paths.length; i += 25) {
-    const results = await Promise.all(paths.slice(i, i + 25).map((p) => upload(caretaker, p)));
+  const activeTasks = async () =>
+    (await admin.from("tasks").select("id").eq("plan_id", planA.id).is("archived_at", null)).data.length;
+  const cap = 2 * (await activeTasks()) + 10;
+  const paths = Array.from({ length: cap }, () => photoPath(householdA, capVisit));
+  for (let i = 0; i < paths.length; i += 10) {
+    const results = await Promise.all(paths.slice(i, i + 10).map((p) => upload(caretaker, p)));
     for (const r of results) assert.ifError(r.error);
   }
-  assert.ok((await upload(caretaker, photoPath(householdA, capVisit))).error, "the 201st upload is refused");
+  const over = photoPath(householdA, capVisit);
+  const refused = await upload(caretaker, over);
+  assert.ok(refused.error, `upload ${cap + 1} is refused`);
+  assert.match(String(refused.error.message), /photo_limit_reached/, "a clear error code");
+  assertRpcError(await caretaker.client.rpc("can_upload_photo", { object_name: over }), "photo_limit_reached");
+  // Someone who could not upload there anyway just gets false, not the limit.
+  assert.equal((await parentB.client.rpc("can_upload_photo", { object_name: over })).data, false);
   assert.ifError((await caretaker.client.storage.from(BUCKET).remove([paths[0]])).error);
-  await uploadOk(caretaker, householdA, capVisit); // room again after a delete
+  await uploadOk(caretaker, householdA, capVisit); // room again after a delete (back at the cap)
+  assert.ok((await upload(caretaker, photoPath(householdA, capVisit))).error, "at the cap again");
+  // One more active task: two more photos.
+  const extra = await parent.client.from("tasks").insert({ plan_id: planA.id, title: "Story" }).select().single();
+  assert.ifError(extra.error);
+  await uploadOk(caretaker, householdA, capVisit);
+  await uploadOk(caretaker, householdA, capVisit);
+  assert.ok((await upload(caretaker, photoPath(householdA, capVisit))).error, "the new cap holds");
+  // Archiving it lowers the cap again (archived tasks do not count).
+  assert.ifError(
+    (await parent.client.from("tasks").update({ archived_at: new Date().toISOString() }).eq("id", extra.data.id)).error,
+  );
+  assert.equal(2 * (await activeTasks()) + 10, cap);
 
   assert.ifError((await parent.client.storage.from(BUCKET).download(paths[1])).error);
   assert.ifError((await admin.from("visits").delete().eq("id", capVisit)).error);
@@ -686,38 +833,50 @@ test("at most 200 objects per shift folder; photos of a deleted shift are unread
   const own = await caretaker.client.storage.from(BUCKET).remove([paths[1]]);
   assert.deepEqual(own.data ?? [], [], "an orphan is hidden from its uploader as well");
   const { data: kept } = await admin.storage.from(BUCKET).list(`${householdA}/${capVisit}`, { limit: 1000 });
-  assert.equal(kept.length, 200, "the orphans are still stored until cleanup");
+  assert.equal(kept.length, cap + 2, "the orphans are still stored until cleanup");
 });
 
-test("the account-deletion marker works only for the parent who set it, while sole parent, for an hour", async () => {
-  const p1 = await signUp("t3-marker-p1");
-  const p2 = await signUp("t3-marker-p2");
-  const h = await p1.client.rpc("create_household", { household_name: "Marker", acknowledged: true });
+test("remove_all_photos removes every photo only where the caller is the only parent", async () => {
+  const p1 = await signUp("t3-bulk-p1");
+  const p2 = await signUp("t3-bulk-p2");
+  const h = await p1.client.rpc("create_household", { household_name: "Bulk", acknowledged: true });
   assert.ifError(h.error);
   createdHouseholdIds.push(h.data);
   const plan = (await p1.client.from("plans").insert({ household_id: h.data, title: "Day" }).select().single()).data;
   const task = (await p1.client.from("tasks").insert({ plan_id: plan.id, title: "Lunch" }).select().single()).data;
   const visit = (await p1.client.from("visits").insert({ plan_id: plan.id, visit_date: isoDate(0) }).select().single()).data;
-  const path = await uploadOk(p1, h.data, visit.id);
-  assert.ifError((await complete(p1, visit.id, task.id, path)).error); // now referenced
-  const tryRemove = async (user) => (await user.client.storage.from(BUCKET).remove([path])).data ?? [];
+  const used = await uploadOk(p1, h.data, visit.id);
+  const proof = await complete(p1, visit.id, task.id, used);
+  assert.ifError(proof.error);
+  const unused = await uploadOk(p1, h.data, visit.id);
+  assert.ifError((await p1.client.from("photo_saves").insert({ message_id: proof.data })).error);
 
-  assert.deepEqual((await p1.client.rpc("start_account_deletion")).data, [h.data]);
-  // A co-parent joins: p1 is no longer the sole parent, and p2 did not set the marker.
+  // A co-parent: the family stays after p1 leaves, so p1 removes nothing.
   localSql(`insert into public.household_members (household_id, user_id, role, email)
             values ('${uuid(h.data)}', '${uuid(p2.id)}', 'parent', '${p2.email}')`);
-  assert.deepEqual(await tryRemove(p1), [], "not while a co-parent exists");
-  assert.deepEqual(await tryRemove(p2), [], "the co-parent cannot use p1's marker");
-  // p1 leaves; p2 is now the sole parent but still did not set the marker.
-  localSql(`delete from public.household_members where household_id = '${uuid(h.data)}' and user_id = '${uuid(p1.id)}'`);
-  assert.deepEqual(await tryRemove(p2), [], "a marker set by someone else is refused");
+  assert.deepEqual((await p1.client.rpc("remove_all_photos")).data, [], "not while a co-parent exists");
+  assert.deepEqual((await caretaker.client.rpc("remove_all_photos")).data, [], "a sitter removes nothing");
+  const { data: kept } = await admin.from("messages").select("photo_path").eq("id", proof.data).single();
+  assert.equal(kept.photo_path, used);
+  // A used photo is never deleted directly, by either parent.
+  for (const user of [p1, p2]) {
+    assert.deepEqual((await user.client.storage.from(BUCKET).remove([used])).data ?? [], []);
+  }
 
-  // p2 marks for themselves; it expires after an hour.
-  assert.deepEqual((await p2.client.rpc("start_account_deletion")).data, [h.data]);
-  localSql(`update public.households set deletion_started_at = now() - interval '61 minutes' where id = '${uuid(h.data)}'`);
-  assert.deepEqual(await tryRemove(p2), [], "an expired marker is refused");
-  localSql(`update public.households set deletion_started_at = now() where id = '${uuid(h.data)}'`);
-  assert.equal((await tryRemove(p2)).length, 1, "the marker's owner, sole parent, within the hour");
+  // Sole parent again: every photo is removed (recorded), and every object is returned.
+  localSql(`delete from public.household_members where household_id = '${uuid(h.data)}' and user_id = '${uuid(p2.id)}'`);
+  const bulk = await p1.client.rpc("remove_all_photos");
+  assert.ifError(bulk.error);
+  assert.deepEqual([...bulk.data].sort(), [used, unused].sort());
+  const { data: marked } = await p1.client.from("messages").select("photo_path, photo_removed_by").eq("id", proof.data).single();
+  assert.deepEqual(marked, { photo_path: null, photo_removed_by: p1.id }, "the family keeps a Photo removed record");
+  assert.equal((await admin.from("photo_saves").select("*").eq("message_id", proof.data)).data.length, 0);
+  assert.equal((await p1.client.storage.from(BUCKET).download(used)).error != null, true, "removed: unreadable");
+  const erased = await p1.client.storage.from(BUCKET).remove(bulk.data);
+  assert.ifError(erased.error);
+  assert.equal(erased.data.length, 2, "the parent deletes every returned object");
+  const { data: left } = await admin.storage.from(BUCKET).list(`${h.data}/${visit.id}`);
+  assert.deepEqual(left ?? [], []);
 });
 
 test("other households, outsiders, and anon see none of it", async () => {
@@ -737,7 +896,8 @@ test("other households, outsiders, and anon see none of it", async () => {
   }
   for (const [name, args] of [
     ["complete_task", { target_visit_id: visitId, target_task_id: taskIds[1], proof_photo_path: "x" }],
-    ["start_account_deletion", {}],
+    ["remove_all_photos", {}],
+    ["can_delete_removed_photo", { object_name: "x" }],
     ["remove_photo", { target_message_id: randomUUID() }],
     ["trigger_moment_now", { target_visit_id: randomUUID() }],
     ["can_read_photo", { object_name: "x" }],
@@ -784,28 +944,22 @@ test("photo deletion: unused photos by the uploader or a parent; then the depart
   );
   assert.deepEqual((await parent.client.storage.from(BUCKET).remove([proofPath])).data ?? [], []);
 
-  // Account deletion: the sole parent marks their households, removes the photos, then deletes.
-  const sitterMarks = await caretaker.client.rpc("start_account_deletion");
-  assert.deepEqual(sitterMarks.data, [], "a sitter marks nothing");
-  const marked = await parent.client.rpc("start_account_deletion");
-  assert.ifError(marked.error);
-  assert.deepEqual(marked.data, [householdA]);
-  const { data: marker } = await admin.from("households").select("deletion_started_by").eq("id", householdA).single();
-  assert.equal(marker.deletion_started_by, parent.id);
-  assertPermissionDenied(
-    await parent.client.from("households").update({ deletion_started_at: null }).eq("id", householdA).select(),
-    "deletion_started_at is not client-writable",
-  );
+  // Account deletion: the sole parent removes every photo (messages keep a "Photo removed"
+  // record), deletes the returned objects with the Storage API, then deletes the account.
   assert.deepEqual((await caretaker.client.storage.from(BUCKET).remove([proofPath])).data ?? [], []);
   assert.deepEqual((await parentB.client.storage.from(BUCKET).remove([proofPath])).data ?? [], []);
-
-  const { data: folders } = await parent.client.storage.from(BUCKET).list(householdA);
-  const paths = [];
-  for (const folder of folders) {
-    const { data: files } = await parent.client.storage.from(BUCKET).list(`${householdA}/${folder.name}`);
-    paths.push(...files.map((f) => `${householdA}/${folder.name}/${f.name}`));
-  }
+  const bulk = await parent.client.rpc("remove_all_photos");
+  assert.ifError(bulk.error);
+  const paths = bulk.data;
   assert.ok(paths.includes(proofPath));
+  const { data: stillUsed } = await admin
+    .from("messages")
+    .select("id")
+    .eq("household_id", householdA)
+    .not("photo_path", "is", null);
+  assert.deepEqual(stillUsed, [], "no message points at a photo any more");
+  assert.ok((await caretaker.client.storage.from(BUCKET).download(proofPath)).error, "removed: unreadable");
+  assert.deepEqual((await caretaker.client.storage.from(BUCKET).remove([proofPath])).data ?? [], [], "sitter");
   const removed = await parent.client.storage.from(BUCKET).remove(paths);
   assert.ifError(removed.error);
   assert.equal(removed.data.length, paths.length, "the sole parent removes every photo");

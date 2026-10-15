@@ -7,12 +7,15 @@
 --   * Photos live in a PRIVATE Storage bucket `photos` (5 MB, JPEG/PNG/WebP) at
 --     `<household_id>/<visit_id>/<uuid>.<jpg|png|webp>`. Members of the household read them.
 --     A member uploads only into an open shift of their household whose date is in the window
---     (database UTC date ±1), at most 200 objects per shift folder, never at a path a message
---     already uses. Nobody overwrites a photo. A photo is readable only while its path's shift
---     still exists in that household. Deletion: anything no message uses, by its uploader or by
---     a parent of the household; a used photo first goes through remove_photo() (parents only,
---     which keeps the message as "Photo removed by ..."); or, during account deletion, the sole
---     parent who started it (start_account_deletion(), valid for one hour).
+--     (database UTC date ±1), at most 2 photos per active task + 10 per shift folder
+--     (photo_limit_reached), never at a path a message uses or a parent removed. Nobody
+--     overwrites a photo. A photo is readable only while its path's shift still exists in that
+--     household and no parent removed it. Deletion: a photo no message uses, by its uploader or
+--     by a parent of the household; a used photo first goes through remove_photo() (parents
+--     only, which keeps the message as "Photo removed by ..." and records the path in
+--     removed_photos); a removed photo only by a parent. Account deletion uses
+--     remove_all_photos() (the same removal for every photo of the caller's sole-parent
+--     households), then the Storage API delete, then delete_my_account().
 --   * messages: chat, task proofs, and moments. The sender, the sender's role, the time, and the
 --     moment's `late` flag are always set by the database (trigger), never by the client.
 --     Proofs and moments need an open, in-window shift, checked under a share lock on the visit,
@@ -26,7 +29,8 @@
 --     database when the shift starts: between 30 minutes after the start and 30 minutes before
 --     the plan's usual end (from its schedule label), or 30 minutes to 3 hours after the start
 --     when the usual hours are unknown. trigger_moment_now() (parents) moves it to 1-5 minutes
---     from now for demos. A moment posted more than 2 minutes after the prompt is late.
+--     from now for demos. A moment's photo must be uploaded at or after the prompt
+--     (moment_photo_too_early). A moment posted more than 2 minutes after the prompt is late.
 --   * message_reads (per user, private), photo_saves (per parent, private), concept_flags
 --     (parent-set demo control, readable by members, CONCEPT ONLY: nothing analyses photos).
 
@@ -58,13 +62,6 @@ alter table public.task_checks
   alter column task_detail set not null,
   alter column task_location set not null,
   alter column task_care_note set not null;
-
--- Set by start_account_deletion(); lets the departing sole parent delete the household's photos
--- from Storage for a short time before delete_my_account() removes the household.
-alter table public.households add column deletion_started_at timestamptz;
--- Who started it: only that user (while still the sole parent) may use the marker.
-alter table public.households
-  add column deletion_started_by uuid references auth.users (id) on delete set null;
 
 -- ---------------------------------------------------------------------------
 -- Tables
@@ -160,12 +157,27 @@ comment on column public.concept_flags.concept_only is
 comment on column public.concept_flags.text is
   'Typed by a parent as a demo control (CONCEPT ONLY), not produced by any analysis.';
 
+-- Every Storage path a parent removed with remove_photo() or remove_all_photos(). A removed path
+-- is never readable again (only a parent may still delete its object), never uploaded to again,
+-- and never attached to a message again. Rows go with their household. Internal: clients have no
+-- privileges; the SECURITY DEFINER functions below read and write it.
+create table public.removed_photos (
+  path text primary key,
+  household_id uuid not null references public.households (id) on delete cascade,
+  removed_at timestamptz not null default now()
+);
+
+create index removed_photos_household_id_idx on public.removed_photos (household_id);
+
 -- ---------------------------------------------------------------------------
 -- Triggers
 -- ---------------------------------------------------------------------------
 
 -- The usual hours in a plan's schedule label, e.g. "3:00pm - 7:00pm", "3-7pm", "9am to 1pm",
--- "15:00–19:00". Nulls when the label is empty or not understood.
+-- "15:00–19:00", "9-5" (9am-5pm). Nulls when the label is empty or not understood. Never raises:
+-- only ASCII digits are matched ([0-9], not \d, which also matches full-width and other
+-- scripts' digits under an ICU locale), and any failure falls back to nulls, so an odd label can
+-- never block starting a shift.
 create function public.schedule_hours(label text, out start_time time, out end_time time)
 language plpgsql
 immutable
@@ -182,7 +194,7 @@ declare
 begin
   parts := regexp_match(
     coalesce(label, ''),
-    '^\s*(\d{1,2})(?::(\d{2}))?\s*([ap]\.?m\.?)?\s*(?:-|–|—|to)\s*(\d{1,2})(?::(\d{2}))?\s*([ap]\.?m\.?)?\s*$',
+    '^\s*([0-9]{1,2})(?::([0-9]{2}))?\s*([ap]\.?m\.?)?\s*(?:-|–|—|to)\s*([0-9]{1,2})(?::([0-9]{2}))?\s*([ap]\.?m\.?)?\s*$',
     'i'
   );
   if parts is null then
@@ -194,14 +206,19 @@ begin
   h2 := parts[4]::int;
   m2 := coalesce(parts[5], '0')::int;
   ap2 := lower(left(parts[6], 1));
+  if m1 > 59 or m2 > 59 then
+    return;
+  end if;
+  -- "9-5" (no am/pm, both 12 or less, end before start) is a day shift: 9am-5pm, not overnight.
+  if ap1 is null and ap2 is null and h1 <= 12 and h2 <= 12
+     and make_time(h2, m2, 0) < make_time(h1, m1, 0) then
+    h2 := h2 + 12;
+  end if;
   -- "3-7pm" is 3pm-7pm; "11-1pm" is 11am-1pm; "3pm-7" is 3pm-7pm.
   if ap1 is null and ap2 is not null then
     ap1 := case when h1 % 12 <= h2 % 12 then ap2 else (case when ap2 = 'p' then 'a' else 'p' end) end;
   elsif ap2 is null and ap1 is not null then
     ap2 := ap1;
-  end if;
-  if m1 > 59 or m2 > 59 then
-    return;
   end if;
   if ap1 is not null then
     if h1 not between 1 and 12 or h2 not between 1 and 12 then
@@ -214,6 +231,11 @@ begin
   end if;
   start_time := make_time(h1, m1, 0);
   end_time := make_time(h2, m2, 0);
+exception
+  when others then
+    -- Unparseable after all: unknown hours (the caller uses the default timing).
+    start_time := null;
+    end_time := null;
 end;
 $$;
 
@@ -285,6 +307,7 @@ declare
   visit_moment_at timestamptz;
   parent_kind text;
   parent_household_id uuid;
+  photo_created_at timestamptz;
 begin
   if caller is null then
     raise exception 'not_authenticated';
@@ -330,14 +353,19 @@ begin
                          and (now() at time zone 'utc')::date + 1 then
       raise exception 'visit_too_old';
     end if;
+    -- A photo a parent removed is never attached again.
+    if exists (select 1 from public.removed_photos r where r.path = new.photo_path) then
+      raise exception 'photo_removed';
+    end if;
     -- The photo must exist, uploaded by the sender, in this household/visit folder (the path
-    -- check constraint ties the folder to household_id and visit_id).
-    if not exists (
-      select 1 from storage.objects o
-       where o.bucket_id = 'photos'
-         and o.name = new.photo_path
-         and o.owner_id = caller::text
-    ) then
+    -- check constraint ties the folder to household_id and visit_id). Storage stamps
+    -- created_at (column default now(), not client-settable) when the object is uploaded.
+    select o.created_at into photo_created_at
+      from storage.objects o
+     where o.bucket_id = 'photos'
+       and o.name = new.photo_path
+       and o.owner_id = caller::text;
+    if not found then
       raise exception 'photo_not_found';
     end if;
   end if;
@@ -359,6 +387,10 @@ begin
       select 1 from public.messages m where m.visit_id = new.visit_id and m.kind = 'moment'
     ) then
       raise exception 'moment_already_posted';
+    end if;
+    -- BeReal-style: the moment's photo is taken after the prompt, not picked from earlier ones.
+    if photo_created_at < visit_moment_at then
+      raise exception 'moment_photo_too_early';
     end if;
     new.late := now() > visit_moment_at + interval '2 minutes';
   end if;
@@ -382,6 +414,38 @@ $$;
 create trigger messages_stamp
   before insert on public.messages
   for each row execute function public.stamp_message();
+
+-- A save or concept flag needs the message's photo to still be there. The RLS check alone reads
+-- a snapshot, so a save racing remove_photo() (which holds the message FOR UPDATE) could land on
+-- a just-removed photo. This trigger locks the message FOR SHARE, which waits for that removal
+-- to commit, then re-reads photo_path. Runs as the owner (row locks need more than SELECT).
+create function public.require_message_photo()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  current_path text;
+begin
+  select m.photo_path into current_path
+    from public.messages m
+   where m.id = new.message_id
+     for share;
+  if current_path is null then
+    raise exception 'photo_removed';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger photo_saves_require_photo
+  before insert on public.photo_saves
+  for each row execute function public.require_message_photo();
+
+create trigger concept_flags_require_photo
+  before insert on public.concept_flags
+  for each row execute function public.require_message_photo();
 
 -- Every task check a signed-in user creates (today only complete_task(); any future path too)
 -- locks its visit FOR SHARE and re-reads it. FOR SHARE waits for a concurrent end_visit() (which
@@ -473,6 +537,8 @@ alter table public.messages enable row level security;
 alter table public.message_reads enable row level security;
 alter table public.photo_saves enable row level security;
 alter table public.concept_flags enable row level security;
+-- removed_photos: no policies and no client privileges (internal to the functions below).
+alter table public.removed_photos enable row level security;
 
 -- messages: members read; members post chat and moments (column grants + stamp_message);
 -- task proofs only through complete_task(). Messages are never edited or deleted by clients.
@@ -656,9 +722,10 @@ $$;
 -- A parent removes a photo from a proof or moment (any sender's). The message stays with
 -- photo_path cleared and photo_removed_by/at set ("Photo removed by Mary"); its task check and
 -- the shift history are untouched. Saves of the photo (every parent's album) and its concept
--- flag go with it. Returns the Storage path, which the client then deletes with the Storage API
--- (the delete policy lets a parent remove any photo no message uses). Locks the message so two
--- removals cannot interleave.
+-- flag go with it. The path is recorded in removed_photos, so from now on nobody can read it,
+-- upload to it, or attach it to a message. Returns the Storage path, which the client then
+-- deletes with the Storage API (only a parent may delete a removed photo). Locks the message so
+-- two removals, or a removal and a save/flag, cannot interleave.
 create function public.remove_photo(target_message_id uuid)
 returns text
 language plpgsql
@@ -692,6 +759,9 @@ begin
   update public.messages
      set photo_path = null, photo_removed_by = caller, photo_removed_at = now()
    where id = target_message_id;
+  insert into public.removed_photos (path, household_id)
+  values (old_path, message_household_id)
+  on conflict (path) do nothing;
   delete from public.photo_saves where message_id = target_message_id;
   delete from public.concept_flags where message_id = target_message_id;
 
@@ -753,39 +823,69 @@ begin
 end;
 $$;
 
--- Step 1 of deleting an account: marks every household where the caller is the only parent
--- (the ones delete_my_account() will remove) and returns their ids. For the next hour the caller
--- (and only the caller, while still the only parent) may delete those households' photos from
--- Storage (folder = household id). Then the client calls delete_my_account(). Storage objects
--- are not removed by database cascades.
-create function public.start_account_deletion()
-returns uuid[]
+-- Step 1 of deleting an account. In every household where the caller is the only parent (the
+-- ones delete_my_account() will remove), removes every photo exactly as remove_photo() does
+-- (messages stay marked "Photo removed by ...", paths recorded in removed_photos, saves and
+-- concept flags deleted), so even if the account is then kept, no message points at a missing
+-- photo. Returns every Storage path in those households' shift folders, which the client deletes
+-- with the Storage API (step 2) before calling delete_my_account() (step 3); Storage objects are
+-- not removed by database cascades. Does nothing (returns an empty list) for a caretaker or a
+-- parent who shares the household with another parent.
+create function public.remove_all_photos()
+returns text[]
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
   caller uuid := auth.uid();
-  result uuid[];
+  sole_households uuid[];
+  target record;
+  result text[];
 begin
   if caller is null then
     raise exception 'not_authenticated';
   end if;
 
-  with marked as (
-    update public.households h
-       set deletion_started_at = now(), deletion_started_by = caller
-     where exists (
-             select 1 from public.household_members m
-             where m.household_id = h.id and m.user_id = caller and m.role = 'parent'
-           )
-       and not exists (
-             select 1 from public.household_members m
-             where m.household_id = h.id and m.user_id <> caller and m.role = 'parent'
-           )
-    returning h.id
-  )
-  select coalesce(array_agg(id), '{}') into result from marked;
+  select coalesce(array_agg(h.id), '{}') into sole_households
+    from public.households h
+   where exists (
+           select 1 from public.household_members m
+           where m.household_id = h.id and m.user_id = caller and m.role = 'parent'
+         )
+     and not exists (
+           select 1 from public.household_members m
+           where m.household_id = h.id and m.user_id <> caller and m.role = 'parent'
+         );
+
+  for target in
+    select m.id, m.household_id, m.photo_path
+      from public.messages m
+     where m.household_id = any (sole_households) and m.photo_path is not null
+     order by m.id
+       for update
+  loop
+    update public.messages
+       set photo_path = null, photo_removed_by = caller, photo_removed_at = now()
+     where id = target.id;
+    insert into public.removed_photos (path, household_id)
+    values (target.photo_path, target.household_id)
+    on conflict (path) do nothing;
+  end loop;
+
+  delete from public.photo_saves s
+   using public.messages m
+   where m.id = s.message_id and m.household_id = any (sole_households);
+  delete from public.concept_flags f
+   using public.messages m
+   where m.id = f.message_id and m.household_id = any (sole_households);
+
+  select coalesce(array_agg(o.name order by o.name), '{}') into result
+    from storage.objects o
+    cross join lateral public.photo_path_parts(o.name) parts
+    join public.visits v on v.id = parts.visit_id
+    join public.plans p on p.id = v.plan_id and p.household_id = parts.household_id
+   where o.bucket_id = 'photos' and parts.household_id = any (sole_households);
 
   return result;
 end;
@@ -817,8 +917,8 @@ end;
 $$;
 
 -- Members of the household in the path's first folder, while the path's shift still exists in
--- that household. Objects left behind by a deleted shift or family space are readable by nobody
--- (only the service role) until they are cleaned up.
+-- that household and no parent removed the photo. Objects left behind by a deleted shift or
+-- family space are readable by nobody (only the service role) until they are cleaned up.
 create function public.can_read_photo(object_name text)
 returns boolean
 language sql
@@ -832,43 +932,85 @@ as $$
       join public.visits v on v.id = parts.visit_id
       join public.plans p on p.id = v.plan_id and p.household_id = parts.household_id
      where public.is_member(p.household_id)
+       and not exists (select 1 from public.removed_photos r where r.path = object_name)
   );
 $$;
 
--- A member, into an open shift of their household whose date is in the window, at a path no
--- message uses, while the shift's folder holds fewer than 200 objects (a cap on abandoned
--- uploads; a shift has a handful of tasks and one moment). (A message that uses the photo
--- re-checks the shift under a lock in stamp_message().)
-create function public.can_upload_photo(object_name text)
+-- A removed photo is unreadable, but a parent must still be able to delete its object, and a
+-- Storage delete has to see the row (SELECT policy) to delete it. So a parent of the household
+-- sees a removed photo only inside a Storage API delete request: storage-api sets
+-- storage.operation() to 'storage.object.delete' / 'storage.object.delete_many' for those
+-- routes (a download or a signed URL is a different operation). If the setting is missing, this
+-- is false (fails closed).
+create function public.can_delete_removed_photo(object_name text)
 returns boolean
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select exists (
-    select 1
-      from public.photo_path_parts(object_name) parts
-      join public.visits v on v.id = parts.visit_id
-      join public.plans p on p.id = v.plan_id and p.household_id = parts.household_id
-     where v.ended_at is null
-       and v.visit_date between (now() at time zone 'utc')::date - 1
-                            and (now() at time zone 'utc')::date + 1
-       and public.is_member(p.household_id)
-       and not exists (select 1 from public.messages m where m.photo_path = object_name)
-       and (
-         select count(*)
-           from storage.objects o
-          where o.bucket_id = 'photos'
-            and o.name like parts.household_id::text || '/' || parts.visit_id::text || '/%'
-       ) < 200
-  );
+  select coalesce(storage.operation(), '') in ('storage.object.delete', 'storage.object.delete_many')
+     and exists (select 1 from public.removed_photos r where r.path = object_name)
+     and public.is_parent((public.photo_path_parts(object_name)).household_id);
 $$;
 
--- A photo no message uses: its uploader (while still a member, whether or not the shift is
--- open), or any parent of the household (this includes a photo just detached by
--- remove_photo()). A photo a message uses is never deleted directly. During account deletion:
--- the parent who called start_account_deletion(), within the hour, while still the only parent.
+-- A member, into an open shift of their household whose date is in the window, at a path no
+-- message uses and no parent removed, while the shift's folder holds fewer than 2 photos per
+-- active task of the plan + 10 (a shift needs one photo per task and one moment; the margin
+-- allows retakes). Over the cap it raises photo_limit_reached (only for a caller who could
+-- otherwise upload there, so it reveals nothing to others) so the app can say "Photo limit
+-- reached for this shift." (A message that uses the photo re-checks the shift under a lock in
+-- stamp_message().)
+create function public.can_upload_photo(object_name text)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  target_household_id uuid;
+  target_visit_id uuid;
+  target_plan_id uuid;
+  photo_cap int;
+  photo_count int;
+begin
+  select p.household_id, v.id, v.plan_id
+    into target_household_id, target_visit_id, target_plan_id
+    from public.photo_path_parts(object_name) parts
+    join public.visits v on v.id = parts.visit_id
+    join public.plans p on p.id = v.plan_id and p.household_id = parts.household_id
+   where v.ended_at is null
+     and v.visit_date between (now() at time zone 'utc')::date - 1
+                          and (now() at time zone 'utc')::date + 1
+     and public.is_member(p.household_id);
+  if not found then
+    return false;
+  end if;
+  if exists (select 1 from public.messages m where m.photo_path = object_name)
+     or exists (select 1 from public.removed_photos r where r.path = object_name) then
+    return false;
+  end if;
+
+  select 2 * count(*) + 10 into photo_cap
+    from public.tasks t
+   where t.plan_id = target_plan_id and t.archived_at is null;
+  select count(*) into photo_count
+    from storage.objects o
+   where o.bucket_id = 'photos'
+     and o.name like target_household_id::text || '/' || target_visit_id::text || '/%';
+  if photo_count >= photo_cap then
+    -- 42501 so storage-api passes the message through (403) instead of a generic database error.
+    raise exception 'photo_limit_reached' using errcode = '42501';
+  end if;
+  return true;
+end;
+$$;
+
+-- A photo no message uses. Not removed: its uploader (while still a member, whether or not the
+-- shift is open) or any parent of the household. Removed by a parent (remove_photo() or
+-- remove_all_photos()): only a parent of the household. A photo a message uses is never deleted
+-- directly.
 create function public.can_delete_photo(object_name text, object_owner_id text)
 returns boolean
 language sql
@@ -877,29 +1019,14 @@ security definer
 set search_path = ''
 as $$
   select
-    (
-      not exists (select 1 from public.messages m where m.photo_path = object_name)
-      and (
-        (
-          object_owner_id = (select auth.uid())::text
-          and public.is_member((public.photo_path_parts(object_name)).household_id)
-        )
-        or public.is_parent((public.photo_path_parts(object_name)).household_id)
+    not exists (select 1 from public.messages m where m.photo_path = object_name)
+    and (
+      public.is_parent((public.photo_path_parts(object_name)).household_id)
+      or (
+        not exists (select 1 from public.removed_photos r where r.path = object_name)
+        and object_owner_id = (select auth.uid())::text
+        and public.is_member((public.photo_path_parts(object_name)).household_id)
       )
-    )
-    or exists (
-      select 1
-        from public.households h
-       where h.id = (public.photo_path_parts(object_name)).household_id
-         and h.deletion_started_by = (select auth.uid())
-         and h.deletion_started_at > now() - interval '1 hour'
-         and public.is_parent(h.id)
-         and not exists (
-               select 1 from public.household_members m
-               where m.household_id = h.id
-                 and m.user_id <> (select auth.uid())
-                 and m.role = 'parent'
-             )
     );
 $$;
 
@@ -907,13 +1034,16 @@ $$;
 -- nobody overwrites or moves a photo (this also refuses upsert uploads).
 create policy "carenest photos: members read"
   on storage.objects for select to authenticated
-  using (bucket_id = 'photos' and public.can_read_photo(name));
+  using (
+    bucket_id = 'photos'
+    and (public.can_read_photo(name) or public.can_delete_removed_photo(name))
+  );
 
 create policy "carenest photos: members upload to an open shift"
   on storage.objects for insert to authenticated
   with check (bucket_id = 'photos' and public.can_upload_photo(name));
 
-create policy "carenest photos: uploader, parent, or departing sole parent deletes"
+create policy "carenest photos: uploader or parent deletes"
   on storage.objects for delete to authenticated
   using (bucket_id = 'photos' and public.can_delete_photo(name, owner_id));
 
@@ -921,7 +1051,8 @@ create policy "carenest photos: uploader, parent, or departing sole parent delet
 -- Privileges (new tables and functions start closed; grant exactly what the app needs)
 -- ---------------------------------------------------------------------------
 
-grant all on public.messages, public.message_reads, public.photo_saves, public.concept_flags
+grant all on public.messages, public.message_reads, public.photo_saves, public.concept_flags,
+  public.removed_photos
   to service_role;
 
 grant select on public.messages to authenticated;
@@ -951,17 +1082,18 @@ grant execute on function
   public.complete_task(uuid, uuid, text, text, text),
   public.remove_photo(uuid),
   public.trigger_moment_now(uuid),
-  public.start_account_deletion(),
+  public.remove_all_photos(),
   public.photo_path_parts(text),
   public.can_read_photo(text),
+  public.can_delete_removed_photo(text),
   public.can_upload_photo(text),
   public.can_delete_photo(text, text)
 to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Realtime: new messages, and remove_photo() updates, stream to household members (RLS
--- applies). Messages are never deleted by clients; they go only with their household, plan, or shift (see README for the known
--- DELETE-event limitation).
+-- applies). Messages are never deleted by clients; they go only with their household, plan, or
+-- shift (see README for the known DELETE-event limitation).
 -- ---------------------------------------------------------------------------
 
 alter publication supabase_realtime add table public.messages;

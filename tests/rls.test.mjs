@@ -131,6 +131,10 @@ const tables = [
   "concept_flags",
 ];
 
+// Internal tables: RLS on, and no anon or authenticated privilege at all (only SECURITY DEFINER
+// functions use them). T3a: removed_photos.
+const internalTables = ["removed_photos"];
+
 const rpcs = [
   ["create_household", { household_name: "X", acknowledged: true }],
   ["create_invite", { target_household_id: randomUUID(), invite_email: "x@example.test" }],
@@ -1222,8 +1226,11 @@ test("a check-off that races end_visit is refused once the shift has ended (phot
         select set_config('request.jwt.claims', '${JSON.stringify({ sub: uuid(fam.sitter.id), role: "authenticated" })}', true);
         insert into public.task_checks (visit_id, task_id, checked_by)
         values ('${uuid(id)}', '${uuid(fam.taskIds[0])}', '${uuid(fam.sitter.id)}');
-        commit;`),
-      (exitCode) => assert.notEqual(exitCode, 0, "the raw insert failed (psql prints visit_ended)")],
+        commit;`, { captureStderr: true }),
+      ({ code, stderr }) => {
+        assert.notEqual(code, 0, "the raw insert failed");
+        assert.match(stderr, /visit_ended/, `the raw insert failed with visit_ended: ${stderr}`);
+      }],
   ];
   for (const [label, ender, attempt, expectRefused] of attempts) {
     // Session 1 (psql): another member ends the shift and holds the transaction open.
@@ -1718,14 +1725,17 @@ function psqlQuery(sql) {
   }).trim();
 }
 
-// Runs `sql` in its own psql session; resolves to psql's exit code.
-function spawnPsql(sql) {
+// Runs `sql` in its own psql session; resolves to psql's exit code, or to { code, stderr } with
+// captureStderr (so a test can assert which error psql printed).
+function spawnPsql(sql, { captureStderr = false } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn("psql", [dbUrl, "-Xq", "-v", "ON_ERROR_STOP=1"], {
-      stdio: ["pipe", "ignore", "inherit"],
+      stdio: ["pipe", "ignore", captureStderr ? "pipe" : "inherit"],
     });
+    let stderr = "";
+    if (captureStderr) child.stderr.on("data", (chunk) => (stderr += chunk));
     child.on("error", reject);
-    child.on("exit", resolve);
+    child.on("close", (code) => resolve(captureStderr ? { code, stderr } : code));
     child.stdin.end(sql);
   });
 }
@@ -1779,10 +1789,13 @@ test("every relation in public has RLS (tables), invoker rights (views), and gra
       .filter((r) => r.kind === "r" || r.kind === "p")
       .map((r) => r.name)
       .sort(),
-    [...tables].sort(),
+    [...tables, ...internalTables].sort(),
     "the test's table list matches the schema",
   );
   for (const row of rows) {
+    if (internalTables.includes(row.name)) {
+      assert.equal(row.authenticated_any, false, `authenticated has privileges on internal public.${row.name}`);
+    }
     assert.equal(row.anon_any, false, `anon has privileges on public.${row.name}`);
     if (row.kind === "r" || row.kind === "p") {
       assert.equal(row.rls, true, `RLS disabled on public.${row.name}`);
