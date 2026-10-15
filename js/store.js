@@ -15,14 +15,15 @@
   class StoreError extends Error {
     constructor(code, message) {
       super(message);
-      this.code = code; // "quota" | "shift_ended"
+      this.code = code; // "quota" | "shift_ended" | "task_not_completed"
     }
   }
 
   function emptyState() {
     // reads/saves/insights are keyed by message id; each value is shaped like a future row
     // (message_reads, saved_photos, photo_insights).
-    return { completions: {}, messages: [], shift: null, reads: {}, saves: {}, insights: {} };
+    // logs mirror care_logs rows (append-only; SI-28).
+    return { completions: {}, messages: [], shift: null, reads: {}, saves: {}, insights: {}, logs: [] };
   }
 
   function read() {
@@ -189,6 +190,34 @@
 
     getMessages() {
       return read().messages;
+    },
+
+    // Care logs: demo mirror of care_logs. Allowed on an open or ended shift (the demo shift is
+    // always in the date window), only for a task checked in it. Never edited or deleted.
+    getLogs() {
+      return read().logs || [];
+    },
+
+    addCareLog({ taskId, category, note, mealAmount, bottleOz, author }) {
+      const state = read();
+      if (!state.shift) state.shift = newShift(Date.now());
+      if (!state.completions[taskId]) {
+        throw new StoreError("task_not_completed", "Complete this task before adding details.");
+      }
+      const log = {
+        id: newId(),
+        shiftId: state.shift.id,
+        taskId,
+        category,
+        note: note || "",
+        mealAmount: mealAmount || null,
+        bottleOz: bottleOz == null ? null : bottleOz,
+        author: author === "parent" ? "parent" : "sitter",
+        createdAt: Date.now(),
+      };
+      state.logs = (state.logs || []).concat(log);
+      write(state);
+      return log;
     },
 
     // replyTo = id of the task_proof/moment message being replied to (a reply_to FK).

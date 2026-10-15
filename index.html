@@ -25,6 +25,10 @@
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1Zm12 8H5v10h14V10ZM7 6H5v2h14V6h-2v1a1 1 0 1 1-2 0V6H8v1a1 1 0 1 1-2 0V6Z" /></svg>
           <span>Schedule</span>
         </a>
+        <a class="nav-item" href="#log">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M9 2h6a1 1 0 0 1 1 1v1h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2V3a1 1 0 0 1 1-1Zm1 2v2h4V4h-4Zm-2 7a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2H8Zm0 4a1 1 0 1 0 0 2h5a1 1 0 1 0 0-2H8Z" /></svg>
+          <span>Log</span>
+        </a>
         <a class="nav-item" href="#contacts">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-1a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM9 13c-3.87 0-7 2.24-7 5v3h14v-3c0-2.76-3.13-5-7-5Zm8.24.05c-.45-.03-.91-.05-1.38-.05a11.5 11.5 0 0 0-2.66.3c1.73.96 2.8 2.37 2.8 4V21H22v-3c0-2.42-2.1-4.47-4.76-4.95Z" /></svg>
           <span>Contacts</span>
@@ -82,6 +86,13 @@
             <div class="card">
               <ul class="schedule-list" id="schedule-list"></ul>
             </div>
+          </section>
+
+          <section class="panel" id="log" aria-labelledby="log-heading">
+            <div class="panel-header">
+              <h2 class="panel-title" id="log-heading">Care log</h2>
+            </div>
+            <div class="card care-log-card" id="care-log-list"></div>
           </section>
         </div>
 
@@ -171,6 +182,11 @@
         <div class="care-note modal-care" data-modal-care hidden>
           <h3>Care note</h3>
           <p data-modal-care-body></p>
+        </div>
+
+        <div class="care-log-modal-section" data-modal-logs hidden>
+          <h3 class="complete-note-label">Care log</h3>
+          <div data-modal-logs-list></div>
         </div>
       </div>
     </div>
@@ -327,6 +343,69 @@
       </div>
     </div>
 
+    <div
+      class="modal-overlay"
+      id="log-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="log-modal-heading"
+      aria-hidden="true"
+    >
+      <div class="modal complete-modal">
+        <button type="button" class="back-btn" data-close-log aria-label="Close without saving">
+          <img src="assets/back.svg" alt="" width="30" height="30" />
+        </button>
+
+        <h2 class="complete-heading" id="log-modal-heading">Add details</h2>
+
+        <div class="modal-summary complete-task-summary">
+          <p class="complete-task-time" data-log-time></p>
+          <p class="complete-task-title" data-log-title></p>
+        </div>
+
+        <form class="care-log-form" id="log-form" novalidate>
+          <fieldset class="tag-picker">
+            <legend class="complete-note-label">What kind of update?</legend>
+            <div class="tag-options" data-log-categories></div>
+          </fieldset>
+
+          <fieldset class="tag-picker" data-log-meal hidden>
+            <legend class="complete-note-label">How much did they eat?</legend>
+            <div class="tag-options">
+              <label class="tag-option"><input type="radio" name="log-amount" value="all" aria-describedby="log-error" /><span>All</span></label>
+              <label class="tag-option"><input type="radio" name="log-amount" value="most" /><span>Most</span></label>
+              <label class="tag-option"><input type="radio" name="log-amount" value="some" /><span>Some</span></label>
+              <label class="tag-option"><input type="radio" name="log-amount" value="none" /><span>None</span></label>
+            </div>
+          </fieldset>
+
+          <div class="care-log-field" data-log-bottle hidden>
+            <label class="complete-note-label" for="log-oz">How many ounces?</label>
+            <input
+              class="text-input care-log-oz"
+              type="number"
+              id="log-oz"
+              min="0.5"
+              max="16"
+              step="0.5"
+              inputmode="decimal"
+              aria-describedby="log-error"
+            />
+          </div>
+
+          <div class="care-log-field">
+            <label class="complete-note-label" for="log-note" data-log-note-label>What happened?</label>
+            <textarea class="complete-note" id="log-note" rows="3" maxlength="1000" aria-describedby="log-error"></textarea>
+          </div>
+
+          <p class="form-error" id="log-error" role="alert" hidden></p>
+
+          <button type="submit" class="primary-btn" id="log-save">Save details</button>
+          <button type="button" class="photo-source-btn" data-log-skip hidden>Skip</button>
+        </form>
+      </div>
+    </div>
+
     <dialog class="confirm-dialog" id="end-shift-dialog" aria-labelledby="end-shift-title" aria-describedby="end-shift-desc">
       <form method="dialog" class="confirm-dialog-body">
         <h2 class="complete-heading" id="end-shift-title">End your shift?</h2>
@@ -365,6 +444,7 @@
     <script src="js/data.js"></script>
     <script src="js/family-data.js"></script>
     <script src="js/store.js"></script>
+    <script src="js/care-log.js"></script>
     <script src="js/shift-data.js"></script>
     <script src="js/app.js"></script>
     <script src="js/moment.js"></script>

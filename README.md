@@ -85,6 +85,7 @@ npm install          # pinned Supabase CLI + supabase-js
 npm run db:start     # local stack; ports are 553xx so it never collides with Carekeeper's 543xx
 npm run db:reset     # applies migrations, then supabase/seed.sql
 npm run test:rls     # authorization tests (refuse to run against a non-local URL)
+npm run test:unit    # care-log age parser and validation (no database needed)
 npm run db:lint      # supabase db lint
 npm run db:stop
 ```
@@ -200,7 +201,7 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   moment, read under a share lock that serialises with a concurrent uncheck
   (`task_not_completed`); it sets the household, author, role, and time whatever the client
   sent (those columns are not even insertable). Append-only: members have no `UPDATE` or
-  `DELETE` privilege, an edit is a new row under the same task (the app shows the latest), and
+  `DELETE` privilege, an edit is a new row under the same task (the app lists every entry, oldest first, later ones labelled "Update"), and
   the task's check and its `checked_at` are never touched; a later uncheck leaves earlier logs in
   place. Members read all logs of their household; anon nothing. Published to Realtime (the
   DELETE-event limitation below applies: one random UUID per log removed with a family space).

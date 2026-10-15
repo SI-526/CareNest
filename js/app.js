@@ -1,6 +1,7 @@
 (function () {
   const data = window.CareNestData;
   const store = window.CareNestStore;
+  const careLog = window.CareNestCareLog; // js/care-log.js (sitter home only uses it)
   if (!data) return;
 
   const page = document.body.dataset.page;
@@ -75,11 +76,13 @@
     renderShift();
     renderShiftControls();
     renderSchedule(document.getElementById("schedule-list"));
+    renderCareLog();
     renderEmergencyEntry(document.getElementById("emergency-entry"));
     renderContacts(document.getElementById("contacts-list"));
     renderKnowTiles(document.getElementById("know-grid"));
     initModal();
     initCompleteModal();
+    initCareLog();
     initEndShiftDialog();
     initShiftButtons();
     renderDevTools();
@@ -87,8 +90,60 @@
     shift.subscribe(() => {
       renderShiftControls();
       renderSchedule(document.getElementById("schedule-list"));
+      renderCareLog();
       applyShiftLockToCompleteModal();
     });
+  }
+
+  // ---------- care log (SI-28): completed tasks in check-time order with their details ----------
+
+  function initCareLog() {
+    const list = document.getElementById("care-log-list");
+    if (!careLog || !list) return;
+    careLog.initModal({ shift, ageLabel: () => data.child.age, announce });
+    list.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-log-task]");
+      if (btn) careLog.openModal(careLogTask(btn.dataset.logTask), btn);
+    });
+  }
+
+  function renderCareLog() {
+    const list = document.getElementById("care-log-list");
+    if (!careLog || !list) return;
+    list.innerHTML = careLog.timelineHtml(shift.state, { canAdd: shift.state.canLog, schedule: data.schedule });
+  }
+
+  // What the log modal shows about the task: the check's snapshot, as on the schedule.
+  function careLogTask(taskId) {
+    const check = shift.state.checks[taskId];
+    const task = data.schedule.find((t) => t.id === taskId) || {};
+    return {
+      taskId,
+      title: check ? check.snapshot.title : task.title || "Task",
+      time: check ? check.snapshot.time : task.time || "",
+    };
+  }
+
+  // The activity modal of a completed task lists its details and offers to add one.
+  function renderModalLogs(overlay, item) {
+    const wrap = overlay.querySelector("[data-modal-logs]");
+    if (!wrap) return;
+    const logs = careLog && item.completed ? careLog.logsFor(shift.state, item.id) : [];
+    const canAdd = Boolean(careLog && item.completed && shift.state.canLog);
+    wrap.hidden = !logs.length && !canAdd;
+    const list = wrap.querySelector("[data-modal-logs-list]");
+    list.innerHTML = wrap.hidden
+      ? ""
+      : careLog.entriesHtml(logs) + (canAdd ? careLog.addButtonHtml(item.id, item.title, logs.length > 0) : "");
+    const btn = list.querySelector("[data-log-task]");
+    if (btn) {
+      btn.addEventListener("click", () => {
+        const back = returnFocusEl;
+        returnFocusEl = null;
+        closeModal(false);
+        careLog.openModal(careLogTask(item.id), back);
+      });
+    }
   }
 
   function initNavigation() {
@@ -914,6 +969,10 @@
         );
         if (row) row.focus();
         announce(`${item.title} sent to ${parentFirstName()}.`);
+        // SI-34: prompt for care details about the task just completed (Skip closes it).
+        if (careLog && shift.state.canLog && shift.state.checks[item.id]) {
+          careLog.openModal(careLogTask(item.id), row, { prompt: true });
+        }
       })
       .catch((err) => {
         sendBtn.textContent = `Send to ${parentFirstName()}`;
@@ -1406,6 +1465,7 @@
       metaEl.hidden = !parts.length;
     }
     setupUncheck(overlay, item);
+    renderModalLogs(overlay, item);
 
     closeCompleteModal(false);
     overlay.classList.add("is-open");
