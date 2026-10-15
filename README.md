@@ -52,8 +52,13 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 | `contacts` | People and places to call (including the hospital, with address) | Parents |
 | `plans`, `tasks` | The child's day: ordered tasks with time, detail, location, care note | Parents |
 | `visits` | One babysitting shift per plan per date (yesterday, today, or tomorrow); start, handoff note, current end | Members start and write the note; any member can `end_visit` and `reopen_visit` |
-| `task_checks` | Which tasks are done in a shift, by whom, and when (`checked_at`) | Members, while the shift is open |
+| `task_checks` | Which tasks are done in a shift, by whom, and when (`checked_at`) | Only `complete_task` (photo required), while the shift is open; members uncheck |
 | `shift_events` | Append-only shift history: one row per end and per reopen, with who and when | Nobody directly; only `end_visit` and `reopen_visit` write it. Members read |
+| `messages` | Chat, task proofs (photo, note, tag), and moments (photo, `late`); replies to a photo | Members post chat; sitters post the shift's moment; proofs only via `complete_task`. Sender, role, time, and `late` are set by the database. Never edited or deleted by clients |
+| `message_reads` | Which messages a user has seen | Each user, for themselves; private |
+| `photo_saves` | A parent's saved-photo album | Each parent, for themselves; private |
+| `concept_flags` | **Concept only**: the demo "child seems off" alert on a photo; nothing analyses photos | Parents set and clear; members read |
+| Storage `photos` | Private bucket, 5 MB, JPEG/PNG/WebP, at `<household_id>/<visit_id>/<uuid>.<jpg\|png\|webp>` | Members upload into an open, in-window shift of their household; members read; no overwrite |
 
 ## Data and risk boundaries
 
@@ -109,10 +114,26 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   memberships, and deletes your sign-in account. When a caretaker deletes their account, checks,
   notes, and shift-history entries they made stay in the family's history without their name
   (the user column becomes null, shown as a former member).
+- Photos (T3a): the `photos` bucket is private (no public URLs). Members of the household in the
+  path's first folder read; a member uploads only into an open shift of their household whose
+  date is in the start window; nobody overwrites or moves a photo. A task is completed only with
+  `complete_task(visit, task, photo_path, note, tag)`, which writes the check and the proof
+  message together; proofs and moments re-check the shift under a share lock on the visit, so
+  they cannot slip in after a concurrent `end_visit`. Chat stays open after a shift ends. Each
+  shift gets one moment prompt (`visits.moment_at`, chosen by the database 1-5 minutes after the
+  start); only a sitter posts it, once, and it is `late` if posted more than 2 minutes after.
+- Photo deletion: the uploader may delete a photo no message uses while the shift is still open
+  (a cancelled upload). Database cascades do not remove Storage objects, so deleting an account
+  is three client steps: `start_account_deletion()` (returns the households where you are the
+  only parent and, for one hour, lets you delete their photos), remove every object under each
+  `<household_id>/` folder with the Storage API, then `delete_my_account()`. Photos left behind
+  by a failed step, a deleted plan or shift, or an abandoned upload are unreadable by anyone
+  (no member matches) but still stored until an orphan cleanup job exists.
 - Known limitation (same as Carekeeper): Supabase Realtime does not apply RLS to DELETE events,
   so a signed-in user subscribed to `task_checks` also receives the primary keys (two random
   UUIDs, no content) of unchecks in other family spaces. The same applies to `visits` and
-  `shift_events` rows removed when a family space or plan is deleted (one random UUID each).
+  `shift_events` rows removed when a family space or plan is deleted (one random UUID each), and
+  to `messages` (one random UUID each; clients never delete messages, so only cascades emit them).
   Clients must ignore events for shifts they are not showing.
 
 ## Deploying to a hosted Supabase project

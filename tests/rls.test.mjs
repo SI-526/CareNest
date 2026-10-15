@@ -87,6 +87,24 @@ function isoDate(offsetDays) {
   return date.toISOString().slice(0, 10);
 }
 
+// Since T3a a task is checked only through complete_task(), which needs a photo uploaded into the
+// shift's folder of the private `photos` bucket. Direct task_checks inserts are refused.
+const TINY_JPEG = new Blob([Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9])], {
+  type: "image/jpeg",
+});
+async function completeTask(user, householdId, targetVisitId, taskId) {
+  const path = `${householdId}/${targetVisitId}/${randomUUID()}.jpg`;
+  const up = await user.client.storage
+    .from("photos")
+    .upload(path, TINY_JPEG, { contentType: "image/jpeg" });
+  assert.ifError(up.error);
+  return user.client.rpc("complete_task", {
+    target_visit_id: targetVisitId,
+    target_task_id: taskId,
+    proof_photo_path: path,
+  });
+}
+
 const DEMO_HOUSEHOLD_ID = "00000000-0000-4000-8000-00000000c0de";
 
 const tables = [
@@ -100,6 +118,11 @@ const tables = [
   "visits",
   "task_checks",
   "shift_events",
+  // T3a (20261015000000_carenest_photos_messages.sql); tested in photos.test.mjs.
+  "messages",
+  "message_reads",
+  "photo_saves",
+  "concept_flags",
 ];
 
 const rpcs = [
@@ -595,10 +618,16 @@ test("caretaker can start a shift, check tasks, and write the handoff", async ()
     .select();
   assert.ok(spoofed.error, "checked_by cannot be chosen by the client");
 
+  assertPermissionDenied(
+    await c.from("task_checks").insert({ visit_id: visitId, task_id: taskIds[0] }).select(),
+    "task_checks are inserted only by complete_task",
+  );
+  assert.ifError((await completeTask(caretaker, householdA, visitId, taskIds[0])).error);
   const check = await c
     .from("task_checks")
-    .insert({ visit_id: visitId, task_id: taskIds[0] })
-    .select()
+    .select("checked_by")
+    .eq("visit_id", visitId)
+    .eq("task_id", taskIds[0])
     .single();
   assert.ifError(check.error);
   assert.equal(check.data.checked_by, caretaker.id);
@@ -610,9 +639,7 @@ test("caretaker can start a shift, check tasks, and write the handoff", async ()
     .eq("task_id", taskIds[0])
     .select();
   assert.equal(uncheck.data?.length, 1, "caretaker can uncheck");
-  assert.ifError(
-    (await c.from("task_checks").insert({ visit_id: visitId, task_id: taskIds[0] })).error,
-  );
+  assert.ifError((await completeTask(caretaker, householdA, visitId, taskIds[0])).error);
 
   const handoff = await c
     .from("visits")
@@ -747,9 +774,7 @@ test("any member can reopen an ended shift in the start window, and every end an
 
   // Open again: the caretaker checks another task (a backfill), then ends the shift again.
   const c = caretaker.client;
-  assert.ifError(
-    (await c.from("task_checks").insert({ visit_id: visitId, task_id: taskIds[1] })).error,
-  );
+  assert.ifError((await completeTask(caretaker, householdA, visitId, taskIds[1])).error);
   assert.ifError((await c.rpc("end_visit", { target_visit_id: visitId })).error);
   assertDenied(
     await c.from("task_checks").delete().eq("visit_id", visitId).select(),
@@ -967,10 +992,7 @@ test("a caretaker deleting their account keeps the family's history without thei
     .single();
   const visit = await sitter.client.from("visits").insert({ plan_id: plan.data.id }).select().single();
   assert.ifError(visit.error);
-  assert.ifError(
-    (await sitter.client.from("task_checks").insert({ visit_id: visit.data.id, task_id: task.data.id }))
-      .error,
-  );
+  assert.ifError((await completeTask(sitter, h.data, visit.data.id, task.data.id)).error);
   assert.ifError((await sitter.client.rpc("end_visit", { target_visit_id: visit.data.id })).error);
   assert.ifError((await sitter.client.rpc("reopen_visit", { target_visit_id: visit.data.id })).error);
   assert.ifError((await parent.client.rpc("end_visit", { target_visit_id: visit.data.id })).error);
