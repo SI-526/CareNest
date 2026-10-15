@@ -17,6 +17,7 @@
   }
 
   function initHome() {
+    initNavigation();
     renderSitterHeader(document.getElementById("sitter-header"));
     renderShift();
     renderSchedule(document.getElementById("schedule-list"));
@@ -25,6 +26,25 @@
     renderKnowTiles(document.getElementById("know-grid"));
     initModal();
     initCompleteModal();
+  }
+
+  function initNavigation() {
+    const links = Array.from(document.querySelectorAll(".primary-nav .nav-item"));
+    if (!links.length) return;
+
+    const updateCurrentPage = () => {
+      const hash = window.location.hash || "#home";
+      links.forEach((link) => {
+        if (link.getAttribute("href") === hash) {
+          link.setAttribute("aria-current", "page");
+        } else {
+          link.removeAttribute("aria-current");
+        }
+      });
+    };
+
+    window.addEventListener("hashchange", updateCurrentPage);
+    updateCurrentPage();
   }
 
   function initFood() {
