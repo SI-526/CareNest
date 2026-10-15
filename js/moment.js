@@ -1,11 +1,12 @@
-// BeReal-style "moment": at a random time during the shift, prompt the sitter to share
-// a back-camera + front-camera photo within 2:00. Posts after the window are marked Late.
-// Waits for the auth guard (js/auth.js), which fills in real names first.
-((window.CareNestFamily || window.CareNestAuth) ? (window.CareNestFamily || window.CareNestAuth).ready : Promise.resolve()).then(function () {
+// BeReal-style "moment": at a time the database picked for this shift (visits.moment_at), prompt
+// the sitter to share a back-camera + front-camera photo within 2:00. The database decides
+// whether a post is late; the countdown here is only a guide.
+// Waits for the shift backend (js/shift-data.js), which waits for the auth guard and family data.
+(window.CareNestShift ? window.CareNestShift.ready : Promise.resolve(null)).then(function (shift) {
   const store = window.CareNestStore;
   const data = window.CareNestData;
   const page = document.body.dataset.page;
-  if (!store || !data || (page !== "home" && page !== "messages")) return;
+  if (!shift || !store || !data || (page !== "home" && page !== "messages")) return;
   if (document.body.dataset.role === "parent") return; // moments are the sitter's prompt
   if (!document.createElement("dialog").showModal) return;
 
@@ -96,11 +97,11 @@
   }
 
   function tick() {
-    const m = store.getMomentStatus();
+    const m = shift.getMomentStatus();
     const due = m.state === "due";
     banner.hidden = !due;
 
-    if (dialog.open && !store.isShiftActive()) {
+    if (dialog.open && !shift.state.active) {
       showError(LOCKED_TEXT);
       postBtn.disabled = true;
     }
@@ -113,7 +114,7 @@
     banner.querySelector("[data-timer]").textContent = timerText;
     q("[data-timer]").textContent = timerText;
     banner.classList.toggle("is-late", m.late);
-    const pct = Math.max(0, Math.min(100, (left / store.MOMENT_WINDOW_MS) * 100));
+    const pct = Math.max(0, Math.min(100, (left / shift.MOMENT_WINDOW_MS) * 100));
     banner.querySelector("[data-bar]").style.width = `${pct}%`;
 
     // Polite announcements at a few checkpoints, not every second.
@@ -161,7 +162,7 @@
       review: "Looks good? Post it, or retake.",
       upload: "Camera isn't available. Upload a photo instead.",
     }[next];
-    postBtn.disabled = next !== "review" || !store.isShiftActive();
+    postBtn.disabled = next !== "review" || !shift.state.active;
   }
 
   function startCamera(facing) {
@@ -237,7 +238,7 @@
   }
 
   function openDialog() {
-    if (!store.isShiftActive()) return;
+    if (!shift.state.active) return;
     showError("");
     captionEl.value = "";
     dialog.showModal();
@@ -277,16 +278,26 @@
   });
   postBtn.addEventListener("click", () => {
     if (!photoDataUrl) return;
-    try {
-      const msg = store.postMoment({ photoDataUrl, body: captionEl.value });
-      dialog.close();
-      announce(`Moment shared with ${parent}${msg.late ? " (marked Late)" : ""}.`);
-    } catch (err) {
-      showError(err.message);
-    }
+    showError("");
+    postBtn.disabled = true;
+    postBtn.textContent = "Posting…";
+    shift
+      .postMoment({ dataUrl: photoDataUrl, body: captionEl.value })
+      .then((result) => {
+        dialog.close();
+        // "Late" comes from the database, not from this page's clock.
+        announce(`Moment shared with ${parent}${result.late ? " (marked Late)" : ""}.`);
+      })
+      .catch((err) => {
+        showError(shift.errorMessage(err));
+        postBtn.disabled = !shift.state.active;
+      })
+      .finally(() => {
+        postBtn.textContent = `Post to ${parent}`;
+      });
   });
 
-  store.subscribe(tick);
+  shift.subscribe(tick);
   tick();
   setInterval(tick, 1000);
 });

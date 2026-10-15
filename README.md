@@ -21,7 +21,7 @@ right one. The Account item in the nav signs out or deletes the account and its 
 name and age, the schedule, care info (Good to know, food and allergies, emergency steps) and
 contacts come from the family space in Supabase (`js/family-data.js` loads them into the shape
 `js/data.js` defines); parents edit them on `manage.html` ("Family info" in the parent nav).
-Photos, task completions, and messages still live in this browser (`js/store.js`) until T3.
+The sitter's shift (start, end, reopen, history), task check-offs with photo proofs, moments, and the message thread are in Supabase (`js/shift-data.js`: Postgres, the private `photos` Storage bucket, and Realtime); `?demo=1` keeps them in this browser (`js/store.js`). The parent's Today/Album page (`parent.html`) still reads `js/store.js` until T3b-2.
 Outside demo mode the bundled sample family is discarded before anything renders, so a
 signed-in person never sees sample content; an empty family shows "No information provided".
 

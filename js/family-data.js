@@ -159,7 +159,8 @@
     const people = contacts.filter((c) => !isHospital(c));
     data.contacts = people;
 
-    data.schedule = sortTasks(plan ? plan.tasks || [] : []).map((t) => ({
+    // Only active tasks; archived ones live on in past shifts' check snapshots.
+    data.schedule = sortTasks(plan ? (plan.tasks || []).filter((t) => !t.archived_at) : []).map((t) => ({
       id: t.id,
       time: formatTaskTime(t.time_of_day),
       title: t.title,
@@ -232,7 +233,7 @@
       // One plan per household (the app creates it on first edit); take the first if more exist.
       client
         .from("plans")
-        .select("id, title, schedule, tasks(id, title, time_of_day, detail, location, care_note, position, created_at)")
+        .select("id, title, schedule, tasks(id, title, time_of_day, detail, location, care_note, position, created_at, archived_at)")
         .eq("household_id", householdId)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true })

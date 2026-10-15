@@ -9,6 +9,8 @@
   let photoObjectUrl = null;
   let cameraStream = null;
   let returnFocusEl = null;
+  // The shift backend (js/shift-data.js): Supabase when signed in, the localStorage store in demo.
+  let shift = null;
 
   const SHIFT_LOCKED_TEXT = "This shift has ended. Photos can't be added after a shift.";
   const isDevHost =
@@ -42,14 +44,16 @@
   const readySource = window.CareNestFamily || window.CareNestAuth;
   const authReady = readySource ? readySource.ready : Promise.resolve();
   authReady.then(() => {
-    if (page === "home") {
-      initHome();
+    if ((page === "home" || page === "messages") && window.CareNestShift) {
+      window.CareNestShift.ready.then((backend) => {
+        shift = backend;
+        if (page === "home") initHome();
+        else initMessages();
+      });
     } else if (page === "food") {
       initFood();
     } else if (page === "info") {
       initInfo();
-    } else if (page === "messages") {
-      initMessages();
     }
   });
 
@@ -77,9 +81,10 @@
     initModal();
     initCompleteModal();
     initEndShiftDialog();
+    initShiftButtons();
     renderDevTools();
 
-    store.subscribe(() => {
+    shift.subscribe(() => {
       renderShiftControls();
       renderSchedule(document.getElementById("schedule-list"));
       applyShiftLockToCompleteModal();
@@ -365,29 +370,79 @@
       </div>`;
   }
 
-  // Merge the static schedule with persisted completions from the store.
-  function scheduleWithCompletions() {
-    const completions = store.getCompletions();
-    return data.schedule.map((item) => {
-      const completion = completions[item.id];
-      return Object.assign({}, item, {
-        completed: Boolean(completion),
-        completion: completion || null,
-        photoUrl:
-          completion && store.isPhotoDataUrl(completion.photoDataUrl)
-            ? completion.photoDataUrl
-            : null,
-      });
+  // Today's schedule: the family's active tasks, with each checked task shown as it was when it
+  // was checked (the check's snapshot), plus checked tasks that have since been archived.
+  function scheduleRows() {
+    const st = shift.state;
+    const snapshotOf = (check) => ({
+      title: check.snapshot.title,
+      time: check.snapshot.time,
+      detail: check.snapshot.detail,
+      location: check.snapshot.location,
+      careNote: check.snapshot.careNote,
+    });
+    const rows = data.schedule.map((task) => {
+      const check = st.checks[task.id];
+      return check
+        ? Object.assign({}, task, snapshotOf(check), { completed: true, check })
+        : Object.assign({}, task, { completed: false, check: null });
+    });
+    Object.keys(st.checks).forEach((taskId) => {
+      if (data.schedule.some((t) => t.id === taskId)) return;
+      const check = st.checks[taskId];
+      rows.push(Object.assign({ id: taskId, map: null }, snapshotOf(check), { completed: true, check }));
+    });
+    return rows;
+  }
+
+  function proofPhotoPath(item) {
+    return item.check && item.check.proof && item.check.proof.photoPath ? item.check.proof.photoPath : null;
+  }
+
+  // "Done by Mary" (a parent's no-photo check), "Photo removed by Mary", "Added after reopen".
+  function checkMetaParts(check) {
+    if (!check) return [];
+    const parts = [];
+    if (check.afterReopen) parts.push(`<span class="reopen-badge">Added after reopen</span>`);
+    if (!check.proof) parts.push(`<span>Done by ${escapeHtml(check.checkedByName)}</span>`);
+    else if (check.proof.photoRemoved) {
+      parts.push(`<span>Photo removed by ${escapeHtml(check.proof.photoRemovedByName)}</span>`);
+    }
+    return parts;
+  }
+
+  // Fills <img data-photo-path> elements from the backend (object URLs or demo data URLs).
+  function hydratePhotos(root) {
+    if (!root || !shift) return;
+    root.querySelectorAll("img[data-photo-path]").forEach((img) => {
+      const path = img.dataset.photoPath;
+      if (img.dataset.loadedPath === path) return;
+      shift
+        .photoUrl(path)
+        .then((url) => {
+          if (!url || img.dataset.photoPath !== path) return;
+          img.src = url;
+          img.dataset.loadedPath = path;
+        })
+        .catch(() => {
+          img.alt = "Photo couldn't load";
+          img.classList.add("photo-failed");
+        });
     });
   }
 
   function renderSchedule(el) {
     if (!el) return;
 
-    const shiftActive = store.isShiftActive();
+    const st = shift.state;
+    const shiftActive = st.active;
     const lockNote = document.getElementById("schedule-locked");
-    if (lockNote) lockNote.hidden = shiftActive;
-    const items = scheduleWithCompletions();
+    if (lockNote) {
+      const text = lockText(st);
+      lockNote.textContent = text;
+      lockNote.hidden = !text;
+    }
+    const items = scheduleRows();
 
     if (!items.length) {
       el.innerHTML = `<li>${emptyStateHtml("")}</li>`;
@@ -403,12 +458,12 @@
             </div>`
           : `<p class="schedule-detail">${escapeHtml(item.detail || "")}</p>`;
 
-        const photoThumb =
-          item.completed && item.photoUrl
-            ? `<span class="photo-thumb">
-                <img src="${item.photoUrl}" alt="" width="36" height="36" />
+        const path = proofPhotoPath(item);
+        const photoThumb = path
+          ? `<span class="photo-thumb">
+                <img data-photo-path="${escapeHtml(path)}" alt="" width="36" height="36" />
               </span>`
-            : "";
+          : "";
 
         const completedMark = item.completed
           ? `<span class="check-icon">
@@ -432,7 +487,11 @@
             ? `<hr class="schedule-divider" />`
             : "";
 
-        const completedLabel = item.completed ? ", completed" : "";
+        const meta = checkMetaParts(item.check);
+        const metaHtml = meta.length ? `<p class="schedule-check-meta">${meta.join("")}</p>` : "";
+        const completedLabel = item.completed
+          ? `, completed${item.check && item.check.afterReopen ? ", added after reopen" : ""}`
+          : "";
 
         return `
           <li class="schedule-row${item.completed ? " is-completed" : ""}">
@@ -442,6 +501,7 @@
                 <div class="schedule-body">
                   <p class="schedule-title">${escapeHtml(item.title)}</p>
                   ${detailHtml}
+                  ${metaHtml}
                 </div>
                 ${trailing}
               </button>
@@ -451,6 +511,8 @@
           </li>`;
       })
       .join("");
+
+    hydratePhotos(el);
 
     el.querySelectorAll("[data-schedule-id]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -463,10 +525,30 @@
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const item = items.find((s) => s.id === btn.dataset.completeId);
-        if (!item || item.completed || !store.isShiftActive()) return;
+        if (!item || item.completed || !shift.state.active) return;
         openCompleteModal(item, btn);
       });
     });
+  }
+
+  // Why the schedule can't be checked off right now, or "" when it can.
+  function lockText(st) {
+    if (st.loadError || st.noPlan || st.active) return "";
+    if (!st.visit) return "Start your shift to check off tasks.";
+    if (st.tooOld) {
+      return `This shift was on ${dayLabel(st.visit.date)} and is read-only now. Shifts before yesterday can't be changed.`;
+    }
+    if (st.ended) {
+      return st.canReopen
+        ? `This shift has ended. Photos can't be added after a shift. If it ended by mistake, reopen it above and ${parentFirstName()} will be told.`
+        : "This shift has ended. Photos can't be added after a shift.";
+    }
+    return "";
+  }
+
+  function dayLabel(isoDate) {
+    const [y, m, d] = String(isoDate).split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   }
 
   function renderContacts(el) {
@@ -615,9 +697,9 @@
   function applyShiftLockToCompleteModal() {
     const overlay = document.getElementById("complete-modal");
     if (!overlay || !overlay.classList.contains("is-open")) return;
-    if (store.isShiftActive()) return;
+    if (shift.state.active) return;
     const error = document.getElementById("complete-photo-error");
-    error.textContent = SHIFT_LOCKED_TEXT;
+    error.textContent = lockText(shift.state) || SHIFT_LOCKED_TEXT;
     error.hidden = false;
     document.getElementById("complete-send-btn").disabled = true;
   }
@@ -820,10 +902,10 @@
     const sendBtn = document.getElementById("complete-send-btn");
     sendBtn.disabled = true;
 
-    store
-      .downscaleImage(file)
-      .then((photoDataUrl) => {
-        store.completeTask({ taskId: item.id, photoDataUrl, note, tag });
+    sendBtn.textContent = "Sending…";
+    shift
+      .completeTask({ taskId: item.id, file, note, tag })
+      .then(() => {
         // The check button is gone after re-render; return focus to the task row.
         returnFocusEl = null;
         closeCompleteModal(false);
@@ -834,10 +916,10 @@
         announce(`${item.title} sent to ${parentFirstName()}.`);
       })
       .catch((err) => {
-        sendBtn.disabled = Boolean(err && err.code === "shift_ended");
+        sendBtn.textContent = `Send to ${parentFirstName()}`;
+        sendBtn.disabled = !shift.state.active;
         if (error) {
-          error.textContent =
-            (err && err.message) || "Something went wrong. Please try again.";
+          error.textContent = shift.errorMessage(err);
           error.hidden = false;
         }
       });
@@ -863,18 +945,116 @@
     });
   }
 
+  // "5:02pm"
+  function shortTime(ms) {
+    return formatTime(ms).replace(/\s*([AaPp])\.?\s*[Mm]\.?$/, (m, ap) => `${ap.toLowerCase()}m`);
+  }
+
   function renderShiftControls() {
     const el = document.getElementById("shift-controls");
     if (!el) return;
-    const shift = store.getShift();
+    const st = shift.state;
     const status = el.querySelector("[data-shift-status]");
-    const endBtn = el.querySelector("[data-end-shift]");
-    if (shift.endedAt) {
-      status.textContent = `Shift ended at ${formatTime(shift.endedAt)}.`;
-      endBtn.hidden = true;
-    } else {
-      status.textContent = `Shift in progress since ${formatTime(shift.startedAt)}.`;
-      endBtn.hidden = false;
+    const q = (sel) => el.querySelector(sel);
+    const show = (sel, on) => {
+      const b = q(sel);
+      if (b) b.hidden = !on;
+    };
+    const v = st.visit;
+    let text;
+    if (st.loadError) text = `We couldn't load your shift. ${st.loadError}`;
+    else if (st.noPlan) text = "Your family hasn't added a schedule yet.";
+    else if (!v) text = "No shift started yet.";
+    else if (st.tooOld) text = `Your last shift was on ${dayLabel(v.date)}. It's read-only now.`;
+    else if (st.ended) text = `Shift ended at ${shortTime(v.endedAt)} by ${v.endedByName}.`;
+    else text = `Shift in progress since ${shortTime(v.startedAt)}.`;
+    status.textContent = text;
+
+    show("[data-retry-shift]", Boolean(st.loadError));
+    show("[data-start-shift]", !st.loadError && st.canStart);
+    show("[data-end-shift]", !st.loadError && st.active);
+    show("[data-reopen-shift]", !st.loadError && st.canReopen);
+
+    const history = q("[data-shift-history]");
+    if (history) {
+      const text = historyText(st);
+      history.textContent = text;
+      history.hidden = !text;
+    }
+  }
+
+  // "Started 3:00pm by Bethany · ended 5:02pm by Bethany · reopened 5:10pm by Bethany"
+  function historyText(st) {
+    if (!st.visit || !st.events.length) return "";
+    const parts = [`Started ${shortTime(st.visit.startedAt)} by ${st.visit.startedByName}`];
+    st.events.forEach((e) => {
+      const when = `${shortTime(e.at)} by ${e.actorName}`;
+      if (e.kind === "ended") parts.push(`ended ${when}`);
+      else if (e.kind === "reopened") parts.push(`reopened ${when}`);
+      else if (e.kind === "unchecked") parts.push(`unchecked ${e.taskTitle || "a task"} ${when}`);
+    });
+    return parts.join(" · ");
+  }
+
+  function showShiftError(err) {
+    const el = document.querySelector("[data-shift-error]");
+    if (!el) return;
+    el.textContent = err ? shift.errorMessage(err) : "";
+    el.hidden = !err;
+  }
+
+  function focusShiftStatus() {
+    const status = document.querySelector("[data-shift-status]");
+    if (!status) return;
+    status.setAttribute("tabindex", "-1");
+    status.focus();
+  }
+
+  function initShiftButtons() {
+    const startBtn = document.querySelector("[data-start-shift]");
+    const retryBtn = document.querySelector("[data-retry-shift]");
+    const reopenBtn = document.querySelector("[data-reopen-shift]");
+    const dialog = document.getElementById("reopen-shift-dialog");
+
+    if (startBtn) {
+      startBtn.addEventListener("click", () => {
+        showShiftError(null);
+        startBtn.disabled = true;
+        shift
+          .startShift()
+          .then(() => {
+            announce("Shift started.");
+            focusShiftStatus();
+          })
+          .catch(showShiftError)
+          .finally(() => (startBtn.disabled = false));
+      });
+    }
+    if (retryBtn) {
+      retryBtn.addEventListener("click", () => {
+        showShiftError(null);
+        shift.refresh().catch(showShiftError);
+      });
+    }
+    if (reopenBtn && dialog && typeof dialog.showModal === "function") {
+      reopenBtn.addEventListener("click", () => {
+        dialog.returnValue = "";
+        dialog.showModal();
+      });
+      dialog.addEventListener("close", () => {
+        if (dialog.returnValue !== "confirm") {
+          reopenBtn.focus();
+          return;
+        }
+        showShiftError(null);
+        shift
+          .reopenShift()
+          .then(() => {
+            announce(`Shift reopened. ${parentFirstName()} will be told.`);
+            focusShiftStatus();
+          })
+          .catch(showShiftError);
+      });
     }
   }
 
@@ -890,14 +1070,14 @@
 
     dialog.addEventListener("close", () => {
       if (dialog.returnValue === "confirm") {
-        store.endShift();
-        announce("Shift ended. Photos can no longer be added.");
-        const heading = document.getElementById("shift-heading");
-        const status = document.querySelector("[data-shift-status]");
-        if (status) {
-          status.setAttribute("tabindex", "-1");
-          status.focus();
-        } else if (heading) heading.focus();
+        showShiftError(null);
+        shift
+          .endShift()
+          .then(() => {
+            announce("Shift ended. Photos can no longer be added.");
+            focusShiftStatus();
+          })
+          .catch(showShiftError);
       } else {
         openBtn.focus();
       }
@@ -905,6 +1085,8 @@
   }
 
   // Dev-only controls so the moment prompt and shift lock can be tested quickly.
+  // Dev-only controls. The sitter's moment trigger and the reset are demo-only: with real
+  // accounts only a parent can move the moment (trigger_moment_now), from messages.html?as=parent.
   function renderDevTools() {
     if (!isDevHost) return;
     const host = document.querySelector(".side-column") || document.querySelector(".app");
@@ -912,20 +1094,50 @@
     const box = document.createElement("section");
     box.className = "panel dev-tools";
     box.setAttribute("aria-labelledby", "dev-tools-heading");
+    const demoButtons = shift.demo
+      ? `<button type="button" class="photo-source-btn" data-dev="moment">Trigger moment now</button>
+        <button type="button" class="photo-source-btn" data-dev="reset">Start a new shift (clears data)</button>`
+      : "";
     box.innerHTML = `
       <h2 class="panel-title" id="dev-tools-heading">Dev tools (localhost only)</h2>
       <div class="dev-tools-actions">
         <a class="photo-source-btn dev-link" href="parent.html" target="_blank" rel="noopener">Open parent view<span class="visually-hidden"> (opens in a new tab)</span></a>
-        <button type="button" class="photo-source-btn" data-dev="moment">Trigger moment now</button>
-        <button type="button" class="photo-source-btn" data-dev="reset">Start a new shift (clears data)</button>
+        ${demoButtons}
       </div>`;
-    box.querySelector('[data-dev="moment"]').addEventListener("click", () => {
-      if (!store.isShiftActive()) store.resetShift();
-      store.triggerMomentNow();
-    });
-    box.querySelector('[data-dev="reset"]').addEventListener("click", () => {
-      store.resetShift();
-      announce("New shift started.");
+    const momentBtn = box.querySelector('[data-dev="moment"]');
+    if (momentBtn) momentBtn.addEventListener("click", () => shift.triggerMomentNow());
+    const resetBtn = box.querySelector('[data-dev="reset"]');
+    if (resetBtn) {
+      resetBtn.addEventListener("click", () => {
+        store.resetShift();
+        announce("New shift started.");
+      });
+    }
+    host.appendChild(box);
+  }
+
+  // Parent side of messages.html, signed in, on localhost: move this shift's moment prompt to
+  // 1-5 minutes from now (trigger_moment_now; the database refuses sitters).
+  function renderParentMomentTrigger(host) {
+    if (!isDevHost || shift.demo || role !== "parent" || !host) return;
+    const box = document.createElement("section");
+    box.className = "panel dev-tools";
+    box.innerHTML = `
+      <h2 class="panel-title">Dev tools (localhost only)</h2>
+      <div class="dev-tools-actions">
+        <button type="button" class="photo-source-btn" data-dev="parent-moment">Trigger the sitter's moment (1–5 min)</button>
+      </div>
+      <p class="photo-upload-error" role="alert" hidden></p>`;
+    const err = box.querySelector("[role=alert]");
+    box.querySelector("button").addEventListener("click", () => {
+      err.hidden = true;
+      shift
+        .triggerMomentNow()
+        .then(() => announce("The sitter's moment prompt will appear within 5 minutes."))
+        .catch((e) => {
+          err.textContent = shift.errorMessage(e);
+          err.hidden = false;
+        });
     });
     host.appendChild(box);
   }
@@ -957,13 +1169,32 @@
     return task ? task.title : "Task";
   }
 
-  function renderMessage(message, completions, byId) {
-    const side = message.sender === role ? "is-mine" : "is-theirs";
+  function threadPhotoHtml(message, alt) {
+    if (message.photoPath) {
+      return `<img class="msg-photo" data-photo-path="${escapeHtml(message.photoPath)}" alt="${escapeHtml(alt)}" />`;
+    }
+    if (message.photoRemoved) {
+      return `<p class="photo-removed">Photo removed by ${escapeHtml(message.photoRemovedByName || "a parent")}</p>`;
+    }
+    return "";
+  }
+
+  function threadMeta(message) {
+    const iso = new Date(message.createdAt).toISOString();
+    return `<p class="msg-meta">${escapeHtml(message.senderName)} · <time datetime="${iso}">${escapeHtml(formatTime(message.createdAt))}</time></p>`;
+  }
+
+  function threadPhotoTitle(message) {
+    if (!message) return "an earlier";
+    if (message.kind === "moment") return "Moment";
+    return message.taskTitle || "Task";
+  }
+
+  function renderThreadMessage(message, byId) {
+    const side = message.mine ? "is-mine" : "is-theirs";
 
     if (message.kind === "task_proof") {
-      const task = data.schedule.find((s) => s.id === message.taskId);
-      const completion = completions[message.taskId];
-      const title = task ? task.title : "Task";
+      const title = message.taskTitle || "Task";
       return `
         <li class="msg ${side}" id="msg-${escapeHtml(message.id)}">
           <article class="msg-card proof-card" aria-label="Task completed: ${escapeHtml(title)}">
@@ -971,11 +1202,11 @@
               <img src="assets/check.svg" alt="" width="16" height="16" />
               Task completed
             </p>
-            <h2 class="msg-card-title">${escapeHtml(title)}${task ? ` <span class="msg-card-time">${escapeHtml(task.time)}</span>` : ""}</h2>
-            ${completion ? photoImg(completion.photoDataUrl, `Photo for ${title}`, "msg-photo") : ""}
-            ${completion && completion.tag ? `<p class="tag-chip">${escapeHtml(completion.tag)}</p>` : ""}
-            ${completion && completion.note ? `<p class="msg-card-note">${escapeHtml(completion.note)}</p>` : ""}
-            ${messageMeta(message)}
+            <h2 class="msg-card-title">${escapeHtml(title)}${message.taskTime ? ` <span class="msg-card-time">${escapeHtml(message.taskTime)}</span>` : ""}</h2>
+            ${threadPhotoHtml(message, `Photo for ${title}`)}
+            ${message.tag ? `<p class="tag-chip">${escapeHtml(message.tag)}</p>` : ""}
+            ${message.body ? `<p class="msg-card-note">${escapeHtml(message.body)}</p>` : ""}
+            ${threadMeta(message)}
           </article>
         </li>`;
     }
@@ -988,15 +1219,18 @@
               Moment
               ${message.late ? `<span class="late-badge">Late</span>` : ""}
             </p>
-            ${photoImg(message.photo, "Moment photo from the shift", "msg-photo")}
+            ${threadPhotoHtml(message, "Moment photo from the shift")}
             ${message.body ? `<p class="msg-card-note">${escapeHtml(message.body)}</p>` : ""}
-            ${messageMeta(message)}
+            ${threadMeta(message)}
           </article>
         </li>`;
     }
 
+    const target = message.replyTo ? byId[message.replyTo] : null;
     const replyRef = message.replyTo
-      ? `<a class="msg-reply-ref" href="#msg-${escapeHtml(message.replyTo)}">Reply to ${escapeHtml(photoTitle(byId && byId[message.replyTo]))} photo</a>`
+      ? target
+        ? `<a class="msg-reply-ref" href="#msg-${escapeHtml(message.replyTo)}">Reply to ${escapeHtml(threadPhotoTitle(target))} photo</a>`
+        : `<span class="msg-reply-ref">Reply to an earlier photo</span>`
       : "";
     return `
       <li class="msg ${side}">
@@ -1004,7 +1238,7 @@
           ${replyRef}
           <p class="msg-body">${escapeHtml(message.body)}</p>
         </div>
-        ${messageMeta(message)}
+        ${threadMeta(message)}
       </li>`;
   }
 
@@ -1014,6 +1248,7 @@
     const input = document.getElementById("message-input");
     const error = document.getElementById("message-error");
     const title = document.getElementById("messages-title");
+    const sendBtn = form.querySelector('button[type="submit"]');
     // The other person in the thread, from the viewer's side.
     const parentName = role === "parent" ? data.babysitter.name : parentFirstName();
     if (role === "parent") renderParentNav("messages");
@@ -1021,20 +1256,24 @@
     if (input) input.placeholder = `Message ${parentName}`;
     const label = document.querySelector('label[for="message-input"]');
     if (label) label.textContent = `Message to ${parentName}`;
+    renderParentMomentTrigger(document.querySelector(".messages-main"));
 
     let lastCount = -1;
     const render = () => {
-      const messages = store.getMessages();
-      const completions = store.getCompletions();
+      const st = shift.state;
+      const messages = st.thread;
       const byId = {};
       messages.forEach((m) => {
         byId[m.id] = m;
       });
-      list.innerHTML = messages.length
-        ? messages.map((m) => renderMessage(m, completions, byId)).join("")
+      list.innerHTML = st.loadError
+        ? `<li class="empty-state msg-empty"><p>${escapeHtml(st.loadError)}</p></li>`
+        : messages.length
+        ? messages.map((m) => renderThreadMessage(m, byId)).join("")
         : `<li class="empty-state msg-empty"><p>No messages yet. Say hi to ${escapeHtml(parentName)}!</p></li>`;
+      hydratePhotos(list);
       const lock = document.getElementById("messages-locked");
-      if (lock) lock.hidden = role === "parent" || store.isShiftActive();
+      if (lock) lock.hidden = role === "parent" || !(st.ended || st.tooOld);
       if (messages.length !== lastCount) {
         lastCount = messages.length;
         const last = list.lastElementChild;
@@ -1045,24 +1284,30 @@
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       error.hidden = true;
-      try {
-        const sent = store.sendChat(input.value, role);
-        if (!sent) {
-          error.textContent = "Type a message first.";
-          error.hidden = false;
-          input.focus();
-          return;
-        }
-        input.value = "";
-        announce(`Message sent to ${parentName}.`);
-      } catch (err) {
-        error.textContent = (err && err.message) || "Message not sent. Please try again.";
+      if (!input.value.trim()) {
+        error.textContent = "Type a message first.";
         error.hidden = false;
+        input.focus();
+        return;
       }
-      input.focus();
+      sendBtn.disabled = true;
+      shift
+        .sendChat(input.value)
+        .then(() => {
+          input.value = "";
+          announce(`Message sent to ${parentName}.`);
+        })
+        .catch((err) => {
+          error.textContent = shift.errorMessage(err);
+          error.hidden = false;
+        })
+        .finally(() => {
+          sendBtn.disabled = false;
+          input.focus();
+        });
     });
 
-    store.subscribe(render);
+    shift.subscribe(render);
     render();
   }
 
@@ -1123,32 +1368,44 @@
 
     const photoWrap = overlay.querySelector("[data-modal-photo-wrap]");
     const photoEl = overlay.querySelector("[data-modal-photo]");
-    if (item.photoUrl) {
-      photoEl.src = item.photoUrl;
+    const path = proofPhotoPath(item);
+    photoEl.removeAttribute("src");
+    delete photoEl.dataset.loadedPath;
+    if (path) {
+      photoEl.dataset.photoPath = path;
       photoEl.alt = `Submitted photo for ${item.title}`;
       photoWrap.hidden = false;
+      hydratePhotos(photoWrap);
     } else {
-      photoEl.removeAttribute("src");
+      delete photoEl.dataset.photoPath;
       photoEl.alt = "";
       photoWrap.hidden = true;
     }
 
-    const completion = item.completion;
+    const proof = item.check && item.check.proof;
     const tagEl = overlay.querySelector("[data-modal-tag]");
     if (tagEl) {
-      tagEl.textContent = completion && completion.tag ? completion.tag : "";
-      tagEl.hidden = !(completion && completion.tag);
+      tagEl.textContent = proof && proof.tag ? proof.tag : "";
+      tagEl.hidden = !(proof && proof.tag);
     }
 
     const noteWrap = overlay.querySelector("[data-modal-note-wrap]");
     const noteEl = overlay.querySelector("[data-modal-note]");
-    if (completion && completion.note) {
-      noteEl.textContent = completion.note;
+    if (proof && proof.body) {
+      noteEl.textContent = proof.body;
       noteWrap.hidden = false;
     } else {
       noteEl.textContent = "";
       noteWrap.hidden = true;
     }
+
+    const metaEl = overlay.querySelector("[data-modal-check-meta]");
+    if (metaEl) {
+      const parts = checkMetaParts(item.check);
+      metaEl.innerHTML = parts.join("");
+      metaEl.hidden = !parts.length;
+    }
+    setupUncheck(overlay, item);
 
     closeCompleteModal(false);
     overlay.classList.add("is-open");
@@ -1165,6 +1422,47 @@
     overlay.setAttribute("aria-hidden", "true");
     document.body.classList.remove("modal-open");
     if (wasOpen && restoreFocus) restoreFocusAfterModal();
+  }
+
+  // Unchecking is allowed while the shift is open; after a reopen, unchecking a task from the
+  // original shift is recorded in the shift history (by the database).
+  function setupUncheck(overlay, item) {
+    const btn = overlay.querySelector("[data-uncheck]");
+    const err = overlay.querySelector("[data-uncheck-error]");
+    if (!btn) return;
+    if (err) err.hidden = true;
+    const canUncheck = Boolean(item.completed && shift && shift.state.active);
+    btn.hidden = !canUncheck;
+    btn.disabled = false;
+    btn.onclick = !canUncheck
+      ? null
+      : () => {
+          const logged =
+            item.check && !item.check.afterReopen && shift.state.events.some((e) => e.kind === "reopened");
+          const body = logged
+            ? `${item.title} will go back to not done. Because this shift was reopened, the uncheck is recorded in the shift history. The photo message stays in Messages.`
+            : `${item.title} will go back to not done. The photo message stays in Messages.`;
+          const ask = window.CareNestAuth && window.CareNestAuth.confirmDialog
+            ? window.CareNestAuth.confirmDialog({ title: "Uncheck this task?", body, confirmLabel: "Uncheck" })
+            : Promise.resolve(window.confirm(body));
+          ask.then((ok) => {
+            if (!ok) return;
+            btn.disabled = true;
+            shift
+              .uncheckTask(item.id)
+              .then(() => {
+                closeModal();
+                announce(`${item.title} unchecked.`);
+              })
+              .catch((e) => {
+                btn.disabled = false;
+                if (err) {
+                  err.textContent = shift.errorMessage(e);
+                  err.hidden = false;
+                }
+              });
+          });
+        };
   }
 
   // A function (not a const) because initMessages runs before this line is reached.
@@ -1224,6 +1522,7 @@
     escapeHtml,
     announce,
     formatTime,
+    shortTime,
     senderName,
     photoTitle,
     photoImg,

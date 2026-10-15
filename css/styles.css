@@ -2715,3 +2715,65 @@ body.modal-open {
 .profile-address[hidden] {
   display: none;
 }
+
+/* ---------- T3b: shift lifecycle, history, check labels ---------- */
+.shift-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shift-actions [hidden],
+.shift-history[hidden],
+.check-meta[hidden],
+.uncheck-btn[hidden] {
+  display: none;
+}
+
+.shift-btn {
+  width: auto;
+  padding: 8px 16px;
+}
+
+.shift-history {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+  color: var(--grey);
+}
+
+.check-meta,
+.schedule-check-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 4px 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+  color: var(--grey);
+}
+
+.reopen-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #fff4e0;
+  color: #8a5300;
+  font-weight: var(--weight-semibold);
+}
+
+.photo-removed {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: #f3f4f6;
+  color: var(--grey);
+  font-size: var(--text-sm);
+  font-style: italic;
+}
+
+.uncheck-btn {
+  width: auto;
+  align-self: flex-start;
+  padding: 8px 16px;
+}
