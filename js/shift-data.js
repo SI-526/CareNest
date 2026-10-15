@@ -58,7 +58,7 @@
     moment_photo_too_early: "That photo was taken before the moment prompt. Take a new one now.",
     message_not_found: "That photo is no longer available. Reload the page.",
     reply_not_found: "That photo is no longer available.",
-    not_caretaker: "Only the sitter can share a moment.",
+    not_caretaker: "Only the sitter can do that.",
     not_parent: "Only a parent can do that.",
     household_not_found: "Please sign in again.",
     not_authenticated: "Please sign in again.",
@@ -317,11 +317,17 @@
       // Past shifts show the task as it was checked off (task_checks snapshot), not the live task.
       const galleryRows = (galleryRes.data || []).slice().reverse();
       const proofVisits = Array.from(new Set(galleryRows.filter((r) => r.kind === "task_proof").map((r) => r.visit_id)));
-      const snapshotsRes = proofVisits.length
-        ? await client.from("task_checks").select("visit_id, task_id, task_title").in("visit_id", proofVisits)
-        : none;
-      if (snapshotsRes.error) throw snapshotsRes.error;
-      const snapshotTitles = new Map((snapshotsRes.data || []).map((c) => [`${c.visit_id}/${c.task_id}`, c.task_title]));
+      // 100 ids per request keeps each URL well under PostgREST/proxy limits on a long history.
+      const visitChunks = [];
+      for (let i = 0; i < proofVisits.length; i += 100) visitChunks.push(proofVisits.slice(i, i + 100));
+      const snapshotResults = await Promise.all(
+        visitChunks.map((ids) => client.from("task_checks").select("visit_id, task_id, task_title").in("visit_id", ids))
+      );
+      const snapshotFailed = snapshotResults.find((r) => r.error);
+      if (snapshotFailed) throw snapshotFailed.error;
+      const snapshotTitles = new Map(
+        snapshotResults.flatMap((r) => r.data || []).map((c) => [`${c.visit_id}/${c.task_id}`, c.task_title])
+      );
       if (seq !== loadSeq) return; // a newer load is on its way
 
       const events = (eventsRes.data || []).map((e) => ({

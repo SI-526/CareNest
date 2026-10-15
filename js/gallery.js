@@ -31,13 +31,19 @@
   let previewUrl = null;
   let sending = false;
   let newestShownId = null;
+  let photoObserver = null;
+  // After a removal: where focus goes once the list re-renders without the removed card.
+  let pendingFocus = null;
 
   window.CareNestShift.ready.then((b) => {
     backend = b;
     const isParent = backend.role === "parent";
     if (isParent) ui.renderParentNav("gallery");
-    addBox.hidden = isParent;
-    if (!isParent) initAdd();
+    if (isParent) addBox.remove();
+    else {
+      addBox.hidden = false;
+      initAdd();
+    }
     filter.addEventListener("change", render);
     list.addEventListener("click", onListClick);
     backend.subscribe(render);
@@ -74,12 +80,14 @@
     return box;
   }
 
-  function photoCard(item, isParent) {
+  // position: { index, count, day } within the item's shift, for a unique Remove button name.
+  function photoCard(item, isParent, position) {
     const li = el("li", "gallery-item");
     const figure = el("figure", "gallery-card");
     const img = el("img", "msg-photo gallery-photo");
     img.alt = altText(item);
     img.dataset.photoPath = item.photoPath;
+    img.dataset.order = String(position.order);
     figure.appendChild(img);
 
     const cap = el("figcaption", "gallery-caption");
@@ -97,7 +105,10 @@
       const remove = el("button", "photo-source-btn gallery-remove", "Remove photo");
       remove.type = "button";
       remove.dataset.removeId = item.id;
-      remove.setAttribute("aria-label", `Remove photo (${altText(item)}, ${ui.formatTime(item.createdAt)})`);
+      remove.setAttribute(
+        "aria-label",
+        `Remove photo ${position.index} of ${position.day}: ${altText(item)}, ${ui.formatTime(item.createdAt)}`
+      );
       figure.appendChild(remove);
     }
     li.appendChild(figure);
@@ -105,20 +116,52 @@
   }
 
   // Object URLs from the private bucket (demo: data URLs); a failed photo gets a text fallback.
+  function loadPhoto(img) {
+    const fail = () => {
+      if (img.isConnected) img.replaceWith(el("p", "photo-removed", "This photo couldn't load."));
+    };
+    backend
+      .photoUrl(img.dataset.photoPath)
+      .then((url) => {
+        if (url) img.src = url;
+        else fail();
+      })
+      .catch(fail);
+  }
+
+  // Pixels between an element and the viewport (0 when on screen).
+  function viewportDistance(rect) {
+    if (rect.bottom < 0) return -rect.bottom;
+    if (rect.top > window.innerHeight) return rect.top - window.innerHeight;
+    return 0;
+  }
+
+  // Photos load only as they near the viewport: the closest first, and among equally close
+  // ones the newest first (the list runs oldest to newest, so a higher order is newer).
   function hydrate(root) {
-    root.querySelectorAll("img[data-photo-path]").forEach((img) => {
-      const path = img.dataset.photoPath;
-      const fail = () => {
-        if (img.isConnected) img.replaceWith(el("p", "photo-removed", "This photo couldn't load."));
-      };
-      backend
-        .photoUrl(path)
-        .then((url) => {
-          if (url) img.src = url;
-          else fail();
-        })
-        .catch(fail);
-    });
+    const imgs = Array.from(root.querySelectorAll("img[data-photo-path]"));
+    if (!("IntersectionObserver" in window)) {
+      imgs.reverse().forEach(loadPhoto);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (records) => {
+        records
+          .filter((r) => r.isIntersecting)
+          .sort(
+            (a, b) =>
+              viewportDistance(a.boundingClientRect) - viewportDistance(b.boundingClientRect) ||
+              Number(b.target.dataset.order) - Number(a.target.dataset.order)
+          )
+          .forEach((r) => {
+            observer.unobserve(r.target);
+            loadPhoto(r.target);
+          });
+      },
+      { rootMargin: "600px 0px" }
+    );
+    imgs.forEach((img) => observer.observe(img));
+    photoObserver = observer;
   }
 
   function render() {
@@ -128,6 +171,8 @@
     const chosen = (filter.querySelector("input:checked") || {}).value || "all";
     const items = chosen === "all" ? all : all.filter((p) => p.source === chosen);
 
+    if (photoObserver) photoObserver.disconnect();
+    photoObserver = null;
     list.replaceChildren();
     if (st.loadError) list.appendChild(emptyState(st.loadError));
     else if (!all.length) list.appendChild(emptyState(EMPTY_TEXT));
@@ -141,14 +186,18 @@
         groups.get(key).items.push(item);
       });
       let n = 0;
+      let order = 0;
       groups.forEach((group) => {
         const id = `gallery-shift-${++n}`;
+        const day = dayLabel(group.date);
         const section = el("section", "gallery-shift");
         section.setAttribute("aria-labelledby", id);
-        const heading = el("h2", "gallery-shift-title", dayLabel(group.date));
+        const heading = el("h2", "gallery-shift-title", day);
         heading.id = id;
         const grid = el("ul", "gallery-grid");
-        group.items.forEach((item) => grid.appendChild(photoCard(item, isParent)));
+        group.items.forEach((item, i) =>
+          grid.appendChild(photoCard(item, isParent, { index: i + 1, day, order: order++ }))
+        );
         section.append(heading, grid);
         list.appendChild(section);
       });
@@ -164,6 +213,7 @@
       cards[cards.length - 1].scrollIntoView({ block: "end" });
     }
     newestShownId = newest;
+    applyPendingFocus();
   }
 
   // ---------- sitter: add a photo message ----------
@@ -253,15 +303,42 @@
 
   // ---------- parent: remove a photo ----------
 
+  function removeButton(id) {
+    return Array.from(list.querySelectorAll("[data-remove-id]")).find((b) => b.dataset.removeId === id) || null;
+  }
+
+  // Once the removed card is gone: the next card's Remove button, else the previous one's, else
+  // the page heading (so focus never falls back to the top of the list or the body).
+  function applyPendingFocus() {
+    if (!pendingFocus || removeButton(pendingFocus.removedId)) return;
+    const { next, prev } = pendingFocus;
+    pendingFocus = null;
+    const target = next.map(removeButton).find(Boolean) || prev.map(removeButton).find(Boolean);
+    if (target) {
+      target.focus();
+      return;
+    }
+    const heading = document.getElementById("gallery-title");
+    heading.tabIndex = -1;
+    heading.focus();
+  }
+
   function onListClick(e) {
     const button = e.target.closest("[data-remove-id]");
     if (!button || backend.role !== "parent") return;
     if (!window.confirm("Remove this photo for everyone in the family? This can't be undone.")) return;
+    const removedId = button.dataset.removeId;
+    const ids = Array.from(list.querySelectorAll("[data-remove-id]")).map((b) => b.dataset.removeId);
+    const at = ids.indexOf(removedId);
     button.disabled = true;
     setStatus("");
     backend
-      .removePhoto(button.dataset.removeId)
-      .then(() => setStatus("Photo removed."))
+      .removePhoto(removedId)
+      .then(() => {
+        setStatus("Photo removed.");
+        pendingFocus = { removedId, next: ids.slice(at + 1), prev: ids.slice(0, at).reverse() };
+        applyPendingFocus(); // the list may already have re-rendered; otherwise render() does it
+      })
       .catch((err) => {
         button.disabled = false;
         setStatus(backend.errorMessage(err));

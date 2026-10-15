@@ -204,8 +204,8 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   path's first folder read; a member uploads only into an open shift of their household whose
   date is in the start window; nobody overwrites or moves a photo. A task is completed only with
   `complete_task(visit, task, photo_path, note, tag)`, which writes the check and the proof
-  message together; proofs and moments re-check the shift under a share lock on the visit, so
-  they cannot slip in after a concurrent `end_visit`. Chat stays open after a shift ends.
+  message together; proofs, moments, and photo messages re-check the shift under a share lock on
+  the visit, so they cannot slip in after a concurrent `end_visit`. Chat stays open after a shift ends.
   Caretakers must attach a photo to complete a task; parents may check off without one (shown as
   done by them, no proof message). Each shift gets one moment prompt (`visits.moment_at`, chosen
   by the database at a random time from 30 minutes after the start to 30 minutes before the usual
@@ -218,16 +218,19 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   uploaded at or after the prompt (Storage's server-set `created_at`), otherwise
   `moment_photo_too_early`; it is `late` if posted more than 2 minutes after the prompt.
 - Uploads: at most **2 photos per active (not archived) task of the plan + 10** per shift folder
-  (every object in the folder counts, used or not, until it is deleted). Over the cap the upload
-  fails with `photo_limit_reached` (the app shows "Photo limit reached for this shift."); deleting
-  an unused photo frees room. Never at a path a message uses or a parent removed.
+  (every object in the folder counts, used or not, until it is deleted; photo messages count
+  toward the cap like proofs and moments). Over the cap the upload fails with
+  `photo_limit_reached` (the app shows "Photo limit reached for this shift."); deleting an unused
+  photo frees room. A sitter cannot delete a photo a message uses (a proof, moment, or photo
+  message), so a used photo keeps its slot until a parent removes and deletes it. Never at a path
+  a message uses or a parent removed.
 - Photo removal: a parent may remove any photo in the family space. `remove_photo(message)`
   clears the message's photo, records `photo_removed_by`/`photo_removed_at` ("Photo removed by
   Mary"; the message, its task check, and the history stay), records the path in
   `removed_photos`, deletes every parent's save of it and its concept flag, and returns the path;
   the client then deletes the object with the Storage API. From the moment of removal, before the
   object is deleted, nobody can download it or sign a URL for it, nobody can upload to that path
-  again, and it cannot be attached to a proof or moment again (`photo_removed`). Saves and flags
+  again, and it cannot be attached to a proof, moment, or photo message again (`photo_removed`). Saves and flags
   cannot be added to a removed photo, including one racing the removal (a trigger locks the
   message and re-checks; `photo_removed`).
 - Photo messages: a `chat` row with `photo_path` and `visit_id` (the shift); the body may be empty.
@@ -251,7 +254,7 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 - Orphaned photos (issue #7, P1): a photo is readable only while its path's shift still exists in
   that household, so photos of a deleted shift or family space are hidden from everyone (and so
   cannot be deleted by clients either). But abandoned uploads in a shift that still exists (never
-  attached to a proof or moment) stay readable by the family's members, and every orphan stays
+  attached to a proof, moment, or photo message) stay readable by the family's members, and every orphan stays
   stored, until a cleanup job exists.
 - Known limitation (same as Carekeeper): Supabase Realtime does not apply RLS to DELETE events,
   so a signed-in user subscribed to `task_checks` also receives the primary keys (two random

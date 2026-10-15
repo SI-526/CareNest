@@ -979,10 +979,10 @@ test("photo deletion: unused photos by the uploader or a parent; then the depart
 });
 
 // SI-39: a photo message is a chat with a photo, posted by the sitter into an open shift (the
-// gallery's "+"). Its own family so the shared fixtures above keep their counts.
-test("photo messages: the sitter's, in an open shift, own photo; parents can remove them", async () => {
-  const mom = await signUp("pm-parent");
-  const sitter = await signUp("pm-sitter");
+// gallery's "+"). Each test has its own family so the shared fixtures above keep their counts.
+async function photoFamily(label) {
+  const mom = await signUp(`${label}-parent`);
+  const sitter = await signUp(`${label}-sitter`);
   const h = await mom.client.rpc("create_household", { household_name: "Photo msgs", acknowledged: true });
   assert.ifError(h.error);
   const hh = h.data;
@@ -993,12 +993,20 @@ test("photo messages: the sitter's, in an open shift, own photo; parents can rem
   const plan = (await mom.client.from("plans").insert({ household_id: hh, title: "Day" }).select().single()).data;
   const task = (await mom.client.from("tasks").insert({ plan_id: plan.id, title: "Lunch" }).select().single()).data;
   const visit = (await sitter.client.from("visits").insert({ plan_id: plan.id, visit_date: isoDate(0) }).select().single()).data;
+  return { mom, sitter, hh, plan, task, visit };
+}
+
+test("photo messages: the sitter's, in an open shift, own photo; parents can remove them", async () => {
+  const { mom, sitter, hh, plan, task, visit } = await photoFamily("pm");
   const [{ id: endedVisit }] = localSql(`
     insert into public.visits (plan_id, visit_date, ended_at)
     values ('${uuid(plan.id)}', '${isoDate(-1)}', now()) returning id::text as id`);
   const [{ id: oldVisit }] = localSql(`
     insert into public.visits (plan_id, visit_date)
     values ('${uuid(plan.id)}', '${isoDate(-3)}') returning id::text as id`);
+  const [{ id: nextVisit }] = localSql(`
+    insert into public.visits (plan_id, visit_date)
+    values ('${uuid(plan.id)}', '${isoDate(1)}') returning id::text as id`);
 
   const send = (user, extra) =>
     user.client
@@ -1031,19 +1039,30 @@ test("photo messages: the sitter's, in an open shift, own photo; parents can rem
   // The photo must be uploaded, by the sender, in this shift's folder, and not used already.
   assertRpcError(await send(sitter, { photo_path: photoPath(hh, visit.id) }), "photo_not_found");
   assertRpcError(await send(sitter, { photo_path: momPhoto }), "photo_not_found");
-  assert.ok((await send(sitter, { photo_path: photoPath(householdB, visitB) })).error, "another family's folder");
-  const otherShift = photoPath(hh, endedVisit);
-  assert.ok(
-    (await sitter.client.from("messages").insert({ household_id: hh, visit_id: visit.id, kind: "chat", photo_path: otherShift })).error,
-    "the folder must be this message's shift",
-  );
-  assert.ok((await send(sitter, { photo_path: p1 })).error, "a path already used");
+  // Another family's folder: not the sender's upload here, so it is not found.
+  assertRpcError(await send(sitter, { photo_path: photoPath(householdB, visitB) }), "photo_not_found");
+  // The sitter's own upload in another open shift's folder passes the trigger; the path check
+  // ties the folder to this message's shift.
+  const otherShift = await uploadOk(sitter, hh, nextVisit);
+  const wrongFolder = await send(sitter, { photo_path: otherShift });
+  assert.equal(wrongFolder.error?.code, "23514", "the folder must be this message's shift");
+  assert.match(wrongFolder.error.message, /messages_check5/);
+  const reused = await send(sitter, { photo_path: p1 });
+  assert.equal(reused.error?.code, "23505", "a path already used");
+  assert.match(reused.error.message, /messages_photo_path_key/);
   const proofPhoto = await uploadOk(sitter, hh, visit.id);
-  assert.ifError((await complete(sitter, visit.id, task.id, proofPhoto)).error);
-  assert.ok((await send(sitter, { photo_path: proofPhoto })).error, "a proof's photo");
-  // Not a reply; no photo without a shift; text chat still needs text.
+  const proof = await complete(sitter, visit.id, task.id, proofPhoto);
+  assert.ifError(proof.error);
+  const proofReuse = await send(sitter, { photo_path: proofPhoto });
+  assert.equal(proofReuse.error?.code, "23505", "a proof's photo");
+  assert.match(proofReuse.error.message, /messages_photo_path_key/);
+  // Not a reply, even to a photo in this family (which passes the trigger's reply check); no
+  // photo without a shift; text chat still needs text.
   const p3 = await uploadOk(sitter, hh, visit.id);
-  assert.ok((await send(sitter, { photo_path: p3, reply_to: captioned.data.id })).error, "not a reply");
+  const reply = await send(sitter, { photo_path: p3, reply_to: proof.data });
+  assert.equal(reply.error?.code, "23514", "not a reply");
+  assert.match(reply.error.message, /messages_chat_photo_shape/);
+  assert.ifError((await send(sitter, { body: "Nice", reply_to: proof.data })).error, "a text reply to it is fine");
   assert.ok(
     (await sitter.client.from("messages").insert({ household_id: hh, kind: "chat", photo_path: p3 })).error,
     "a photo message needs its shift",
@@ -1069,9 +1088,16 @@ test("photo messages: the sitter's, in an open shift, own photo; parents can rem
 
   // Album saves and concept flags stay proof/moment only.
   assert.ok((await mom.client.from("photo_saves").insert({ message_id: captioned.data.id })).error, "no save");
+  assertPermissionDenied(
+    await mom.client.from("concept_flags").insert({ message_id: captioned.data.id, text: "Seems off" }),
+    "no concept flag on a photo message",
+  );
+  assert.equal((await admin.from("concept_flags").select("*").eq("message_id", captioned.data.id)).data.length, 0);
 
-  // A sitter cannot remove; a parent can: tombstone, unreadable, never reused.
+  // A sitter cannot remove, nor a parent of another family; a parent here can: tombstone,
+  // unreadable, never reused.
   assertRpcError(await sitter.client.rpc("remove_photo", { target_message_id: bare.data.id }), "not_parent");
+  assertRpcError(await parentB.client.rpc("remove_photo", { target_message_id: bare.data.id }), "message_not_found");
   const removed = await mom.client.rpc("remove_photo", { target_message_id: bare.data.id });
   assert.ifError(removed.error);
   assert.equal(removed.data, p1);
@@ -1085,6 +1111,13 @@ test("photo messages: the sitter's, in an open shift, own photo; parents can rem
   assert.ifError((await mom.client.storage.from(BUCKET).remove([p1])).error);
   assert.ok((await upload(sitter, p1)).error, "a removed path is never uploaded again");
   assertRpcError(await mom.client.rpc("remove_photo", { target_message_id: bare.data.id }), "photo_already_removed");
+  // A removed photo cannot be attached again while its object still exists.
+  const p4 = await uploadOk(sitter, hh, visit.id);
+  const doomed = await send(sitter, { photo_path: p4 });
+  assert.ifError(doomed.error);
+  assert.equal((await mom.client.rpc("remove_photo", { target_message_id: doomed.data.id })).data, p4);
+  assertRpcError(await send(sitter, { photo_path: p4 }), "photo_removed");
+  assert.equal((await mom.client.storage.from(BUCKET).remove([p4])).data?.length, 1);
   // Text chat has no photo to remove.
   const text = await send(mom, { body: "Thanks!" });
   assert.ifError(text.error);
@@ -1096,4 +1129,42 @@ test("photo messages: the sitter's, in an open shift, own photo; parents can rem
   assert.ok(bulk.data.includes(p2), "the captioned photo message's object is returned");
   const { data: after } = await admin.from("messages").select("photo_path, photo_removed_by").eq("id", captioned.data.id).single();
   assert.deepEqual(after, { photo_path: null, photo_removed_by: mom.id });
+});
+
+test("a photo message racing end_visit is refused once the shift has ended", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this two-session test needs a direct database connection");
+    return;
+  }
+  const { mom, sitter, hh, visit } = await photoFamily("pmrace");
+  const path = await uploadOk(sitter, hh, visit.id);
+
+  // Session 1 (psql, as the parent): end the shift and hold the transaction open.
+  const marker = `pmrace-${randomUUID()}`;
+  const claims = JSON.stringify({ sub: uuid(mom.id), role: "authenticated" });
+  const session = spawnPsql(`
+    begin;
+    set local role authenticated;
+    select set_config('request.jwt.claims', '${claims}', true);
+    select public.end_visit('${uuid(visit.id)}');
+    select pg_sleep(4) /* ${marker} */;
+    commit;`);
+  await waitFor(() =>
+    psqlQuery(`select count(*) from pg_stat_activity where state = 'active' and query like '%${marker}%' and query not like '%pg_stat_activity%'`) === "1",
+  );
+  // Session 2 (through the API): stamp_message waits on the visit's share lock, then sees the end.
+  const raced = await sitter.client
+    .from("messages")
+    .insert({ household_id: hh, visit_id: visit.id, kind: "chat", photo_path: path })
+    .select();
+  assert.equal(await session, 0, "session 1 committed");
+  assertRpcError(raced, "visit_ended");
+  const { count } = await admin
+    .from("messages")
+    .select("*", { count: "exact", head: true })
+    .eq("visit_id", visit.id)
+    .not("photo_path", "is", null);
+  assert.equal(count, 0, "no photo message landed on the ended shift");
+  // The unused photo is still the sitter's to delete.
+  assert.equal((await sitter.client.storage.from(BUCKET).remove([path])).data?.length, 1);
 });
