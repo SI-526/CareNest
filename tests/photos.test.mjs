@@ -1299,6 +1299,13 @@ test("the photo cleanup removes every kind of orphan and keeps live photos", asy
   backdate(stale, "25 hours");
   const closedFresh = photoPath(hh, closedVisit); // window closed but under 24 hours: kept
   assert.ifError((await upload({ client: admin }, closedFresh)).error);
+  // Yesterday's shift still takes photos (the window's last day): an old unused upload stays.
+  const [{ id: yesterdayVisit }] = localSql(`
+    insert into public.visits (plan_id, visit_date) values ('${uuid(live.plan.id)}', '${isoDate(-1)}')
+    returning id::text as id`);
+  const yesterday = photoPath(hh, uuid(yesterdayVisit));
+  assert.ifError((await upload({ client: admin }, yesterday)).error);
+  backdate(yesterday, "30 hours");
   const removedPath = await uploadOk(sitter, hh, visit.id); // removed, Storage delete "failed"
   const removedMsg = await send(removedPath);
   assert.ifError(removedMsg.error);
@@ -1334,7 +1341,7 @@ test("the photo cleanup removes every kind of orphan and keeps live photos", asy
     psqlQuery(`delete from vault.secrets where name in ${secretNames}`);
   }
 
-  const cases = { used, fresh, waiting, closedFresh, stale, removedPath, shiftOrphan, familyOrphan };
+  const cases = { used, fresh, waiting, closedFresh, yesterday, stale, removedPath, shiftOrphan, familyOrphan };
   const stored = new Set(
     localSql(`select name from storage.objects where bucket_id = 'photos'
                and name in ('${Object.values(cases).join("','")}')`).map((r) => r.name),
@@ -1345,6 +1352,7 @@ test("the photo cleanup removes every kind of orphan and keeps live photos", asy
     fresh: true,
     waiting: true,
     closedFresh: true,
+    yesterday: true,
     stale: false,
     removedPath: false,
     shiftOrphan: false,

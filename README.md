@@ -389,16 +389,22 @@ select vault.create_secret('https://ibwshlbhszznfhmeckda.supabase.co', 'carenest
 select vault.create_secret('<the sb_secret_... key>', 'carenest_photo_cleanup_key');
 ```
 
-Check the URL and key right away, without waiting for an orphan: this must show 200 a few
-seconds later.
+Check the URL and key right away, without waiting for an orphan. Run this on its own (pg_net
+sends the request only after the statement commits):
 
 ```sql
 select net.http_get(
   (select decrypted_secret from vault.decrypted_secrets where name = 'carenest_project_url')
     || '/storage/v1/bucket/photos',
   headers := jsonb_build_object('apikey',
-    (select decrypted_secret from vault.decrypted_secrets where name = 'carenest_photo_cleanup_key')));
-select status_code, left(content, 200), error_msg from net._http_response order by created desc limit 1;
+    (select decrypted_secret from vault.decrypted_secrets where name = 'carenest_photo_cleanup_key'))
+) as request_id;
+```
+
+A few seconds later, with the returned id, this must show 200:
+
+```sql
+select status_code, left(content, 200), error_msg from net._http_response where id = <request_id>;
 ```
 
 After a run (each hour at :17), the job's latest run should have succeeded and, when there was
