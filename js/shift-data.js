@@ -524,6 +524,17 @@
       },
       async init() {
         subscribeRealtime();
+        // A first plan created while this page is open (issue #11): reload so "no schedule yet"
+        // and Start shift follow it. ponytail: the visits filter keeps the old plan until reload.
+        let planId = data.planId;
+        if (family && family.subscribe) {
+          family.subscribe(() => {
+            if (data.planId !== planId) {
+              planId = data.planId;
+              scheduleReload();
+            }
+          });
+        }
         try {
           await load();
         } catch (err) {

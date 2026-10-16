@@ -13,10 +13,10 @@
   function init(shift) {
     const data = window.CareNestData;
     const { escapeHtml, announce, formatTime, shortTime } = ui;
-    const sitterName = data.babysitter.name;
-    const childFirst = data.child.name.split(" ")[0];
-    const parentContact = (data.contacts && data.contacts[0]) || {};
-    const CONCEPT_TEXT = `${childFirst} seems a little tired in this photo.`;
+    // Read live: js/family-data.js replaces these when a parent's edits arrive (issue #11).
+    const sitterName = () => data.babysitter.name;
+    const childFirst = () => data.child.name.split(" ")[0];
+    const parentContact = () => (data.contacts && data.contacts[0]) || {};
     const SEEN_AFTER_MS = 1500;
 
     const list = document.getElementById("feed-list");
@@ -38,21 +38,25 @@
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const coarsePointer = window.matchMedia("(pointer: coarse)");
 
-    document.getElementById("parent-greeting").textContent =
-      `Hi ${data.viewerFirstName || parentContact.firstName || "there"}`;
-    const avatar = document.getElementById("parent-child-avatar");
-    // Only the demo family has a child photo; signed in there is none yet, so none is shown.
-    if (data.child.avatar) {
-      avatar.src = data.child.avatar;
-      avatar.hidden = false;
+    function renderHeader() {
+      document.getElementById("parent-greeting").textContent =
+        `Hi ${data.viewerFirstName || parentContact().firstName || "there"}`;
+      const avatar = document.getElementById("parent-child-avatar");
+      // Only the demo family has a child photo; signed in there is none yet, so none is shown.
+      if (data.child.avatar) {
+        avatar.src = data.child.avatar;
+        avatar.hidden = false;
+      }
+      // A new family has nothing for the sitter yet: point the parent at Family info.
+      const nudge = document.querySelector(".setup-nudge");
+      if (data.isEmpty && !nudge) {
+        document.querySelector(".parent-header").insertAdjacentHTML(
+          "afterend",
+          `<p class="auth-status setup-nudge">Your sitter will see your child's schedule, care info, allergies, and emergency contacts once you add them. <a href="manage.html">Add family info</a></p>`
+        );
+      } else if (!data.isEmpty && nudge) nudge.remove();
     }
-    // A new family has nothing for the sitter yet: point the parent at Family info.
-    if (data.isEmpty) {
-      document.querySelector(".parent-header").insertAdjacentHTML(
-        "afterend",
-        `<p class="auth-status setup-nudge">Your sitter will see your child's schedule, care info, allergies, and emergency contacts once you add them. <a href="manage.html">Add family info</a></p>`
-      );
-    }
+    renderHeader();
 
     function showError(text) {
       pageError.textContent = text || "";
@@ -130,7 +134,7 @@
       empty.querySelector("p").textContent =
         view === "album"
           ? "No saved photos yet. Use “Save photo” on any photo to keep it here."
-          : `No photos from this shift yet. When ${sitterName} finishes a task or shares a moment, it shows up here.`;
+          : `No photos from this shift yet. When ${sitterName()} finishes a task or shares a moment, it shows up here.`;
 
       detectChanges(st);
     }
@@ -141,7 +145,7 @@
         if (link.dataset.nav === current) link.setAttribute("aria-current", "page");
         else link.removeAttribute("aria-current");
       });
-      const heading = view === "album" ? "Saved photos" : `${childFirst}'s day`;
+      const heading = view === "album" ? "Saved photos" : `${childFirst()}'s day`;
       title.textContent = heading;
       document.title = `CareNest — ${heading}`;
       document.getElementById("feed-heading").textContent = view === "album" ? "Album" : "Photos";
@@ -190,13 +194,13 @@
       if (phase === "idle") {
         titleEl.textContent = st.noPlan
           ? "No schedule yet"
-          : `${sitterName} hasn't started today's shift`;
+          : `${sitterName()} hasn't started today's shift`;
         detail.textContent = st.noPlan
           ? "Add tasks in Family info so your sitter can start a shift."
           : "You'll see it here as soon as the shift starts.";
       } else {
         titleEl.textContent =
-          phase === "ended" ? "The shift has ended" : `${st.visit.startedByName} is with ${childFirst}`;
+          phase === "ended" ? "The shift has ended" : `${st.visit.startedByName} is with ${childFirst()}`;
         detail.textContent = historyLine(st);
       }
 
@@ -289,8 +293,8 @@
       const ok = await auth.confirmDialog({
         title: ending ? "End this shift?" : "Reopen this shift?",
         body: ending
-          ? `${sitterName} won't be able to add photos or check tasks until the shift is reopened.`
-          : `${sitterName} can add photos and check tasks again. Everyone sees that it was reopened, and anything checked now is marked "Added after reopen".`,
+          ? `${sitterName()} won't be able to add photos or check tasks until the shift is reopened.`
+          : `${sitterName()} can add photos and check tasks again. Everyone sees that it was reopened, and anything checked now is marked "Added after reopen".`,
         confirmLabel: ending ? "End shift" : "Reopen shift",
         danger: ending,
       });
@@ -512,7 +516,7 @@
       const pad = (n) => String(n).padStart(2, "0");
       const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
       const ext = type === "image/png" ? "png" : type === "image/webp" ? "webp" : "jpg";
-      return `carenest-${slug(childFirst)}-${slug(item.title)}-${date}.${ext}`;
+      return `carenest-${slug(childFirst())}-${slug(item.title)}-${date}.${ext}`;
     }
 
     function setStatus(entry, text, isError) {
@@ -792,7 +796,7 @@
       if (moment) {
         moment.addEventListener(
           "click",
-          run(() => shift.triggerMomentNow(), () => announce(`${sitterName}'s moment prompt will appear within 5 minutes.`))
+          run(() => shift.triggerMomentNow(), () => announce(`${sitterName()}'s moment prompt will appear within 5 minutes.`))
         );
       }
       box.querySelector('[data-dev="concept"]').addEventListener("click", () => {
@@ -802,7 +806,7 @@
           return;
         }
         run(
-          () => shift.setConceptFlag(newest.id, CONCEPT_TEXT),
+          () => shift.setConceptFlag(newest.id, `${childFirst()} seems a little tired in this photo.`),
           () => announce(`Concept alert added to ${newest.title}. Not real analysis.`)
         )();
       });
@@ -823,6 +827,12 @@
     ui.renderParentNav(view);
     renderDevTools();
     shift.subscribe(render);
+    if (window.CareNestFamily && window.CareNestFamily.subscribe) {
+      window.CareNestFamily.subscribe(() => {
+        renderHeader();
+        render();
+      });
+    }
     render();
     window.setInterval(refreshRelativeTimes, 30000);
   }
