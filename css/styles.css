@@ -11,6 +11,7 @@
   --accent: #8194d6; /* borders, rules, decorative accents */
   --accent-strong: #5468c0; /* filled buttons: #fff on it = 5.10:1 (WCAG AA) */
   --accent-soft: #eaf0ff; /* selected / highlighted tint */
+  --focus: var(--accent-strong); /* focus rings: 5.10:1 on white (WCAG 1.4.11 needs 3:1) */
   --line: #e8eaf0; /* hairline border on surfaces */
   --line-soft: #eceef1; /* dividers inside a surface */
   --line-strong: #d5dbea; /* form-field border */
@@ -155,7 +156,7 @@ button {
 }
 
 .nav-item:focus-visible {
-  box-shadow: 0 0 0 2px var(--map-border);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .nav-item[aria-current="page"] {
@@ -537,7 +538,7 @@ button {
 }
 
 .schedule-item:focus-visible {
-  box-shadow: 0 0 0 2px var(--map-border);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .schedule-row.is-completed .schedule-title,
@@ -1130,7 +1131,7 @@ button {
 .photo-source-btn:focus-visible {
   outline: none;
   background: var(--card);
-  box-shadow: 0 0 0 2px rgba(129, 148, 214, 0.35);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .photo-preview-frame {
@@ -1186,7 +1187,7 @@ button {
 
 .complete-note:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(129, 148, 214, 0.35);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .primary-btn {
@@ -1213,7 +1214,7 @@ button {
 }
 
 .primary-btn:focus-visible {
-  box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--accent);
+  box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--focus);
 }
 
 .primary-btn:disabled {
@@ -1327,7 +1328,7 @@ body.modal-open {
 }
 
 .emergency-card:focus-visible {
-  outline: 2px solid var(--map-border);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -1499,7 +1500,7 @@ body.modal-open {
 /* Visible keyboard focus for call links (overrides outline: none above) */
 .hospital-address:focus-visible,
 .call-btn:focus-visible {
-  outline: 2px solid var(--map-border);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -1619,7 +1620,7 @@ body.modal-open {
 }
 
 .tag-option input:focus-visible + span {
-  box-shadow: 0 0 0 3px rgba(129, 148, 214, 0.55);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .tag-chip {
@@ -1709,7 +1710,7 @@ body.modal-open {
 }
 
 .day-note-details > .day-note-summary:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
@@ -2246,7 +2247,7 @@ body.modal-open {
 }
 
 .feed-card:focus-visible {
-  box-shadow: 0 0 0 3px rgba(129, 148, 214, 0.55);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .feed-body {
@@ -2319,7 +2320,7 @@ body.modal-open {
 }
 
 .text-btn:focus-visible {
-  outline: 2px solid var(--map-border);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -2386,7 +2387,7 @@ body.modal-open {
 }
 
 .msg-reply-ref:focus-visible {
-  outline: 2px solid var(--map-border);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -2562,7 +2563,7 @@ body.modal-open {
 }
 
 .text-input:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -3333,8 +3334,8 @@ body:not([data-role="parent"]) .gallery-list {
 .gallery-fab {
   position: fixed;
   z-index: 40;
-  /* Anchored to the 560px gallery column's right edge on wide screens. */
-  right: max(24px, calc((100vw - var(--detail-width)) / 2 + 24px));
+  /* Flush with the 560px gallery column's content edge (32px side padding) on wide screens. */
+  right: max(24px, calc((100vw - var(--detail-width)) / 2 + 32px));
   bottom: 32px;
   display: flex;
   align-items: center;
@@ -3355,7 +3356,7 @@ body:not([data-role="parent"]) .gallery-list {
 
 .gallery-fab:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px #ffffff, 0 0 0 6px var(--map-border);
+  box-shadow: 0 0 0 3px #ffffff, 0 0 0 6px var(--focus);
 }
 
 .gallery-fab[aria-disabled="true"] {
