@@ -2,7 +2,137 @@
 // the sitter to share a back-camera + front-camera photo within 2:00. The database decides
 // whether a post is late; the countdown here is only a guide.
 // Waits for the shift backend (js/shift-data.js), which waits for the auth guard and family data.
-(window.CareNestShift ? window.CareNestShift.ready : Promise.resolve(null)).then(function (shift) {
+//
+// Upload fallback: a picked photo is refused if its own capture time (EXIF) is before the prompt,
+// so an old camera-roll photo can't stand in for a live moment. Photos with no readable capture
+// time (PNG, screenshots, stripped EXIF) are accepted. In-page camera captures skip the check.
+// The pure helpers below have no DOM dependency so tests/moment-exif.test.mjs can load this file.
+
+(function (root) {
+  const EXIF_READ_BYTES = 128 * 1024; // APP1 sits right after SOI; 64 KB is its max size.
+  // ponytail: 2 minutes of clock skew between the camera's clock and the server's prompt time.
+  const CLOCK_SKEW_MS = 2 * 60 * 1000;
+
+  // "YYYY:MM:DD HH:MM:SS" (+ optional "+HH:MM" offset) -> epoch ms, or null. EXIF times carry no
+  // zone, so without an offset they are read as this device's local time.
+  function parseExifDate(text, offset) {
+    const m = /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(String(text || "").trim());
+    if (!m) return null;
+    const [y, mo, d, h, mi, s] = m.slice(1).map(Number);
+    if (!y || mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) return null;
+    const off = /^([+-])(\d{2}):(\d{2})$/.exec(String(offset || "").trim());
+    if (off) {
+      const mins = (off[1] === "-" ? -1 : 1) * (Number(off[2]) * 60 + Number(off[3]));
+      return Date.UTC(y, mo - 1, d, h, mi, s) - mins * 60000;
+    }
+    const t = new Date(y, mo - 1, d, h, mi, s).getTime();
+    return Number.isFinite(t) ? t : null;
+  }
+
+  // Minimal JPEG APP1/TIFF reader: IFD0 plus the Exif sub-IFD, either byte order. Returns the
+  // capture time (DateTimeOriginal, else DateTime) as epoch ms, or null when there is none.
+  function readCaptureTime(input) {
+    try {
+      const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const len = bytes.length;
+      if (len < 4 || view.getUint16(0) !== 0xffd8) return null; // not a JPEG
+      let pos = 2;
+      while (pos + 4 <= len) {
+        if (bytes[pos] !== 0xff) return null;
+        const marker = bytes[pos + 1];
+        if (marker === 0xff) { pos += 1; continue; } // fill byte
+        if (marker === 0xda || marker === 0xd9) return null; // image data starts: no EXIF
+        if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { pos += 2; continue; }
+        const size = view.getUint16(pos + 2);
+        if (size < 2) return null;
+        if (marker === 0xe1 && pos + 10 <= len && String.fromCharCode(...bytes.subarray(pos + 4, pos + 10)) === "Exif\0\0") {
+          const found = readTiff(view, pos + 10, Math.min(len, pos + 2 + size));
+          if (found !== undefined) return found;
+        }
+        pos += 2 + size;
+      }
+      return null;
+    } catch (err) {
+      return null; // unreadable header: treat as "no capture time"
+    }
+  }
+
+  // undefined = not a usable TIFF block (keep scanning); null = TIFF with no capture time.
+  function readTiff(view, tiff, end) {
+    const order = view.getUint16(tiff);
+    if (order !== 0x4949 && order !== 0x4d4d) return undefined;
+    const le = order === 0x4949;
+    const u16 = (at) => (at + 2 <= end ? view.getUint16(at, le) : null);
+    const u32 = (at) => (at + 4 <= end ? view.getUint32(at, le) : null);
+    if (u16(tiff + 2) !== 42) return undefined;
+
+    function readIfd(rel) {
+      const tags = {};
+      if (rel === null) return tags;
+      const at = tiff + rel;
+      const count = u16(at);
+      if (count === null) return tags;
+      for (let i = 0; i < count; i++) {
+        const e = at + 2 + i * 12;
+        if (e + 12 > end) break;
+        const tag = u16(e);
+        const type = u16(e + 2);
+        const n = u32(e + 4);
+        if (type === 2 && n > 0) {
+          const start = n <= 4 ? e + 8 : tiff + (u32(e + 8) || 0);
+          if (start + n > end) continue;
+          let s = "";
+          for (let k = 0; k < n; k++) {
+            const c = view.getUint8(start + k);
+            if (!c) break;
+            s += String.fromCharCode(c);
+          }
+          tags[tag] = s;
+        } else if (type === 4 && n === 1) {
+          tags[tag] = u32(e + 8);
+        }
+      }
+      return tags;
+    }
+
+    const ifd0 = readIfd(u32(tiff + 4));
+    const exif = typeof ifd0[0x8769] === "number" ? readIfd(ifd0[0x8769]) : {};
+    // DateTimeOriginal pairs with OffsetTimeOriginal; DateTime with OffsetTime (EXIF 2.31).
+    if (exif[0x9003]) {
+      const t = parseExifDate(exif[0x9003], exif[0x9011]);
+      if (t !== null) return t;
+    }
+    return ifd0[0x0132] ? parseExifDate(ifd0[0x0132], exif[0x9010]) : null;
+  }
+
+  // True when the photo's own capture time is before the prompt (minus the skew allowance).
+  function takenBeforePrompt(captureMs, momentAt, skewMs = CLOCK_SKEW_MS) {
+    if (!Number.isFinite(captureMs) || !Number.isFinite(momentAt)) return false;
+    return captureMs < momentAt - skewMs;
+  }
+
+  // Browser: read the first bytes of a picked File/Blob. Never rejects; null = no capture time.
+  function fileCaptureTime(file) {
+    if (!file || !file.slice) return Promise.resolve(null);
+    const head = file.slice(0, EXIF_READ_BYTES);
+    const read = head.arrayBuffer
+      ? head.arrayBuffer()
+      : new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.onerror = () => reject(r.error);
+          r.readAsArrayBuffer(head);
+        });
+    return read.then(readCaptureTime, () => null);
+  }
+
+  const api = { CLOCK_SKEW_MS, parseExifDate, readCaptureTime, takenBeforePrompt, fileCaptureTime };
+  if (root) root.CareNestMomentPhoto = api;
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+})(typeof window !== "undefined" ? window : null);
+
+if (typeof window !== "undefined") (window.CareNestShift ? window.CareNestShift.ready : Promise.resolve(null)).then(function (shift) {
   const store = window.CareNestStore;
   const data = window.CareNestData;
   const page = document.body.dataset.page;
@@ -86,6 +216,7 @@
   let photoDataUrl = null;
   let announcedFor = null;
   let announced = new Set();
+  let pickSeq = 0; // only the latest picked file may set the photo or the error
 
   function formatLeft(ms) {
     const s = Math.max(0, Math.ceil(ms / 1000));
@@ -182,6 +313,7 @@
   }
 
   function beginCapture() {
+    pickSeq++; // a pending upload no longer applies
     backCanvas = null;
     photoDataUrl = null;
     preview.removeAttribute("src");
@@ -272,10 +404,29 @@
     const file = fileInput.files && fileInput.files[0];
     fileInput.value = "";
     if (!file) return;
-    store
-      .downscaleImage(file)
-      .then(setPhoto)
-      .catch((err) => showError(err.message));
+    showError("");
+    const pick = ++pickSeq;
+    const momentAt = shift.getMomentStatus().momentAt;
+    window.CareNestMomentPhoto.fileCaptureTime(file)
+      .then((takenAt) => {
+        if (pick !== pickSeq) return null;
+        if (window.CareNestMomentPhoto.takenBeforePrompt(takenAt, momentAt)) {
+          photoDataUrl = null;
+          preview.removeAttribute("src");
+          preview.hidden = true;
+          retakeBtn.hidden = step === "upload"; // back to the in-page camera, if there is one
+          if (step === "review") stepEl.textContent = ""; // no longer "Looks good?"
+          postBtn.disabled = true;
+          throw new Error(shift.errorMessage(new Error("moment_photo_too_early")));
+        }
+        return store.downscaleImage(file);
+      })
+      .then((dataUrl) => {
+        if (dataUrl && pick === pickSeq) setPhoto(dataUrl);
+      })
+      .catch((err) => {
+        if (pick === pickSeq) showError(err.message);
+      });
   });
   postBtn.addEventListener("click", () => {
     if (!photoDataUrl) return;

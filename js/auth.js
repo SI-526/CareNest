@@ -32,6 +32,7 @@
     already_member:
       "This account already belongs to a family space. CareNest supports one family space per account for now.",
     not_parent: "Only a parent can do that.",
+    photos_remaining: "A photo was added while your account was being deleted. Please try again.",
     invalid_email: "Please enter a valid email address.",
     invite_not_found: "We couldn't find this invite. Check that you opened the whole link.",
     invite_revoked: "This invite was cancelled. Ask the family to send you a new link.",
