@@ -1210,6 +1210,7 @@ button {
   align-items: center;
   justify-content: center;
   width: 100%;
+  min-height: 44px; /* touch target: Apple HIG 44pt, WCAG 2.5.5 */
   padding: 10px 6px;
   border-radius: var(--radius);
   background: var(--accent-strong);
@@ -2318,10 +2319,6 @@ body.modal-open {
 }
 
 .feed-actions .photo-source-btn,
-.feed-actions .primary-btn {
-  min-height: 44px;
-}
-
 .feed-album-row {
   display: flex;
   align-items: center;
