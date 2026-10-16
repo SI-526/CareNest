@@ -1239,10 +1239,14 @@ test("a photo re-attached while a parent removes it is refused; the parent can s
     await waitFor(() =>
       psqlQuery(`select count(*) from pg_stat_activity where state = 'active' and query like '%${marker}%' and query not like '%pg_stat_activity%'`) === "1",
     );
-    // Session 2 (through the API): stamp_message waits on the path lock, then sees the removal.
-    const raced = await send();
+    // Session 2 (through the API): stamp_message waits on the message the removal holds, then
+    // sees the removal. Check it really waited on session 1, or a slow run could pass anyway.
+    const raced = send().then((r) => r);
+    await waitFor(() =>
+      psqlQuery(`select count(*) from pg_stat_activity a where exists (select 1 from pg_stat_activity b where b.pid = any (pg_blocking_pids(a.pid)) and b.query like '%${marker}%' and b.query not like '%pg_stat_activity%')`) === "1",
+    );
     assert.equal(await session, 0, `${removal}: session 1 committed`);
-    assertRpcError(raced, "photo_removed");
+    assertRpcError(await raced, "photo_removed");
     const { count } = await admin.from("messages").select("*", { count: "exact", head: true }).eq("photo_path", path);
     assert.equal(count, 0, `${removal}: no message re-attached the removed path`);
     assert.equal((await mom.client.storage.from(BUCKET).remove([path])).data?.length, 1, `${removal}: parent deletes it`);
