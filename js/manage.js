@@ -74,6 +74,7 @@
   }
 
   function friendly(error) {
+    if (error && error.friendly) return error.message;
     const message = (error && error.message) || "";
     if (/task_archived/.test(message)) {
       return "This task was removed from the schedule, so it can't be changed. Reload the page.";
@@ -82,6 +83,19 @@
       return "Only a parent can change this.";
     }
     return auth.friendlyError(error);
+  }
+
+  // RLS filters out a row this person can't change: no error, just no rows back. .select("id")
+  // returns the rows written, so zero means nothing was saved or deleted.
+  const NOT_WRITTEN = "It may have been changed or removed, or you may no longer have access. Reload the page and try again.";
+  const NOT_SAVED = `This couldn't be saved. ${NOT_WRITTEN}`;
+  const NOT_DELETED = `This couldn't be deleted. ${NOT_WRITTEN}`;
+
+  // A write's { error }, or an Error with `message` when it touched no rows.
+  function writeError(result, message) {
+    if (result.error) return result.error;
+    if (result.data && result.data.length) return null;
+    return Object.assign(new Error(message), { friendly: true });
   }
 
   auth.whenReady((ctx) => {
@@ -350,7 +364,7 @@
         child_name: form.child_name.value.trim(),
         child_age_label: form.child_age_label.value.trim(),
       };
-      const { error } = await client.from("households").update(values).eq("id", householdId);
+      const error = writeError(await client.from("households").update(values).eq("id", householdId).select("id"), NOT_SAVED);
       if (error) throw error;
       Object.assign(ctx.household, values);
       announce("Child details saved.");
@@ -359,7 +373,7 @@
     bindSimpleForm("plan-form", async (form) => {
       const plan = await ensurePlan();
       const schedule = form.schedule.value.trim();
-      const { error } = await client.from("plans").update({ schedule }).eq("id", plan.id);
+      const error = writeError(await client.from("plans").update({ schedule }).eq("id", plan.id).select("id"), NOT_SAVED);
       if (error) throw error;
       plan.schedule = schedule;
       announce("Shift hours saved.");
@@ -437,7 +451,10 @@
       show(editError, "");
       try {
         if (editing.row) {
-          const { error } = await client.from(config.table).update(values).eq("id", editing.row.id);
+          const error = writeError(
+            await client.from(config.table).update(values).eq("id", editing.row.id).select("id"),
+            NOT_SAVED
+          );
           if (error) throw error;
         } else {
           const insert = Object.assign({}, values);
@@ -492,10 +509,10 @@
             danger: true,
           });
           if (!ok) return;
-          const { error } = await client
-            .from("tasks")
-            .update({ archived_at: new Date().toISOString() })
-            .eq("id", row.id);
+          const error = writeError(
+            await client.from("tasks").update({ archived_at: new Date().toISOString() }).eq("id", row.id).select("id"),
+            NOT_DELETED
+          );
           if (error) show(pageError, friendly(error));
           else announce(`${name} removed from the schedule.`);
           await load();
@@ -508,7 +525,7 @@
           danger: true,
         });
         if (!ok) return;
-        const { error } = await client.from(config.table).delete().eq("id", row.id);
+        const error = writeError(await client.from(config.table).delete().eq("id", row.id).select("id"), NOT_DELETED);
         if (error) show(pageError, friendly(error));
         else announce(`${name} deleted.`);
         await load();
@@ -529,10 +546,10 @@
         .map((r, index) => ({ id: r.id, position: index, changed: r.position !== index }))
         .filter((c) => c.changed);
       const results = await Promise.all(
-        changes.map((c) => client.from(config.table).update({ position: c.position }).eq("id", c.id))
+        changes.map((c) => client.from(config.table).update({ position: c.position }).eq("id", c.id).select("id"))
       );
-      const failed = results.find((r) => r.error);
-      if (failed) show(pageError, friendly(failed.error));
+      const failed = results.map((r) => writeError(r, NOT_SAVED)).find(Boolean);
+      if (failed) show(pageError, friendly(failed));
       else announce(`${config.summary(row)} moved ${delta < 0 ? "up" : "down"}.`);
       await load();
     }

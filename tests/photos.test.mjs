@@ -645,6 +645,46 @@ test("parents save photos to their own album; sitters cannot", async () => {
   assert.equal(unsave.data?.length, 1);
 });
 
+// js/shift-data.js loads messages with `reads:message_reads(message_id)` (READ_COL) and saves with
+// the same embed nested under `message:messages(...)`; RLS must scope the embed to the caller.
+test("the read-mark embed shows only the caller's own marks", async () => {
+  const inserted = await parent.client
+    .from("messages")
+    .insert([
+      { household_id: householdA, kind: "chat", body: "Read by the parent" },
+      { household_id: householdA, kind: "chat", body: "Read by the sitter" },
+    ])
+    .select("id, body");
+  assert.ifError(inserted.error);
+  const m1 = inserted.data.find((m) => m.body === "Read by the parent").id;
+  const m2 = inserted.data.find((m) => m.body === "Read by the sitter").id;
+  assert.ifError((await parent.client.from("message_reads").insert({ message_id: m1 })).error);
+  assert.ifError((await caretaker.client.from("message_reads").insert({ message_id: m2 })).error);
+
+  for (const [who, mine, theirs] of [
+    [parent, m1, m2],
+    [caretaker, m2, m1],
+  ]) {
+    const { data, error } = await who.client
+      .from("messages")
+      .select("id, reads:message_reads(message_id)")
+      .in("id", [m1, m2]);
+    assert.ifError(error);
+    const byId = Object.fromEntries(data.map((m) => [m.id, m.reads]));
+    assert.deepEqual(byId[mine], [{ message_id: mine }], "own mark is visible");
+    assert.deepEqual(byId[theirs], [], "the other member's mark is hidden");
+  }
+
+  // The nested form used for saved photos (parent saved proofId and marked it read earlier).
+  const saves = await parent.client
+    .from("photo_saves")
+    .select("message_id, message:messages(id, reads:message_reads(message_id))");
+  assert.ifError(saves.error);
+  const proofSave = saves.data.find((s) => s.message_id === proofId);
+  assert.ok(proofSave, "the parent's save of the proof is listed");
+  assert.deepEqual(proofSave.message, { id: proofId, reads: [{ message_id: proofId }] });
+});
+
 test("concept flags are set only by parents and stored as concept-only", async () => {
   assertDenied(
     await caretaker.client.from("concept_flags").insert({ message_id: momentId, text: "Seems off" }).select(),

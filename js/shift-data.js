@@ -211,6 +211,8 @@
   const MSG_COLS =
     "id, household_id, visit_id, kind, body, photo_path, task_id, tag, reply_to, sender_id, " +
     "sender_role, created_at, late, photo_removed_by, photo_removed_at, task:tasks(title, time_of_day)";
+  // The caller's own read mark, if any (RLS returns only their message_reads rows).
+  const READ_COL = ", reads:message_reads(message_id)";
 
   function createSupabaseBackend(ctx, data) {
     const client = ctx.client;
@@ -226,10 +228,13 @@
     let state = emptyState();
     let loadSeq = 0;
     let reloadTimer = null;
+    let unknownIds = new Set(); // ids nameOf() didn't find in this load's roster
+    const refetchedFor = new Set(); // ids a roster refetch already ran for
 
     function nameOf(userId) {
       if (!userId) return FORMER;
       const member = (ctx.members || []).find((m) => m.user_id === userId);
+      if (!member) unknownIds.add(userId);
       return member ? auth.firstName(member) : FORMER;
     }
 
@@ -276,7 +281,9 @@
       }
 
       const none = { data: [] };
-      const [checksRes, eventsRes, visitMsgsRes, threadRes, readsRes, savesRes, flagsRes, logsRes, galleryRes] = await Promise.all([
+      // Parent page: each message carries this person's read mark, so "New" holds for any age.
+      const msgCols = wantParent ? MSG_COLS + READ_COL : MSG_COLS;
+      const [checksRes, eventsRes, visitMsgsRes, threadRes, savesRes, flagsRes, logsRes, galleryRes] = await Promise.all([
         visit
           ? client
               .from("task_checks")
@@ -295,7 +302,7 @@
         visit
           ? client
               .from("messages")
-              .select(MSG_COLS)
+              .select(msgCols)
               .eq("visit_id", visit.id)
               .neq("kind", "chat")
               .order("created_at", { ascending: true })
@@ -303,19 +310,16 @@
         wantThread
           ? client
               .from("messages")
-              .select(MSG_COLS)
+              .select(msgCols)
               .eq("household_id", householdId)
               .order("created_at", { ascending: false })
               .limit(THREAD_LIMIT)
           : { data: [] },
-        // RLS: each person reads only their own read marks and saves; flags of their household.
-        wantParent
-          ? client.from("message_reads").select("message_id").order("read_at", { ascending: false }).limit(1000)
-          : none,
+        // RLS: each person reads only their own saves; flags of their household.
         wantParent
           ? client
               .from("photo_saves")
-              .select(`message_id, saved_at, message:messages(${MSG_COLS})`)
+              .select(`message_id, saved_at, message:messages(${msgCols})`)
               .order("saved_at", { ascending: false })
               .limit(THREAD_LIMIT)
           : none,
@@ -338,7 +342,7 @@
               .limit(GALLERY_LIMIT)
           : none,
       ]);
-      const failed = [checksRes, eventsRes, visitMsgsRes, threadRes, readsRes, savesRes, flagsRes, logsRes, galleryRes].find(
+      const failed = [checksRes, eventsRes, visitMsgsRes, threadRes, savesRes, flagsRes, logsRes, galleryRes].find(
         (r) => r.error
       );
       if (failed) throw failed.error;
@@ -357,6 +361,7 @@
         snapshotResults.flatMap((r) => r.data || []).map((c) => [`${c.visit_id}/${c.task_id}`, c.task_title])
       );
       if (seq !== loadSeq) return; // a newer load is on its way
+      unknownIds = new Set();
 
       const events = (eventsRes.data || []).map((e) => ({
         kind: e.kind,
@@ -421,7 +426,12 @@
         moment: visitMessages.find((m) => m.kind === "moment") || null,
         thread: (threadRes.data || []).slice().reverse().map(toMessage),
         feed: buildFeed(visitMessages, checks, reopened, firstEnded),
-        reads: new Set((readsRes.data || []).map((r) => r.message_id)),
+        reads: new Set(
+          [visitMsgsRes, threadRes, { data: (savesRes.data || []).map((r) => r.message).filter(Boolean) }]
+            .flatMap((r) => r.data || [])
+            .filter((r) => r.reads && r.reads.length)
+            .map((r) => r.id)
+        ),
         saves: Object.fromEntries((savesRes.data || []).map((r) => [r.message_id, Date.parse(r.saved_at)])),
         album: (savesRes.data || [])
           .filter((r) => r.message && r.message.photo_path)
@@ -447,6 +457,26 @@
         }),
       };
       notify();
+      // Someone who joined after this page loaded reads as a former member until the roster is
+      // fetched again (once per id: one still unknown after that is a real former member). It
+      // runs in the background and reloads only when it found one of them.
+      const fresh = Array.from(unknownIds).filter((id) => !refetchedFor.has(id));
+      if (fresh.length) {
+        fresh.forEach((id) => refetchedFor.add(id));
+        // Same query as auth.js loadContext(); RLS scopes it to this family space.
+        client
+          .from("household_members")
+          .select("household_id, user_id, role, email, display_name, households(id, name, child_name, child_age_label)")
+          .order("created_at", { ascending: true })
+          .then((roster) => {
+            if (roster.error) throw roster.error;
+            const members = roster.data || [];
+            if (!members.some((m) => fresh.includes(m.user_id))) return;
+            ctx.members = members;
+            scheduleReload();
+          })
+          .catch((err) => console.warn("CareNest: roster refresh failed", err));
+      }
     }
 
     function scheduleReload() {
@@ -456,7 +486,24 @@
       }, 250);
     }
 
-    // RLS limits every stream to this household, so the table-wide subscriptions are safe.
+    // Realtime can't filter or RLS-check a DELETE (the old row carries only its primary key), so
+    // deletes from every family reach this tab: reload only when the deleted row is on screen.
+    function onChange(payload) {
+      const old = payload.old || {};
+      const visitId = state.visit && state.visit.id;
+      const shown =
+        payload.eventType !== "DELETE" ||
+        (payload.table === "visits" && old.id === visitId) ||
+        (payload.table === "task_checks" && old.visit_id === visitId) ||
+        (payload.table === "messages" &&
+          [state.thread, state.feed, state.album, state.gallery, state.moment ? [state.moment] : []].some((list) =>
+            list.some((m) => m.id === old.id)
+          ));
+      if (shown) scheduleReload();
+    }
+
+    // RLS limits every INSERT/UPDATE stream to this household, so the table-wide subscriptions
+    // are safe; DELETEs go through onChange's on-screen check.
     function subscribeRealtime() {
       const visitsFilter = data.planId ? { filter: `plan_id=eq.${data.planId}` } : {};
       client
@@ -464,15 +511,15 @@
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "messages", filter: `household_id=eq.${householdId}` },
-          scheduleReload
+          onChange
         )
-        .on("postgres_changes", Object.assign({ event: "*", schema: "public", table: "visits" }, visitsFilter), scheduleReload)
-        .on("postgres_changes", { event: "*", schema: "public", table: "task_checks" }, scheduleReload)
-        .on("postgres_changes", { event: "INSERT", schema: "public", table: "shift_events" }, scheduleReload)
+        .on("postgres_changes", Object.assign({ event: "*", schema: "public", table: "visits" }, visitsFilter), onChange)
+        .on("postgres_changes", { event: "*", schema: "public", table: "task_checks" }, onChange)
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "shift_events" }, onChange)
         .on(
           "postgres_changes",
           { event: "INSERT", schema: "public", table: "care_logs", filter: `household_id=eq.${householdId}` },
-          scheduleReload
+          onChange
         )
         .subscribe();
       document.addEventListener("visibilitychange", () => {
@@ -507,7 +554,66 @@
       } catch (e) {
         /* a cleanup job (#7) catches what this misses */
       }
+      forgetPhoto(path);
+    }
+
+    // Drops a path's cached download and revokes its object URL (the cache holds a Promise<url>).
+    function forgetPhoto(path) {
+      const pending = photoCache.get(path);
+      if (pending) pending.then((url) => URL.revokeObjectURL(url), () => {});
       photoCache.delete(path);
+      blobCache.delete(path);
+      blobReady.delete(path);
+    }
+
+    // Object URLs keep their photos in memory, in the back/forward cache too, so leaving the page
+    // frees them. A page restored from that cache asks again: the renderers keep <img> elements
+    // across renders, so re-point any that show an object URL, then reload the data.
+    function watchPageCache() {
+      let forgotten = new Map(); // path -> the download pagehide revoked
+      window.addEventListener("pagehide", () => {
+        forgotten = new Map(photoCache);
+        forgotten.forEach((pending, path) => forgetPhoto(path));
+      });
+      window.addEventListener("pageshow", (event) => {
+        if (!event.persisted) return;
+        document.querySelectorAll("img[data-photo-path]").forEach((img) => {
+          const path = img.dataset.photoPath;
+          if (!img.src.startsWith("blob:") && !forgotten.has(path)) return;
+          // A download pending at pagehide still hands its (revoked) URL to a renderer, so re-point
+          // after it settles; photos no renderer had asked for stay lazy.
+          Promise.resolve(forgotten.get(path))
+            .catch(() => {})
+            .then(() => backend.photoUrl(path))
+            .then((url) => {
+              if (url && img.dataset.photoPath === path) img.src = url;
+            })
+            .catch(() => {});
+        });
+        scheduleReload();
+      });
+    }
+
+    // Deletes a photo's stored file, retrying once. Resolves the Storage error, or null.
+    async function deleteStoredPhoto(path) {
+      let { error } = await client.storage.from("photos").remove([path]);
+      if (error) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        ({ error } = await client.storage.from("photos").remove([path]));
+      }
+      return error;
+    }
+
+    // The database already removed the photo for everyone; only its file is left. err.retry()
+    // deletes just that file (and throws this again if it still fails).
+    function fileNotDeleted(path, cause) {
+      console.warn("CareNest: photo file not removed", cause);
+      const err = friendly("Photo removed for everyone, but its stored file couldn't be deleted. Try again.");
+      err.retry = async () => {
+        const error = await deleteStoredPhoto(path);
+        if (error) throw fileNotDeleted(path, error);
+      };
+      return err;
     }
 
     const backend = {
@@ -524,6 +630,7 @@
       },
       async init() {
         subscribeRealtime();
+        watchPageCache();
         try {
           await load();
         } catch (err) {
@@ -749,23 +856,21 @@
       },
       // A parent removes any family photo: the database clears the message's photo first
       // (remove_photo returns the old path), then the bytes go through the Storage API.
+      // A failed file delete keeps the photo's slot in the shift's upload cap, so it retries once,
+      // then throws an error whose retry() deletes only the file.
+      // ponytail: the orphan cleanup job (#7) catches files nobody retries.
       async removePhoto(messageId) {
         const { data: path, error } = await client.rpc("remove_photo", { target_message_id: messageId });
         if (error) throw error;
-        if (path) {
-          // A failed delete keeps the photo's slot in the shift's upload cap, so retry once.
-          // ponytail: one retry; the orphan cleanup job (#7) catches what still slips through.
-          let { error: removeError } = await client.storage.from("photos").remove([path]);
-          if (removeError) {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            ({ error: removeError } = await client.storage.from("photos").remove([path]));
-          }
-          if (removeError) console.warn("CareNest: photo bytes not removed yet", removeError);
-          photoCache.delete(path);
-          blobCache.delete(path);
-          blobReady.delete(path);
+        const removeError = path ? await deleteStoredPhoto(path) : null;
+        if (path) forgetPhoto(path);
+        try {
+          await load();
+        } catch (e) {
+          if (!removeError) throw e;
+          scheduleReload(); // the file's retry matters more than this refresh
         }
-        await load();
+        if (removeError) throw fileNotDeleted(path, removeError);
       },
       // A parent checks a task off with no photo ("Done by Mary").
       async checkTask(taskId) {

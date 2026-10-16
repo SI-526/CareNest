@@ -430,6 +430,54 @@ test("parent B cannot read or modify household A", async () => {
   }
 });
 
+// js/manage.js writes with `.update(values).eq("id", id).select("id")` and treats an empty result
+// as "not saved": RLS hides another household's row without raising, so the only signal is [].
+test("an update RLS filters out returns no error and no rows; an own-row update returns one id", async () => {
+  assert.ok(householdA && householdB, "households were not created by an earlier test");
+  assert.ok(careItemIds?.length && contactIds?.length, "household A care items/contacts missing");
+  const b = parentB.client;
+  const before = {
+    household: (await admin.from("households").select("*").eq("id", householdA).single()).data,
+    careItem: (await admin.from("care_items").select("*").eq("id", careItemIds[0]).single()).data,
+    contact: (await admin.from("contacts").select("*").eq("id", contactIds[0]).single()).data,
+  };
+
+  for (const [table, id, values] of [
+    ["households", householdA, { child_name: "Hacked" }],
+    ["care_items", careItemIds[0], { title: "Hacked" }],
+    ["contacts", contactIds[0], { phone: "911" }],
+  ]) {
+    const result = await b.from(table).update(values).eq("id", id).select("id");
+    assert.ifError(result.error);
+    assert.deepEqual(result.data, [], `${table}: a filtered-out update returns []`);
+  }
+  assert.deepEqual(
+    (await admin.from("households").select("*").eq("id", householdA).single()).data,
+    before.household,
+    "household A unchanged",
+  );
+  assert.deepEqual(
+    (await admin.from("care_items").select("*").eq("id", careItemIds[0]).single()).data,
+    before.careItem,
+    "care item unchanged",
+  );
+  assert.deepEqual(
+    (await admin.from("contacts").select("*").eq("id", contactIds[0]).single()).data,
+    before.contact,
+    "contact unchanged",
+  );
+
+  const ownHousehold = await b.from("households").update({ child_name: "Own Child" }).eq("id", householdB).select("id");
+  assert.ifError(ownHousehold.error);
+  assert.deepEqual(ownHousehold.data, [{ id: householdB }]);
+  // Reuse household B's existing contact; later tests count B's contacts.
+  const ownContact = await b.from("contacts").select("id").eq("household_id", householdB).limit(1).single();
+  assert.ifError(ownContact.error);
+  const ownUpdate = await b.from("contacts").update({ phone: "555-0100" }).eq("id", ownContact.data.id).select("id");
+  assert.ifError(ownUpdate.error);
+  assert.deepEqual(ownUpdate.data, [{ id: ownContact.data.id }]);
+});
+
 test("a signed-in user with no household sees nothing, including the seeded demo family", async () => {
   // Without this, the test would also pass if seed.sql had not loaded.
   const demo = await admin.from("households").select("id").eq("id", DEMO_HOUSEHOLD_ID);
