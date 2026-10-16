@@ -8,14 +8,29 @@
   --severe: #ffbcbc;
   --mild: #ffeea1;
   --map-border: #8194d6;
-  --accent: #8194d6;
+  --accent: #8194d6; /* borders, rules, decorative accents */
+  --accent-strong: #5468c0; /* filled buttons: #fff on it = 5.10:1 (WCAG AA) */
+  --accent-soft: #eaf0ff; /* selected / highlighted tint */
+  --focus: var(--accent-strong); /* focus rings: 5.10:1 on white (WCAG 1.4.11 needs 3:1) */
+  --line: #e8eaf0; /* hairline border on surfaces */
+  --line-soft: #eceef1; /* dividers inside a surface */
+  --line-strong: #d5dbea; /* form-field border */
+  --success: #1e6b3a;
+  --success-soft: #e3f5e9;
+  --warning: #8a5300;
+  --warning-soft: #fff4e0;
+  --notice: #7a5b00;
+  --notice-soft: #fffbea;
+  --neutral-soft: #f3f4f6;
   --danger: #b3261e;
   --danger-soft: #fff1f0;
   --overlay: rgba(79, 78, 78, 0.5);
   --radius: 10px;
   --radius-sm: 8px;
+  --shadow-surface: 0 1px 2px rgba(0, 50, 78, 0.04), 0 2px 8px rgba(0, 50, 78, 0.03);
   --shadow-hover: 0 4px 14px rgba(0, 50, 78, 0.08);
   --max-width: 960px;
+  --detail-width: 560px;
 
   /* Typography — mobile-first type scale */
   --font: "Poppins", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -24,7 +39,9 @@
   --text-sm: 0.8125rem; /* 13px — secondary meta */
   --text-base: 0.9375rem; /* 15px — body */
   --text-md: 1rem; /* 16px — section titles, names */
-  --text-lg: 1.125rem; /* 18px — page greeting */
+  --text-lg: 1.125rem; /* 18px — emphasized lines */
+  --text-xl: 1.25rem; /* 20px — page titles (phone) */
+  --text-2xl: 1.5rem; /* 24px — page titles (tablet+), auth titles */
   --leading-tight: 1.25;
   --leading-snug: 1.4;
   --leading-normal: 1.5;
@@ -96,11 +113,16 @@ button {
   align-items: center;
   gap: 4px;
   width: fit-content;
-  margin: 0 auto;
+  max-width: calc(100vw - 32px);
+  /* align-self (not auto margins): auto margins collapse to 0 when the nav is
+     wider than a 560px column, which pushed it off-center to the right. */
+  margin: 0;
+  align-self: center;
   padding: 4px;
-  border: 1px solid #e8eaf0;
+  border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--card);
+  box-shadow: var(--shadow-surface);
 }
 
 .nav-item {
@@ -134,13 +156,35 @@ button {
 }
 
 .nav-item:focus-visible {
-  box-shadow: 0 0 0 2px var(--map-border);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .nav-item[aria-current="page"] {
   color: var(--blue);
-  background: #eaf0ff;
+  background: var(--accent-soft);
   font-weight: var(--weight-semibold);
+}
+
+/* Tablet+: keep two-word labels ("Family info") on one line. */
+@media (min-width: 768px) {
+  .nav-item {
+    white-space: nowrap;
+  }
+}
+
+/* Tablet: the 7–8 item pill must fit inside 768px without horizontal scroll. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .nav-item {
+    gap: 6px;
+    padding: 0 10px;
+  }
+}
+
+/* Desktop: room for slightly larger, easier-to-read labels. */
+@media (min-width: 1024px) {
+  .nav-item {
+    font-size: 0.875rem;
+  }
 }
 
 @media (max-width: 767px) {
@@ -163,11 +207,12 @@ button {
     bottom: 0;
     left: 0;
     width: 100%;
+    max-width: none;
     justify-content: space-around;
     gap: 2px;
     padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
     border: 0;
-    border-top: 1px solid #e8eaf0;
+    border-top: 1px solid var(--line);
     border-radius: 0;
     background: rgba(255, 255, 255, 0.96);
     box-shadow: 0 -4px 18px rgba(0, 50, 78, 0.06);
@@ -346,9 +391,11 @@ button {
 
 /* Panels / cards */
 .panel {
-  background: var(--surface);
+  background: var(--card);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 16px 12px;
+  box-shadow: var(--shadow-surface);
+  padding: 16px 14px;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -441,9 +488,18 @@ button {
 
 .card {
   background: var(--card);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-surface);
   padding: 16px 12px;
   width: 100%;
+}
+
+/* A card inside a panel is an inset tile, not a second raised surface. */
+.panel .card {
+  background: var(--bg);
+  border: 0;
+  box-shadow: none;
 }
 
 /* Schedule */
@@ -482,7 +538,7 @@ button {
 }
 
 .schedule-item:focus-visible {
-  box-shadow: 0 0 0 2px var(--map-border);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .schedule-row.is-completed .schedule-title,
@@ -594,7 +650,7 @@ button {
 
 .schedule-divider {
   height: 1px;
-  background: #e8eaf0;
+  background: var(--line);
   margin: 8px;
   border: none;
 }
@@ -612,7 +668,7 @@ button {
   gap: 10px;
   width: 100%;
   padding: 10px;
-  background: var(--card);
+  background: var(--bg);
   border-radius: var(--radius);
 }
 
@@ -684,7 +740,7 @@ button {
   gap: 5px;
   min-height: 100px;
   padding: 16px 12px;
-  background: var(--card);
+  background: var(--bg);
   border-radius: var(--radius);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
@@ -743,12 +799,22 @@ button {
   height: 30px;
 }
 
-.detail-nav h1 {
+/* One page-title style for every page's h1 (detail pages and parent home). */
+.detail-nav h1,
+.parent-title {
   margin: 0;
-  font-size: var(--text-md);
+  font-size: var(--text-xl);
   font-weight: var(--weight-bold);
   line-height: var(--leading-tight);
+  letter-spacing: -0.01em;
   color: var(--blue);
+}
+
+@media (min-width: 768px) {
+  .detail-nav h1,
+  .parent-title {
+    font-size: var(--text-2xl);
+  }
 }
 
 /* Allergy list */
@@ -1065,7 +1131,7 @@ button {
 .photo-source-btn:focus-visible {
   outline: none;
   background: var(--card);
-  box-shadow: 0 0 0 2px rgba(129, 148, 214, 0.35);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .photo-preview-frame {
@@ -1121,7 +1187,7 @@ button {
 
 .complete-note:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(129, 148, 214, 0.35);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .primary-btn {
@@ -1131,19 +1197,24 @@ button {
   width: 100%;
   padding: 10px 6px;
   border-radius: var(--radius);
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #ffffff;
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
   line-height: var(--leading-tight);
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: background 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
 }
 
+/* Hover darkens toward navy, so contrast only goes up. */
 .primary-btn:hover,
 .primary-btn:focus-visible {
-  opacity: 0.92;
+  background: color-mix(in srgb, var(--accent-strong) 85%, var(--blue));
   outline: none;
   transform: translateY(-1px);
+}
+
+.primary-btn:focus-visible {
+  box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--focus);
 }
 
 .primary-btn:disabled {
@@ -1214,7 +1285,7 @@ body.modal-open {
 
 @media (min-width: 768px) {
   .detail-app {
-    max-width: 560px;
+    max-width: var(--detail-width);
   }
 }
 
@@ -1243,8 +1314,10 @@ body.modal-open {
   width: 100%;
   padding: 14px 12px;
   background: var(--card);
-  border-radius: var(--radius);
+  border: 1px solid var(--line);
   border-left: 4px solid var(--danger);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-surface);
   transition: box-shadow 0.15s ease, transform 0.15s ease;
 }
 
@@ -1255,7 +1328,7 @@ body.modal-open {
 }
 
 .emergency-card:focus-visible {
-  outline: 2px solid var(--map-border);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -1313,7 +1386,7 @@ body.modal-open {
   flex-direction: column;
   gap: 4px;
   padding: 12px;
-  background: var(--card);
+  background: var(--bg);
   border-radius: var(--radius-sm);
 }
 
@@ -1427,7 +1500,7 @@ body.modal-open {
 /* Visible keyboard focus for call links (overrides outline: none above) */
 .hospital-address:focus-visible,
 .call-btn:focus-visible {
-  outline: 2px solid var(--map-border);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -1547,7 +1620,7 @@ body.modal-open {
 }
 
 .tag-option input:focus-visible + span {
-  box-shadow: 0 0 0 3px rgba(129, 148, 214, 0.55);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .tag-chip {
@@ -1555,7 +1628,7 @@ body.modal-open {
   margin: 0;
   padding: 2px 10px;
   border-radius: 999px;
-  background: #eaf0ff;
+  background: var(--accent-soft);
   color: var(--blue);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
@@ -1566,11 +1639,10 @@ body.modal-open {
   display: none;
 }
 
-/* Important today (day notes): set apart from the permanent profile by an accent frame */
+/* Important today (day notes): same emphasis pattern as the emergency card —
+   a standard surface with a 4px left bar (accent here, danger there). */
 .day-notes-panel {
-  background: var(--card);
-  border: 2px solid var(--accent);
-  border-left-width: 6px;
+  border-left: 4px solid var(--accent);
 }
 
 .day-notes-list {
@@ -1638,7 +1710,7 @@ body.modal-open {
 }
 
 .day-note-details > .day-note-summary:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
@@ -1749,7 +1821,7 @@ body.modal-open {
   padding: 14px;
   border: 1px solid var(--accent);
   border-radius: var(--radius);
-  background: #eaf0ff;
+  background: var(--accent-soft);
   animation: moment-in 0.3s ease-out;
 }
 
@@ -1849,7 +1921,7 @@ body.modal-open {
   padding: 10px 14px;
   border-radius: 18px;
   background: var(--card);
-  border: 1px solid #e8eaf0;
+  border: 1px solid var(--line);
 }
 
 .msg.is-mine .msg-bubble {
@@ -1948,6 +2020,7 @@ body.modal-open {
 .msg-empty {
   align-self: stretch;
   max-width: none;
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--card);
 }
@@ -2009,13 +2082,6 @@ body.modal-open {
   margin: 0;
   font-size: var(--text-sm);
   color: var(--grey);
-}
-
-.parent-title {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-tight);
 }
 
 .parent-title:focus {
@@ -2108,8 +2174,8 @@ body.modal-open {
 }
 
 .status-pill.is-active {
-  background: #e3f5e9;
-  color: #1e6b3a;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .status-pill.is-ended {
@@ -2181,7 +2247,7 @@ body.modal-open {
 }
 
 .feed-card:focus-visible {
-  box-shadow: 0 0 0 3px rgba(129, 148, 214, 0.55);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .feed-body {
@@ -2208,7 +2274,7 @@ body.modal-open {
   padding: 8px 10px;
   border: 1px dashed var(--accent);
   border-radius: var(--radius-sm);
-  background: #fffbea;
+  background: var(--notice-soft);
 }
 
 .concept-label {
@@ -2217,7 +2283,7 @@ body.modal-open {
   font-weight: var(--weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #7a5b00;
+  color: var(--notice);
 }
 
 .concept-text {
@@ -2254,7 +2320,7 @@ body.modal-open {
 }
 
 .text-btn:focus-visible {
-  outline: 2px solid var(--map-border);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -2262,7 +2328,7 @@ body.modal-open {
   margin: 0;
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: #1e6b3a;
+  color: var(--success);
 }
 
 .feed-status.is-error {
@@ -2284,7 +2350,7 @@ body.modal-open {
   list-style: none;
   margin: 0;
   padding: 8px 0 0;
-  border-top: 1px solid #e8eaf0;
+  border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2297,7 +2363,7 @@ body.modal-open {
 }
 
 .feed-reply.is-parent {
-  background: #eaf0ff;
+  background: var(--accent-soft);
 }
 
 .feed-reply-body {
@@ -2321,7 +2387,7 @@ body.modal-open {
 }
 
 .msg-reply-ref:focus-visible {
-  outline: 2px solid var(--map-border);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -2372,7 +2438,7 @@ body.modal-open {
 
 .auth-title {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: var(--text-2xl);
   font-weight: var(--weight-bold);
   line-height: var(--leading-tight);
 }
@@ -2407,7 +2473,7 @@ body.modal-open {
   margin: 0;
   padding: 10px 14px;
   border-radius: var(--radius);
-  background: #eaf0ff;
+  background: var(--accent-soft);
   font-size: var(--text-sm);
 }
 
@@ -2489,7 +2555,7 @@ body.modal-open {
   width: 100%;
   min-height: 44px;
   padding: 10px 12px;
-  border: 1px solid #d5dbea;
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--card);
   color: var(--blue);
@@ -2497,7 +2563,7 @@ body.modal-open {
 }
 
 .text-input:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -2607,7 +2673,7 @@ body.modal-open {
   gap: 8px;
   padding: 12px;
   border-radius: var(--radius-sm);
-  background: #eaf0ff;
+  background: var(--accent-soft);
 }
 
 .invite-link-title {
@@ -2646,7 +2712,7 @@ body.modal-open {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 0;
-  border-top: 1px solid #eef0f6;
+  border-top: 1px solid var(--line-soft);
 }
 
 .people-row:first-child {
@@ -2881,8 +2947,8 @@ body.modal-open {
 .reopen-badge {
   padding: 1px 8px;
   border-radius: 999px;
-  background: #fff4e0;
-  color: #8a5300;
+  background: var(--warning-soft);
+  color: var(--warning);
   font-weight: var(--weight-semibold);
 }
 
@@ -2890,7 +2956,7 @@ body.modal-open {
   margin: 0;
   padding: 10px 12px;
   border-radius: var(--radius-sm);
-  background: #f3f4f6;
+  background: var(--neutral-soft);
   color: var(--grey);
   font-size: var(--text-sm);
   font-style: italic;
@@ -2905,12 +2971,12 @@ body.modal-open {
 /* ---------- Parent home (T3b-2): shift state, schedule check-off, removal ---------- */
 
 .status-pill.is-reopened {
-  background: #fff4e0;
-  color: #8a5300;
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 .status-pill.is-idle {
-  background: #f3f4f6;
+  background: var(--neutral-soft);
   color: var(--grey);
 }
 
@@ -2935,7 +3001,7 @@ body.modal-open {
   justify-content: space-between;
   gap: 8px 12px;
   padding: 10px 0;
-  border-top: 1px solid #eceef1;
+  border-top: 1px solid var(--line-soft);
 }
 
 .parent-task:first-child {
@@ -2967,7 +3033,7 @@ body.modal-open {
 
 .parent-task.is-done .parent-task-title::before {
   content: "\2713\00a0";
-  color: #1e6b3a;
+  color: var(--success);
 }
 
 .feed-remove {
@@ -2985,6 +3051,13 @@ body.modal-open {
   padding: 4px 16px;
 }
 
+/* Entries are already tinted tiles; in a panel they sit on the panel itself
+   (same as the parent home care log) instead of a tile-in-a-tile. */
+.panel .care-log-card {
+  background: transparent;
+  padding: 0;
+}
+
 .care-log-list,
 .care-log-entries {
   list-style: none;
@@ -2994,7 +3067,7 @@ body.modal-open {
 
 .care-log-task {
   padding: 12px 0;
-  border-top: 1px solid #eceef1;
+  border-top: 1px solid var(--line-soft);
 }
 
 .care-log-task:first-child {
@@ -3050,7 +3123,7 @@ body.modal-open {
 .care-log-update {
   padding: 1px 8px;
   border-radius: 999px;
-  background: #eaf0ff;
+  background: var(--accent-soft);
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
 }
@@ -3218,8 +3291,10 @@ body:not([data-role="parent"]) .gallery-list {
   height: 100%;
   margin: 0;
   padding: 8px;
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--card);
+  box-shadow: var(--shadow-surface);
 }
 
 .gallery-photo {
@@ -3259,7 +3334,8 @@ body:not([data-role="parent"]) .gallery-list {
 .gallery-fab {
   position: fixed;
   z-index: 40;
-  right: max(24px, calc((100vw - var(--max-width)) / 2 + 24px));
+  /* Flush with the 560px gallery column's content edge (32px side padding) on wide screens. */
+  right: max(24px, calc((100vw - var(--detail-width)) / 2 + 32px));
   bottom: 32px;
   display: flex;
   align-items: center;
@@ -3280,7 +3356,7 @@ body:not([data-role="parent"]) .gallery-list {
 
 .gallery-fab:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px #ffffff, 0 0 0 6px var(--map-border);
+  box-shadow: 0 0 0 3px #ffffff, 0 0 0 6px var(--focus);
 }
 
 .gallery-fab[aria-disabled="true"] {
