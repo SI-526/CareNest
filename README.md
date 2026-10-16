@@ -316,19 +316,27 @@ Schema changes reach the hosted project (`carenest`, ref `ibwshlbhszznfhmeckda`)
 `supabase db push`, which records each version in `supabase_migrations.schema_migrations`, so
 the project's history shows exactly which migrations it has. Never apply a migration by pasting
 SQL or with `supabase db query`: that skips the history, and the next `db push` would try to run
-it again. From `tests/` (the pinned CLI, logged in with `npx supabase login`):
+it again. From `tests/`, with the pinned CLI installed (`npm ci`) and logged in
+(`npx supabase login`):
 
 ```bash
+npm ci
 npx supabase db push --workdir .. --project-ref ibwshlbhszznfhmeckda --dry-run
 npx supabase db push --workdir .. --project-ref ibwshlbhszznfhmeckda
 ```
 
 - Run the dry run first: it must list exactly the new migration files, in version order. If it
   lists a migration the project already has, stop and compare the hosted schema with that file
-  before repairing the history (`supabase migration repair --status applied <version>`).
-- Deploy migrations before merging the frontend change that needs them: push from the PR's
-  branch once it is approved, then merge. Vercel deploys `main` on merge, so the new pages must
+  before repairing the history
+  (`npx supabase migration repair --workdir .. --project-ref ibwshlbhszznfhmeckda --status applied <version>`).
+- Deploy migrations before merging the frontend change that needs them: once the PR is
+  approved, rebase it on `main`, push, and merge right away. Vercel deploys `main` on merge, so the new pages must
   never reach a database without their tables and functions (and the live site must keep
   working against the migrated database until the merge lands).
+- A pushed migration is frozen: never edit its file (the history only records the version, so
+  `db push` would report up to date while production differs). Fix it with a new migration.
+- Never use `db push --include-all` or `migration repair --status reverted` here. If the dry run
+  says a remote version is missing locally, rebase on `main`; if a new migration's version is
+  older than one already pushed, rename it to a newer timestamp so it runs in order.
 - Migrations up to `20261017000000` were applied as SQL before the history existed and were
   marked applied with `migration repair` after their hosted schema was compared with the repo.
