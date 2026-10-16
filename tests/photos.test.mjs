@@ -1370,9 +1370,35 @@ test("members download photos but cannot mint signed download or upload URLs", a
   assert.ifError((await upload(sitter, photoPath(hh, visit.id))).error, "a normal upload still works");
 });
 
-// Issue #7: the hourly sweep deletes orphans through the Storage API and keeps live photos. It
-// sweeps the whole bucket, so it must stay the last test of this file (test:rls runs files one
-// at a time); earlier tests' orphans go too.
+// Issue #27: photo paths name the household, so a plan moved to another household would make
+// its shifts' photos orphans for the sweep. Parents edit only the schedule label.
+test("a parent cannot move a plan to another household or rename it; the schedule stays editable", async () => {
+  const { mom, hh, plan } = await photoFamily("plan-lock");
+  // The column privilege refuses it before RLS looks at the target household (a user belongs to
+  // one household today, but that is not what keeps the plan in place).
+  const moved = await mom.client.from("plans").update({ household_id: householdB }).eq("id", plan.id).select();
+  assertPermissionDenied(moved, "household_id is not editable");
+  assert.match(moved.error.message, /permission denied for table plans/);
+  const renamed = await mom.client.from("plans").update({ title: "x" }).eq("id", plan.id).select();
+  assertPermissionDenied(renamed, "title is not editable");
+  assert.match(renamed.error.message, /permission denied for table plans/);
+  const updated = await mom.client.from("plans").update({ schedule: "8am-5pm" }).eq("id", plan.id).select().single();
+  assert.ifError(updated.error);
+  assert.equal(updated.data.schedule, "8am-5pm");
+  assert.equal(updated.data.household_id, hh, "the plan stays in its household");
+  assert.equal(updated.data.title, "Day");
+});
+
+// Issues #7 and #27: the hourly sweep deletes orphans through the Storage API and keeps live
+// photos. It sweeps the whole bucket, so the two sweep tests must stay the last tests of this
+// file (test:rls runs files one at a time); earlier tests' orphans go too.
+
+// The local cron jobs would also run at :17 and :47 while a test holds the secrets; pause them.
+function setCleanupJobsActive(active) {
+  psqlQuery(`select cron.alter_job(jobid, active := ${active ? "true" : "false"}) from cron.job
+              where jobname in ('carenest-photo-cleanup', 'carenest-photo-cleanup-check')`);
+}
+
 test("the photo cleanup removes every kind of orphan and keeps live photos", async (t) => {
   if (!psqlAvailable()) {
     t.skip("psql is not on PATH; this test needs a direct database connection");
@@ -1431,22 +1457,28 @@ test("the photo cleanup removes every kind of orphan and keeps live photos", asy
   assert.throws(() => psqlQuery("select public.sweep_orphan_photos()"), /photo_cleanup_not_configured/);
   const [job] = localSql("select schedule, command from cron.job where jobname = 'carenest-photo-cleanup'");
   assert.deepEqual(job, { schedule: "17 * * * *", command: "select public.sweep_orphan_photos()" });
+  const [checkJob] = localSql("select schedule, command from cron.job where jobname = 'carenest-photo-cleanup-check'");
+  assert.deepEqual(checkJob, { schedule: "47 * * * *", command: "select public.check_photo_sweep()" });
+  assertPermissionDenied(await mom.client.rpc("check_photo_sweep"), "members cannot run the check");
 
   // The database container reaches Storage through this stack's API gateway.
   const gateway = `http://supabase_kong_${process.env.SUPABASE_PROJECT_ID ?? "carenest"}:8000`;
   assert.match(gateway, /^http:\/\/[a-z0-9_-]+:8000$/);
   assert.match(serviceKey, /^[A-Za-z0-9._-]+$/);
-  psqlQuery(`select vault.create_secret('${gateway}', 'carenest_project_url');
-             select vault.create_secret('${serviceKey}', 'carenest_photo_cleanup_key');`);
+  setCleanupJobsActive(false);
   try {
+    psqlQuery(`select vault.create_secret('${gateway}', 'carenest_project_url');
+               select vault.create_secret('${serviceKey}', 'carenest_photo_cleanup_key');`);
     for (let pass = 0; pass < 5; pass++) {
       const requestId = psqlQuery("select public.sweep_orphan_photos()");
       if (!requestId) break; // nothing left to delete
       await waitFor(() => psqlQuery(`select count(*) from net._http_response where id = ${Number(requestId)}`) === "1", 10000);
       assert.equal(psqlQuery(`select status_code from net._http_response where id = ${Number(requestId)}`), "200");
     }
+    psqlQuery("select public.check_photo_sweep()"); // the check job passes after successful runs
   } finally {
     psqlQuery(`delete from vault.secrets where name in ${secretNames}`);
+    setCleanupJobsActive(true);
   }
 
   const cases = { used, fresh, waiting, closedFresh, yesterday, stale, removedPath, shiftOrphan, familyOrphan };
@@ -1467,4 +1499,99 @@ test("the photo cleanup removes every kind of orphan and keeps live photos", asy
     familyOrphan: false,
   });
   assert.ifError((await mom.client.storage.from(BUCKET).download(used)).error, "the live photo still downloads");
+});
+
+// Issue #27: a rejected delete fails the check job (pg_net answers after the sweep commits, so
+// the sweep itself still succeeds), and its paths back off so newer orphans are not stuck
+// behind them.
+test("a rejected photo sweep fails the check job and backs off its paths; newer orphans still go", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this test needs a direct database connection");
+    return;
+  }
+  const secretNames = "('carenest_project_url', 'carenest_photo_cleanup_key')";
+  if (psqlQuery(`select count(*) from vault.secrets where name in ${secretNames}`) !== "0") {
+    t.skip("this stack has photo cleanup secrets configured; the test would replace them");
+    return;
+  }
+  // Orphans: objects whose path names no household of this database.
+  const orphan = async () => {
+    const path = photoPath(randomUUID(), randomUUID());
+    assert.ifError((await upload({ client: admin }, path)).error);
+    return path;
+  };
+  const stored = (paths) =>
+    psqlQuery(`select name from storage.objects where bucket_id = 'photos' and name in ('${paths.join("','")}')`)
+      .split("\n")
+      .filter(Boolean)
+      .sort(); // JS order, as `first` is sorted
+  const sweep = () => psqlQuery("select public.sweep_orphan_photos()");
+  const response = async (id) => {
+    assert.match(id, /^\d+$/);
+    await waitFor(() => psqlQuery(`select count(*) from net._http_response where id = ${id}`) === "1", 10000);
+    return psqlQuery(`select coalesce(status_code::text, error_msg) from net._http_response where id = ${id}`);
+  };
+  const pending = (id) =>
+    JSON.parse(psqlQuery(`select coalesce(array_to_json(paths), 'null') from public.photo_sweep_requests where request_id = ${id}`) || "null");
+
+  const first = [await orphan(), await orphan()].sort();
+  const gateway = `http://supabase_kong_${process.env.SUPABASE_PROJECT_ID ?? "carenest"}:8000`;
+  assert.match(gateway, /^http:\/\/[a-z0-9_-]+:8000$/);
+  assert.match(serviceKey, /^[A-Za-z0-9._-]+$/);
+  setCleanupJobsActive(false);
+  try {
+    psqlQuery(`select vault.create_secret('${gateway}', 'carenest_project_url');
+               select vault.create_secret('sb_secret_revoked', 'carenest_photo_cleanup_key');`);
+    // 1. A wrong key: Storage refuses the batch; the check job fails with the status.
+    const rejected = sweep();
+    const status = await response(rejected);
+    assert.ok(/^\d+$/.test(status) && !/^2/.test(status), `the wrong key is refused (${status})`);
+    assert.deepEqual(pending(rejected).sort(), first, "the request is recorded with its paths");
+    assert.throws(() => psqlQuery("select public.check_photo_sweep()"), new RegExp(`photo_cleanup_failed: request ${rejected}: ${status}`));
+
+    // 2. With the right key, the next run backs the refused paths off and sends the newer orphan.
+    const second = await orphan();
+    psqlQuery(`select vault.update_secret(id, '${serviceKey}') from vault.secrets where name = 'carenest_photo_cleanup_key'`);
+    const accepted = sweep();
+    assert.equal(pending(rejected), null, "the refused request is settled");
+    assert.deepEqual(pending(accepted), [second], "only the newer orphan is sent");
+    const failures = JSON.parse(psqlQuery(`
+      select json_agg(json_build_object('path', f.path, 'failures', f.failures, 'last_status', f.last_status,
+               'backoff', f.retry_at between q.created_at + interval '1 hour' and q.created_at + interval '2 hours')
+               order by f.path)
+        from public.photo_sweep_failures f, public.photo_sweep_requests q
+       where q.request_id = ${accepted}`));
+    assert.deepEqual(
+      failures,
+      first.map((path) => ({ path, failures: 1, last_status: Number(status), backoff: true })),
+    );
+    assert.equal(await response(accepted), "200");
+    psqlQuery("select public.check_photo_sweep()");
+    assert.deepEqual(stored([...first, second]), first, "the newer orphan is gone; the refused ones wait");
+
+    // 3. Once their retry time has come, the refused paths go, and the bookkeeping empties.
+    psqlQuery("update public.photo_sweep_failures set retry_at = now() - interval '1 second'");
+    for (let pass = 0; pass < 5; pass++) {
+      const id = sweep();
+      if (!id) break;
+      assert.equal(await response(id), "200");
+    }
+    assert.deepEqual(stored(first), []);
+    assert.equal(psqlQuery("select count(*) from public.photo_sweep_requests"), "0");
+    assert.equal(psqlQuery("select count(*) from public.photo_sweep_failures"), "0");
+
+    // A request with no response after 10 minutes counts as failed too; the next run settles it
+    // (its path backs off, then goes from the list because no such object exists).
+    psqlQuery(`insert into public.photo_sweep_requests (request_id, paths, created_at)
+               values (-1, array['no-such-household/no-such-shift/none.jpg'], now() - interval '11 minutes')`);
+    assert.throws(() => psqlQuery("select public.check_photo_sweep()"), /photo_cleanup_failed: request -1: no response/);
+    assert.equal(sweep(), "");
+    assert.equal(psqlQuery("select count(*) from public.photo_sweep_requests"), "0");
+    assert.equal(psqlQuery("select count(*) from public.photo_sweep_failures"), "0");
+    psqlQuery("select public.check_photo_sweep()");
+  } finally {
+    psqlQuery(`delete from vault.secrets where name in ${secretNames}`);
+    psqlQuery("delete from public.photo_sweep_requests; delete from public.photo_sweep_failures;");
+    setCleanupJobsActive(true);
+  }
 });
