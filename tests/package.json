@@ -10,7 +10,7 @@
     "db:lint": "./stack.sh supabase db lint --workdir .. --level warning",
     "db:stop": "./stack.sh supabase stop --workdir ..",
     "test:rls": "./stack.sh node --test --test-concurrency=1 rls.test.mjs photos.test.mjs care-logs.test.mjs",
-    "test:unit": "node --test care-log-age.test.mjs config.test.mjs"
+    "test:unit": "node --test care-log-age.test.mjs config.test.mjs moment-exif.test.mjs"
   },
   "devDependencies": {
     "@supabase/supabase-js": "2.117.2",
