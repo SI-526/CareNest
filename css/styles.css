@@ -1210,6 +1210,7 @@ button {
   align-items: center;
   justify-content: center;
   width: 100%;
+  min-height: 44px; /* touch target: Apple HIG 44pt, WCAG 2.5.5 */
   padding: 10px 6px;
   border-radius: var(--radius);
   background: var(--accent-strong);
@@ -2318,10 +2319,6 @@ body.modal-open {
 }
 
 .feed-actions .photo-source-btn,
-.feed-actions .primary-btn {
-  min-height: 44px;
-}
-
 .feed-album-row {
   display: flex;
   align-items: center;
@@ -2330,12 +2327,22 @@ body.modal-open {
 }
 
 .text-btn {
+  display: inline;
   min-height: 44px;
   padding: 0 4px;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
+  color: var(--blue);
+  font-size: inherit;
+  font-weight: var(--weight-semibold);
   text-decoration: underline;
-  text-underline-offset: 3px;
+  text-underline-offset: 2px;
+}
+
+/* In running text: flush with the words around it. The 44px target (WCAG 2.5.8) stays;
+   a negative top margin stops it pushing the line apart from the one above. The bottom
+   is left alone so the target never overlaps the paragraph that follows. */
+.auth-lede .text-btn {
+  padding: 0;
+  margin-block-start: calc((var(--leading-normal) * 1em - 44px) / 2);
 }
 
 .text-btn:focus-visible {
@@ -2616,15 +2623,6 @@ body.modal-open {
   display: none;
 }
 
-.text-btn {
-  display: inline;
-  color: var(--blue);
-  font-size: inherit;
-  font-weight: var(--weight-semibold);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 .danger-btn {
   display: flex;
   align-items: center;
@@ -2867,12 +2865,16 @@ body.modal-open {
   margin-bottom: 14px;
 }
 
+/* One action layout for every manage row: actions sit on their own row under the text.
+   (Cards cap at ~460px, too narrow to put four buttons beside a task name.) Phone: text
+   buttons stretch so wrapped lines fill the width, so a long danger label takes a
+   full-width line of its own. 768px+: actions keep their natural width, trailing right. */
 .manage-row {
   flex-wrap: wrap;
 }
 
 .manage-row .people-meta {
-  flex: 1 1 180px;
+  flex: 1 1 100%;
 }
 
 .manage-sub {
@@ -2884,6 +2886,7 @@ body.modal-open {
 
 .manage-actions {
   display: flex;
+  flex: 1 1 100%;
   flex-wrap: wrap;
   gap: 6px;
 }
@@ -2900,7 +2903,18 @@ body.modal-open {
 }
 
 .manage-actions .people-action {
+  flex: 1 1 auto;
   min-height: 44px;
+}
+
+@media (min-width: 768px) {
+  .manage-actions {
+    justify-content: flex-end;
+  }
+
+  .manage-actions .people-action {
+    flex: 0 0 auto;
+  }
 }
 
 .manage-dialog {
