@@ -1220,3 +1220,44 @@ test("a shift takes at most 20 live photo messages; task photos keep their room"
   const extra = await uploadOk(sitter, hh, visit.id);
   assertRpcError(await send(extra), "photo_limit_reached");
 });
+
+test("a photo re-attached while a parent removes it is refused; the parent can still delete it", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this two-session test needs a direct database connection");
+    return;
+  }
+  for (const removal of ["remove_photo", "remove_all_photos"]) {
+    const { mom, sitter, hh, visit } = await photoFamily(`reattach-${removal}`);
+    const path = await uploadOk(sitter, hh, visit.id);
+    const send = () =>
+      sitter.client.from("messages").insert({ household_id: hh, visit_id: visit.id, kind: "chat", photo_path: path }).select().single();
+    const first = await send();
+    assert.ifError(first.error);
+
+    // Session 1 (psql, as the parent): remove the photo and hold the transaction open.
+    const marker = `reattach-${randomUUID()}`;
+    const claims = JSON.stringify({ sub: uuid(mom.id), role: "authenticated" });
+    const call = removal === "remove_photo" ? `public.remove_photo('${uuid(first.data.id)}')` : "public.remove_all_photos()";
+    const session = spawnPsql(`
+      begin;
+      set local role authenticated;
+      select set_config('request.jwt.claims', '${claims}', true);
+      select ${call};
+      select pg_sleep(6) /* ${marker} */;
+      commit;`);
+    await waitFor(() =>
+      psqlQuery(`select count(*) from pg_stat_activity where state = 'active' and query like '%${marker}%' and query not like '%pg_stat_activity%'`) === "1",
+    );
+    // Session 2 (through the API): stamp_message waits on the message the removal holds, then
+    // sees the removal. Check it really waited on session 1, or a slow run could pass anyway.
+    const raced = send().then((r) => r);
+    await waitFor(() =>
+      psqlQuery(`select count(*) from pg_stat_activity a where exists (select 1 from pg_stat_activity b where b.pid = any (pg_blocking_pids(a.pid)) and b.query like '%${marker}%' and b.query not like '%pg_stat_activity%')`) === "1",
+    );
+    assert.equal(await session, 0, `${removal}: session 1 committed`);
+    assertRpcError(await raced, "photo_removed");
+    const { count } = await admin.from("messages").select("*", { count: "exact", head: true }).eq("photo_path", path);
+    assert.equal(count, 0, `${removal}: no message re-attached the removed path`);
+    assert.equal((await mom.client.storage.from(BUCKET).remove([path])).data?.length, 1, `${removal}: parent deletes it`);
+  }
+});
