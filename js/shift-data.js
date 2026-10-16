@@ -456,22 +456,27 @@
           return galleryItem(m, title, r.visit ? r.visit.visit_date : null);
         }),
       };
+      notify();
       // Someone who joined after this page loaded reads as a former member until the roster is
-      // fetched again (once per id: one still unknown after that is a real former member).
+      // fetched again (once per id: one still unknown after that is a real former member). It
+      // runs in the background and reloads only when it found one of them.
       const fresh = Array.from(unknownIds).filter((id) => !refetchedFor.has(id));
       if (fresh.length) {
         fresh.forEach((id) => refetchedFor.add(id));
         // Same query as auth.js loadContext(); RLS scopes it to this family space.
-        const roster = await client
+        client
           .from("household_members")
           .select("household_id, user_id, role, email, display_name, households(id, name, child_name, child_age_label)")
-          .order("created_at", { ascending: true });
-        if (!roster.error) {
-          ctx.members = roster.data || [];
-          return load();
-        }
+          .order("created_at", { ascending: true })
+          .then((roster) => {
+            if (roster.error) throw roster.error;
+            const members = roster.data || [];
+            if (!members.some((m) => fresh.includes(m.user_id))) return;
+            ctx.members = members;
+            scheduleReload();
+          })
+          .catch((err) => console.warn("CareNest: roster refresh failed", err));
       }
-      notify();
     }
 
     function scheduleReload() {
@@ -565,14 +570,21 @@
     // frees them. A page restored from that cache asks again: the renderers keep <img> elements
     // across renders, so re-point any that show an object URL, then reload the data.
     function watchPageCache() {
-      window.addEventListener("pagehide", () => Array.from(photoCache.keys()).forEach(forgetPhoto));
+      let forgotten = new Map(); // path -> the download pagehide revoked
+      window.addEventListener("pagehide", () => {
+        forgotten = new Map(photoCache);
+        forgotten.forEach((pending, path) => forgetPhoto(path));
+      });
       window.addEventListener("pageshow", (event) => {
         if (!event.persisted) return;
         document.querySelectorAll("img[data-photo-path]").forEach((img) => {
           const path = img.dataset.photoPath;
-          if (!img.src.startsWith("blob:")) return;
-          backend
-            .photoUrl(path)
+          if (!img.src.startsWith("blob:") && !forgotten.has(path)) return;
+          // A download pending at pagehide still hands its (revoked) URL to a renderer, so re-point
+          // after it settles; photos no renderer had asked for stay lazy.
+          Promise.resolve(forgotten.get(path))
+            .catch(() => {})
+            .then(() => backend.photoUrl(path))
             .then((url) => {
               if (url && img.dataset.photoPath === path) img.src = url;
             })
@@ -852,7 +864,12 @@
         if (error) throw error;
         const removeError = path ? await deleteStoredPhoto(path) : null;
         if (path) forgetPhoto(path);
-        await load();
+        try {
+          await load();
+        } catch (e) {
+          if (!removeError) throw e;
+          scheduleReload(); // the file's retry matters more than this refresh
+        }
         if (removeError) throw fileNotDeleted(path, removeError);
       },
       // A parent checks a task off with no photo ("Done by Mary").

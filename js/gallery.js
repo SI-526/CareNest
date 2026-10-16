@@ -353,7 +353,12 @@
     again.addEventListener("click", () => {
       again.disabled = true;
       retry()
-        .then(() => setStatus("Photo removed."))
+        .then(() => {
+          setStatus("Photo removed.");
+          const heading = document.getElementById("gallery-title"); // the button is gone with the old status
+          heading.tabIndex = -1;
+          heading.focus();
+        })
         .catch((err) => {
           setStatus(backend.errorMessage(err));
           if (err.retry) offerRetry(err.retry);

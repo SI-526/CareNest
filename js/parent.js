@@ -515,8 +515,14 @@
       return `carenest-${slug(childFirst)}-${slug(item.title)}-${date}.${ext}`;
     }
 
+    // An entry the list re-rendered away (a removed photo leaves the album) reports in the
+    // photo section's own status line instead, so its message and "Try again" stay visible.
+    function statusLine(entry) {
+      return entry.refs.status.isConnected ? entry.refs.status : document.getElementById("feed-status");
+    }
+
     function setStatus(entry, text, isError) {
-      const { status } = entry.refs;
+      const status = statusLine(entry);
       status.textContent = text;
       status.classList.toggle("is-error", Boolean(isError));
       status.hidden = !text;
@@ -606,7 +612,7 @@
       try {
         await shift.removePhoto(item.id);
         announce(`${item.title} photo removed.`);
-        entry.refs.replyBtn.focus();
+        (entry.refs.replyBtn.isConnected ? entry.refs.replyBtn : title).focus();
       } catch (err) {
         setStatus(entry, shift.errorMessage(err), true);
         if (err.retry) offerRetry(entry, err.retry);
@@ -625,13 +631,13 @@
         try {
           await retry();
           setStatus(entry, `${entry.item.title} photo removed.`);
-          entry.refs.replyBtn.focus();
+          (entry.refs.replyBtn.isConnected ? entry.refs.replyBtn : title).focus();
         } catch (err) {
           setStatus(entry, shift.errorMessage(err), true);
           if (err.retry) offerRetry(entry, err.retry);
         }
       });
-      entry.refs.status.append(" ", button);
+      statusLine(entry).append(" ", button);
       button.focus();
     }
 

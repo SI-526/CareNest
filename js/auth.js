@@ -370,6 +370,10 @@
         </div>`;
       document.body.appendChild(accountDialog);
       accountDialog.addEventListener("close", () => opener.focus());
+      // Esc can't close it while the account is being deleted (its delete button is disabled).
+      accountDialog.addEventListener("cancel", (e) => {
+        if (accountDialog.querySelector("[data-delete-account]").disabled) e.preventDefault();
+      });
       accountDialog.querySelector("[data-sign-out]").addEventListener("click", async (e) => {
         const button = e.currentTarget;
         const errorEl = accountDialog.querySelector("[data-account-error]");
@@ -439,6 +443,9 @@
     const errorEl = accountDialog && accountDialog.querySelector("[data-account-error]");
     const button = accountDialog && accountDialog.querySelector("[data-delete-account]");
     const label = button ? button.textContent : "";
+    // Sign out and Close wait too: closing would hide an error the deletion ends with.
+    const others = accountDialog ? accountDialog.querySelectorAll("[data-sign-out], form[method=dialog] button") : [];
+    others.forEach((control) => (control.disabled = true));
     if (button) {
       button.disabled = true;
       button.textContent = "Deleting…";
@@ -484,6 +491,7 @@
     } finally {
       if (!deleted) {
         endingSession = false;
+        others.forEach((control) => (control.disabled = false));
         if (button) {
           button.disabled = false;
           button.textContent = label;
@@ -495,15 +503,21 @@
   // Deletes every photo file of the family space before the account goes. Each
   // remove_all_photos() call detaches photos sent since the last one and returns every path
   // still in the family's folder, so rounds repeat until it returns none. remove() returns the
-  // objects it actually deleted; a shortfall needs no handling here, as the next round lists the
-  // paths again. ponytail: 5 rounds converge unless someone keeps sending photos meanwhile.
+  // objects it actually deleted, so a file it skipped comes back in the next round: a path seen
+  // twice is a file that can't be deleted, and stops here. Only new paths (someone still sending
+  // photos) get more rounds. ponytail: 5 rounds converge unless someone keeps sending photos.
   // Resolves null when done, else an { error } object or the message to show.
   async function removeAllPhotos() {
+    let requested = new Set();
     for (let round = 0; ; round += 1) {
       const { data: paths, error } = await client.rpc("remove_all_photos");
       if (error) return error;
       if (!paths || !paths.length) return null;
+      if (paths.some((path) => requested.has(path))) {
+        return "Some photos couldn't be deleted, so your account was kept. Please try again later.";
+      }
       if (round === 5) return "Photos were still being shared while we deleted them. Please try again in a moment.";
+      requested = new Set(paths);
       for (let i = 0; i < paths.length; i += 100) {
         const { error: removeError } = await client.storage.from("photos").remove(paths.slice(i, i + 100));
         if (removeError) return removeError;
