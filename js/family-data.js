@@ -278,6 +278,7 @@
     apply(ctx, rows);
     const plan = rows.plan ? [rows.plan].concat(rows.plan.tasks || []) : [];
     shownIds = new Set(rows.contacts.concat(rows.careItems, plan).map((r) => r.id));
+    return true;
   }
 
   // A full-screen loading / error layer while the family's data loads. Resolves once loaded;
