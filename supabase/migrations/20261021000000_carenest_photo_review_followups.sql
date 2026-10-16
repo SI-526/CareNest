@@ -118,7 +118,9 @@ begin
                 select 1 from public.household_members m
                 where m.household_id = h.id and m.user_id <> caller and m.role = 'parent'
               )
-          and (public.photo_path_parts(o.name)).household_id = h.id
+          -- Well-formed (the range already pins the household; an equality here would hash-join
+          -- the whole bucket).
+          and (public.photo_path_parts(o.name)).household_id is not null
      ) then
     raise exception 'photos_remaining';
   end if;
