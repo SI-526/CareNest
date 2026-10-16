@@ -326,7 +326,10 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   to `messages` and `care_logs` (one random UUID each; clients never delete messages or care
   logs, so only cascades emit them), to `day_notes` (one random UUID per deleted note), and to
   `contacts`, `care_items`, `plans`, `tasks`, and `households` (one random UUID per deleted row;
-  replica identity stays default so no content is sent).
+  with RLS on, a DELETE event carries only the primary key whatever the replica identity, so no
+  content is sent; it stays default because FULL adds write-ahead-log volume for no benefit).
+  `tasks` go only by cascade from a plan or family-space delete, so those cascades still emit task
+  ids to any subscriber of the table, though the app itself does not listen for task deletes.
   Clients must ignore events for shifts they are not showing.
 
 ## Deploying to a hosted Supabase project

@@ -258,9 +258,22 @@
   // Ids of every row the current data came from: a Realtime DELETE carries only the id, so a
   // delete matters only when its id is here.
   let shownIds = new Set();
+  // Refreshes can overlap (a change, a tab return, a reconnect): each takes a number, and a
+  // result older than the one already applied is dropped. Rows equal to what is on screen are not
+  // re-applied, so a tab return or reconnect with no change does not re-render (or drop focus).
+  let lastStarted = 0;
+  let lastApplied = 0;
+  let lastSnapshot = null;
 
+  // Returns true when new rows were applied.
   async function refresh(ctx) {
+    const generation = ++lastStarted;
     const rows = await fetchRows(ctx);
+    if (generation < lastApplied) return false;
+    lastApplied = generation;
+    const snapshot = JSON.stringify(rows);
+    if (snapshot === lastSnapshot) return false;
+    lastSnapshot = snapshot;
     if (rows.household) Object.assign(ctx.household, rows.household);
     apply(ctx, rows);
     const plan = rows.plan ? [rows.plan].concat(rows.plan.tasks || []) : [];
@@ -303,6 +316,8 @@
 
   // RLS limits the stream to this household. Realtime cannot filter DELETE events by column, so
   // deletes arrive unfiltered: refetch only when a row on screen was deleted (as day notes do).
+  // Tasks get no DELETE listener: clients cannot delete a task, and a task goes only by cascade
+  // from a plan or family-space delete, which the plans DELETE or households event already shows.
   function watch(ctx) {
     const client = ctx.client;
     const householdId = ctx.household.id;
@@ -311,15 +326,24 @@
     let timer = null;
 
     async function reload() {
+      let changed;
       try {
-        await refresh(ctx);
+        changed = await refresh(ctx);
       } catch (error) {
         // Keep what is on screen; the next change, focus or reconnect tries again.
         console.warn("CareNest: family data refresh failed", error);
         return;
       }
+      if (!changed) return;
+      // Re-listens only when the plan changed, so the SUBSCRIBED reload below cannot loop.
       if (data.planId !== channelPlanId) listen();
-      listeners.forEach((fn) => fn(data));
+      listeners.forEach((fn) => {
+        try {
+          fn(data);
+        } catch (error) {
+          console.warn("CareNest: family data listener failed", error);
+        }
+      });
     }
 
     function scheduleReload() {
@@ -345,11 +369,14 @@
       });
       channel.on("postgres_changes", changes("households", `id=eq.${householdId}`), scheduleReload);
       if (channelPlanId) {
-        channel
-          .on("postgres_changes", changes("tasks", `plan_id=eq.${channelPlanId}`), scheduleReload)
-          .on("postgres_changes", { event: "DELETE", schema: "public", table: "tasks" }, onDelete);
+        channel.on("postgres_changes", changes("tasks", `plan_id=eq.${channelPlanId}`), scheduleReload);
       }
-      channel.subscribe();
+      // SUBSCRIBED comes on the first join and on every rejoin; refetch then, since changes made
+      // before the join (or while the socket was down) arrive with no event. This also catches the
+      // first plan's tasks, inserted before the plan-filtered channel joined.
+      channel.subscribe((status) => {
+        if (status === "SUBSCRIBED") scheduleReload();
+      });
     }
 
     listen();
