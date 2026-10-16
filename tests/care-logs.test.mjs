@@ -198,18 +198,18 @@ function spawnPsql(sql) {
   });
 }
 
-async function waitFor(condition, timeoutMs = 3000) {
+async function waitFor(condition, message = "timed out waiting for the other session", timeoutMs = 3000) {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
-    assert.ok(Date.now() < deadline, "timed out waiting for the other session");
+    assert.ok(Date.now() < deadline, message);
     await new Promise((r) => setTimeout(r, 50));
   }
 }
 
 // Session 1 of a race: runs `statement` as `user` (role authenticated, their JWT claims) and
 // then sleeps inside the still-open transaction. Resolves once that session is sleeping, to
-// { session }: a promise (wrapped, so awaiting holdOpenAs does not wait for it) that settles with
-// psql's { code, stderr } when the session commits.
+// { pid, session }: its backend pid, and a promise (wrapped, so awaiting holdOpenAs does not wait
+// for it) that settles with psql's { code, stderr } when the session commits.
 async function holdOpenAs(user, statement) {
   const marker = `cl-race-${randomUUID()}`;
   const claims = JSON.stringify({ sub: uuid(user.id), role: "authenticated" });
@@ -220,10 +220,22 @@ async function holdOpenAs(user, statement) {
     ${statement}
     select pg_sleep(4) /* ${marker} */;
     commit;`);
-  await waitFor(() =>
-    psqlQuery(`select count(*) from pg_stat_activity where state = 'active' and query like '%${marker}%' and query not like '%pg_stat_activity%'`) === "1",
+  let pid = "";
+  await waitFor(() => {
+    pid = psqlQuery(`select pid from pg_stat_activity where state = 'active' and query like '%${marker}%' and query not like '%pg_stat_activity%'`);
+    return /^\d+$/.test(pid);
+  });
+  return { pid, session };
+}
+
+// Proves the lock rather than inferring it from elapsed time: some backend (session 2's API
+// request) must show up waiting on session 1's pid while session 1 still holds its transaction.
+async function waitUntilBlockedBy(pid) {
+  assert.match(pid, /^\d+$/);
+  await waitFor(
+    () => psqlQuery(`select count(*) from pg_stat_activity where ${pid} = any(pg_blocking_pids(pid))`) !== "0",
+    `no session was ever blocked by session 1 (pid ${pid}): the trigger's lock is missing`,
   );
-  return { session };
 }
 
 // Only ever interpolate ids this run created.
@@ -496,18 +508,17 @@ test("a log that races an uncheck waits for it and is then refused", async (t) =
   assert.ifError((await parentCheck(race.parent, id, task)).error);
 
   // Session 1 (psql, as the parent): uncheck the task and hold the transaction open.
-  const { session } = await holdOpenAs(
+  const { pid, session } = await holdOpenAs(
     race.parent,
     `delete from public.task_checks where visit_id = '${uuid(id)}' and task_id = '${uuid(task)}';`,
   );
   // Session 2 (the sitter, through the API): the trigger's share lock on the check waits for the
-  // uncheck, then finds the check gone.
-  const startedAt = Date.now();
-  const raced = await addLog(race.sitter, { visit_id: id, task_id: task, category: "care", note: "Nap" });
-  const waitedMs = Date.now() - startedAt;
+  // uncheck, then finds the check gone. Promise.resolve sends the (lazy) request now.
+  const racing = Promise.resolve(addLog(race.sitter, { visit_id: id, task_id: task, category: "care", note: "Nap" }));
+  await waitUntilBlockedBy(pid);
+  const raced = await racing;
   const { code, stderr } = await session;
   assert.equal(code, 0, `session 1 committed: ${stderr}`);
-  assert.ok(waitedMs > 1500, `the log waited for the uncheck (${waitedMs} ms)`);
   assertRpcError(raced, "task_not_completed");
   const { count: checks } = await admin
     .from("task_checks")
@@ -539,23 +550,19 @@ test("an uncheck that races a log waits for it; the log survives", async (t) => 
 
   // Session 1 (psql, as the sitter): add a log and hold the transaction open (the trigger holds
   // a share lock on the check).
-  const { session } = await holdOpenAs(
+  const { pid, session } = await holdOpenAs(
     race.sitter,
     `insert into public.care_logs (visit_id, task_id, category, note)
      values ('${uuid(id)}', '${uuid(task)}', 'care', 'Nap 1h');`,
   );
   // Session 2 (the parent, through the API): the uncheck waits for the log's transaction.
-  const startedAt = Date.now();
-  const unchecked = await race.parent.client
-    .from("task_checks")
-    .delete()
-    .eq("visit_id", id)
-    .eq("task_id", task)
-    .select();
-  const waitedMs = Date.now() - startedAt;
+  const unchecking = Promise.resolve(
+    race.parent.client.from("task_checks").delete().eq("visit_id", id).eq("task_id", task).select(),
+  );
+  await waitUntilBlockedBy(pid);
+  const unchecked = await unchecking;
   const { code, stderr } = await session;
   assert.equal(code, 0, `session 1 committed: ${stderr}`);
-  assert.ok(waitedMs > 1500, `the uncheck waited for the log (${waitedMs} ms)`);
   assert.ifError(unchecked.error);
   assert.equal(unchecked.data.length, 1, "the uncheck went through after the log committed");
   const { data: logs, error } = await admin
