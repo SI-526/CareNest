@@ -84,7 +84,11 @@ begin
     -- A photo a parent removed is never attached again. A removal holds the message that uses
     -- the path FOR UPDATE; the share lock waits for it to commit (the re-check then skips the
     -- cleared row), so the check below reads the committed removal, not an older snapshot.
-    perform 1 from public.messages m where m.photo_path = new.photo_path for share;
+    -- Only the caller's household (checked above): a path is always in its own household's
+    -- folder, and this runs as the owner, so it must not lock other households' messages.
+    perform 1 from public.messages m
+     where m.photo_path = new.photo_path and m.household_id = new.household_id
+       for share;
     if exists (select 1 from public.removed_photos r where r.path = new.photo_path) then
       raise exception 'photo_removed';
     end if;

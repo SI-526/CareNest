@@ -1234,7 +1234,7 @@ test("a photo re-attached while a parent removes it is refused; the parent can s
       set local role authenticated;
       select set_config('request.jwt.claims', '${claims}', true);
       select ${call};
-      select pg_sleep(4) /* ${marker} */;
+      select pg_sleep(6) /* ${marker} */;
       commit;`);
     await waitFor(() =>
       psqlQuery(`select count(*) from pg_stat_activity where state = 'active' and query like '%${marker}%' and query not like '%pg_stat_activity%'`) === "1",
