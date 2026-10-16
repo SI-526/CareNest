@@ -1261,3 +1261,73 @@ test("a photo re-attached while a parent removes it is refused; the parent can s
     assert.equal((await mom.client.storage.from(BUCKET).remove([path])).data?.length, 1, `${removal}: parent deletes it`);
   }
 });
+
+// Issue #7: the hourly sweep deletes orphans through the Storage API and keeps live photos.
+test("the photo cleanup removes every kind of orphan and keeps live photos", async () => {
+  const live = await photoFamily("sweep");
+  const { mom, sitter, hh, visit } = live;
+  const send = (path) =>
+    sitter.client.from("messages").insert({ household_id: hh, visit_id: visit.id, kind: "chat", photo_path: path }).select().single();
+  const backdate = (path, interval) =>
+    localSql(`update storage.objects set created_at = now() - interval '${interval}'
+               where bucket_id = 'photos' and name = '${path.replace(/'/g, "")}'`);
+
+  const used = await uploadOk(sitter, hh, visit.id);
+  assert.ifError((await send(used)).error);
+  backdate(used, "30 days"); // a used photo stays, however old
+  const fresh = await uploadOk(sitter, hh, visit.id); // unused, under 24 hours: kept
+  backdate(fresh, "23 hours");
+  const stale = await uploadOk(sitter, hh, visit.id); // unused, over 24 hours: orphan
+  backdate(stale, "25 hours");
+  const removedPath = await uploadOk(sitter, hh, visit.id); // removed, Storage delete "failed"
+  const removedMsg = await send(removedPath);
+  assert.ifError(removedMsg.error);
+  assert.ifError((await mom.client.rpc("remove_photo", { target_message_id: removedMsg.data.id })).error);
+  const goneShift = (await sitter.client.from("visits").insert({ plan_id: live.plan.id, visit_date: isoDate(1) }).select().single()).data;
+  const shiftOrphan = await uploadOk(sitter, hh, goneShift.id);
+  assert.ifError((await admin.from("visits").delete().eq("id", goneShift.id)).error);
+  const gone = await photoFamily("sweep-gone"); // household deleted mid account deletion
+  const familyOrphan = await uploadOk(gone.sitter, gone.hh, gone.visit.id);
+  assert.ifError((await admin.from("households").delete().eq("id", gone.hh)).error);
+
+  // Members cannot run it; unconfigured, it fails loudly.
+  assertPermissionDenied(await mom.client.rpc("sweep_orphan_photos"), "members cannot run the sweep");
+  assertPermissionDenied(await mom.client.rpc("photo_orphans"), "members cannot list orphans");
+  assert.throws(() => psqlQuery("select public.sweep_orphan_photos()"), /photo_cleanup_not_configured/);
+  const [job] = localSql("select schedule, command from cron.job where jobname = 'carenest-photo-cleanup'");
+  assert.deepEqual(job, { schedule: "17 * * * *", command: "select public.sweep_orphan_photos()" });
+
+  // The database container reaches Storage through this stack's API gateway.
+  const gateway = `http://supabase_kong_${process.env.SUPABASE_PROJECT_ID ?? "carenest"}:8000`;
+  assert.match(gateway, /^http:\/\/[a-z0-9_-]+:8000$/);
+  assert.match(serviceKey, /^[A-Za-z0-9._-]+$/);
+  psqlQuery(`select vault.create_secret('${gateway}', 'carenest_project_url');
+             select vault.create_secret('${serviceKey}', 'carenest_photo_cleanup_key');`);
+  try {
+    for (let pass = 0; pass < 5; pass++) {
+      const requestId = psqlQuery("select public.sweep_orphan_photos()");
+      if (!requestId) break; // nothing left to delete
+      await waitFor(() => psqlQuery(`select count(*) from net._http_response where id = ${Number(requestId)}`) === "1", 10000);
+      assert.equal(psqlQuery(`select status_code from net._http_response where id = ${Number(requestId)}`), "200");
+    }
+  } finally {
+    psqlQuery("delete from vault.secrets where name in ('carenest_project_url', 'carenest_photo_cleanup_key')");
+  }
+
+  const stored = new Set(
+    localSql(`select name from storage.objects where bucket_id = 'photos'
+               and name in ('${[used, fresh, stale, removedPath, shiftOrphan, familyOrphan].join("','")}')`).map((r) => r.name),
+  );
+  const outcome = Object.fromEntries(
+    Object.entries({ used, fresh, stale, removedPath, shiftOrphan, familyOrphan }).map(([k, p]) => [k, stored.has(p)]),
+  );
+  assert.deepEqual(outcome, {
+    used: true,
+    fresh: true,
+    stale: false,
+    removedPath: false,
+    shiftOrphan: false,
+    familyOrphan: false,
+  });
+  assert.ifError((await mom.client.storage.from(BUCKET).download(used)).error, "the live photo still downloads");
+});

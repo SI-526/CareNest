@@ -312,11 +312,13 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   3. `delete_my_account()`.
   If the client stops after step 1, the family space stays, with every photo marked "Photo
   removed by …" and no message pointing at a missing photo.
-- Orphaned photos (issue #7, P1): a photo is readable only while its path's shift still exists in
+- Orphaned photos (issue #7): a photo is readable only while its path's shift still exists in
   that household, so photos of a deleted shift or family space are hidden from everyone (and so
-  cannot be deleted by clients either). But abandoned uploads in a shift that still exists (never
-  attached to a proof, moment, or photo message) stay readable by the family's members, and every orphan stays
-  stored, until a cleanup job exists.
+  cannot be deleted by clients either). An hourly pg_cron job (`carenest-photo-cleanup`, at :17)
+  deletes them through the Storage API, together with removed photos whose client delete failed
+  and uploads no message uses after 24 hours (`photo_orphans()` lists them; up to 1000 per run).
+  It needs the one-time Vault setup under "Deploying to a hosted Supabase project"; locally it
+  fails every hour with `photo_cleanup_not_configured` unless you add those secrets.
 - Known limitation (same as Carekeeper): Supabase Realtime does not apply RLS to DELETE events,
   so a signed-in user subscribed to `task_checks` also receives the primary keys (two random
   UUIDs, no content) of unchecks in other family spaces. The same applies to `visits` and
@@ -363,3 +365,29 @@ npx supabase db push --workdir .. --project-ref ibwshlbhszznfhmeckda
   older than one already pushed, rename it to a newer timestamp so it runs in order.
 - Migrations up to `20261017000000` were applied as SQL before the history existed and were
   marked applied with `migration repair` after their hosted schema was compared with the repo.
+
+### Photo cleanup (one-time per project)
+
+The cleanup job reads two Vault secrets, which are not in any migration because one is a secret
+key. Create a dedicated secret key (Dashboard → Project Settings → API Keys → Secret keys → New,
+named `photo-cleanup`) so it can be revoked on its own, then run in the SQL editor:
+
+```sql
+select vault.create_secret('https://ibwshlbhszznfhmeckda.supabase.co', 'carenest_project_url');
+select vault.create_secret('<the sb_secret_... key>', 'carenest_photo_cleanup_key');
+```
+
+Check it after the next run (each hour at :17): the job's latest run succeeded and Storage
+answered 200 (pg_net keeps responses for 6 hours).
+
+```sql
+select status, return_message, start_time from cron.job_run_details
+ where jobid = (select jobid from cron.job where jobname = 'carenest-photo-cleanup')
+ order by start_time desc limit 3;
+select status_code, left(content, 200), error_msg, created from net._http_response
+ order by created desc limit 3;
+```
+
+To rotate the key, `select vault.update_secret(id, '<new key>') from vault.secrets where name =
+'carenest_photo_cleanup_key';`. To pause the job,
+`select cron.unschedule('carenest-photo-cleanup');`; to resume, `select cron.schedule('carenest-photo-cleanup', '17 * * * *', 'select public.sweep_orphan_photos()');`.
