@@ -1352,6 +1352,13 @@ test("a parent cannot move a plan to another household or rename it; the schedul
 // Issues #7 and #27: the hourly sweep deletes orphans through the Storage API and keeps live
 // photos. It sweeps the whole bucket, so the two sweep tests must stay the last tests of this
 // file (test:rls runs files one at a time); earlier tests' orphans go too.
+
+// The local cron jobs would also run at :17 and :47 while a test holds the secrets; pause them.
+function setCleanupJobsActive(active) {
+  psqlQuery(`select cron.alter_job(jobid, active := ${active ? "true" : "false"}) from cron.job
+              where jobname in ('carenest-photo-cleanup', 'carenest-photo-cleanup-check')`);
+}
+
 test("the photo cleanup removes every kind of orphan and keeps live photos", async (t) => {
   if (!psqlAvailable()) {
     t.skip("psql is not on PATH; this test needs a direct database connection");
@@ -1418,9 +1425,10 @@ test("the photo cleanup removes every kind of orphan and keeps live photos", asy
   const gateway = `http://supabase_kong_${process.env.SUPABASE_PROJECT_ID ?? "carenest"}:8000`;
   assert.match(gateway, /^http:\/\/[a-z0-9_-]+:8000$/);
   assert.match(serviceKey, /^[A-Za-z0-9._-]+$/);
-  psqlQuery(`select vault.create_secret('${gateway}', 'carenest_project_url');
-             select vault.create_secret('${serviceKey}', 'carenest_photo_cleanup_key');`);
+  setCleanupJobsActive(false);
   try {
+    psqlQuery(`select vault.create_secret('${gateway}', 'carenest_project_url');
+               select vault.create_secret('${serviceKey}', 'carenest_photo_cleanup_key');`);
     for (let pass = 0; pass < 5; pass++) {
       const requestId = psqlQuery("select public.sweep_orphan_photos()");
       if (!requestId) break; // nothing left to delete
@@ -1430,6 +1438,7 @@ test("the photo cleanup removes every kind of orphan and keeps live photos", asy
     psqlQuery("select public.check_photo_sweep()"); // the check job passes after successful runs
   } finally {
     psqlQuery(`delete from vault.secrets where name in ${secretNames}`);
+    setCleanupJobsActive(true);
   }
 
   const cases = { used, fresh, waiting, closedFresh, yesterday, stale, removedPath, shiftOrphan, familyOrphan };
@@ -1472,9 +1481,10 @@ test("a rejected photo sweep fails the check job and backs off its paths; newer 
     return path;
   };
   const stored = (paths) =>
-    localSql(`select name from storage.objects where bucket_id = 'photos' and name in ('${paths.join("','")}')`)
-      .map((r) => r.name)
-      .sort();
+    psqlQuery(`select name from storage.objects where bucket_id = 'photos' and name in ('${paths.join("','")}')`)
+      .split("\n")
+      .filter(Boolean)
+      .sort(); // JS order, as `first` is sorted
   const sweep = () => psqlQuery("select public.sweep_orphan_photos()");
   const response = async (id) => {
     assert.match(id, /^\d+$/);
@@ -1488,9 +1498,10 @@ test("a rejected photo sweep fails the check job and backs off its paths; newer 
   const gateway = `http://supabase_kong_${process.env.SUPABASE_PROJECT_ID ?? "carenest"}:8000`;
   assert.match(gateway, /^http:\/\/[a-z0-9_-]+:8000$/);
   assert.match(serviceKey, /^[A-Za-z0-9._-]+$/);
-  psqlQuery(`select vault.create_secret('${gateway}', 'carenest_project_url');
-             select vault.create_secret('sb_secret_revoked', 'carenest_photo_cleanup_key');`);
+  setCleanupJobsActive(false);
   try {
+    psqlQuery(`select vault.create_secret('${gateway}', 'carenest_project_url');
+               select vault.create_secret('sb_secret_revoked', 'carenest_photo_cleanup_key');`);
     // 1. A wrong key: Storage refuses the batch; the check job fails with the status.
     const rejected = sweep();
     const status = await response(rejected);
@@ -1541,5 +1552,6 @@ test("a rejected photo sweep fails the check job and backs off its paths; newer 
   } finally {
     psqlQuery(`delete from vault.secrets where name in ${secretNames}`);
     psqlQuery("delete from public.photo_sweep_requests; delete from public.photo_sweep_failures;");
+    setCleanupJobsActive(true);
   }
 });

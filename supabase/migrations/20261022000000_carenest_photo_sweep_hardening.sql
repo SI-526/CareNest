@@ -14,8 +14,10 @@
 --     run, so a batch Storage refused was retried forever and newer orphans never went. Paths of
 --     a failed request are now skipped until their retry_at (photo_sweep_failures): exponential
 --     backoff, 2^failures hours capped at 24, with "equal jitter" (half fixed, half random; AWS
---     Architecture Blog, "Exponential Backoff And Jitter"). The jitter spreads one failed
---     batch's paths over later batches, so a path Storage always refuses ends up alone.
+--     Architecture Blog, "Exponential Backoff And Jitter"). The first retry window is
+--     [1 h, 2 h), so a failed batch's paths retry together once; from the second failure the
+--     jitter spreads them over different later batches, so a path Storage always refuses ends
+--     up alone after about five failures (about two days).
 --   * A plan's household can no longer change. Parents could update any column of their plan,
 --     including household_id; photo paths name the household, so moving a plan made all its
 --     shifts' photos orphans, and the sweep would delete them. Clients now update only
@@ -69,7 +71,9 @@ begin
   for req in
     select q.request_id as id, q.paths, r.status_code
       from public.photo_sweep_requests q
-      left join net._http_response r on r.id = q.request_id
+      -- pg_net's ids and responses are unlogged, so ids can repeat after crash recovery; a
+      -- response older than the request belongs to another request.
+      left join net._http_response r on r.id = q.request_id and r.created >= q.created_at
      where r.id is not null or q.created_at < now() - interval '10 minutes'
        for update of q skip locked
   loop
@@ -150,7 +154,7 @@ begin
            '; ' order by q.request_id)
     into details
     from public.photo_sweep_requests q
-    left join net._http_response r on r.id = q.request_id
+    left join net._http_response r on r.id = q.request_id and r.created >= q.created_at
    where (r.id is not null and coalesce(r.status_code not between 200 and 299, true))
       or (r.id is null and q.created_at < now() - interval '10 minutes');
   if details is not null then

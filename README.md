@@ -150,7 +150,7 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 | `care_items` | Preferences, where things are, instructions, emergency steps, food/allergies (with severity) | Parents |
 | `contacts` | People and places to call (including the hospital, with address) | Parents |
 | `day_notes` | "Important today": notes for one calendar date (category, title, detail); who wrote and last edited each, and when | Parents add, edit, delete; members read. Authorship and edit times are set by the database (a trigger), so "Updated" cannot be forged; a note never moves to another family space |
-| `plans`, `tasks` | The child's day (one plan per family space): ordered tasks with time, detail, location, care note, usual hours | Parents; archived tasks are frozen |
+| `plans`, `tasks` | The child's day (one plan per family space): ordered tasks with time, detail, location, care note, usual hours | Parents; clients update only a plan's `schedule` (its household and title are fixed); archived tasks are frozen |
 | `visits` | One babysitting shift per plan per date (yesterday, today, or tomorrow); start, handoff note, current end, moment time | Members start and write the note (dates in the window only); any member can `end_visit` and `reopen_visit` |
 | `task_checks` | Which tasks are done in a shift, by whom, and when (`checked_at`) | Only `complete_task` (photo required for caretakers, optional for parents), while the shift is open and in the window; members uncheck |
 | `shift_events` | Append-only shift history: ends, reopens, and unchecks of original-shift tasks after a reopen, with who, which task, and when | Nobody directly; only `end_visit`, `reopen_visit`, and the uncheck trigger write it. Members read |
@@ -327,7 +327,8 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   deletes them through the Storage API, together with removed photos whose client delete failed
   and uploads no message uses once their shift can no longer use them (its date is outside
   yesterday–tomorrow UTC) and they are over 24 hours old (`photo_orphans()` lists them; up to
-  1000 per run).
+  1000 per run). A second job (`carenest-photo-cleanup-check`, at :47) fails when Storage refused
+  a delete; refused paths back off (up to a day) so newer orphans still go.
   It needs the one-time Vault setup under "Deploying to a hosted Supabase project"; locally it
   fails every hour with `photo_cleanup_not_configured` unless you add those secrets.
 - Known limitation (same as Carekeeper): Supabase Realtime does not apply RLS to DELETE events,
@@ -423,7 +424,9 @@ shows in the check job, `carenest-photo-cleanup-check` at :47: it fails with
 `photo_cleanup_failed`, and its `return_message` has the status and response. The refused
 paths are skipped with backoff (1 to 2 hours, doubling with each failure up to a day) so newer
 orphans still go; they are listed in `public.photo_sweep_failures`. To retry them at the next
-run, `update public.photo_sweep_failures set retry_at = now();`.
+run, `update public.photo_sweep_failures set retry_at = now();`. A manual
+`select public.sweep_orphan_photos()` settles the earlier requests itself, so after one, look
+at `last_status` in `public.photo_sweep_failures` rather than at the check job.
 pg_net briefly stores the key in `net.http_request_queue`: never add the `net` schema to the
 Data API's exposed schemas.
 

@@ -324,6 +324,9 @@ test("parent can create plans, tasks, care items, and contacts", async () => {
   // Parents edit only the schedule label (title and household are fixed once created).
   const tooLong = await a.from("plans").update({ schedule: "x".repeat(101) }).eq("id", planA.id).select();
   assert.equal(tooLong.error?.code, "23514", "schedule over 100 characters is rejected");
+  // The title CHECK runs before the one-plan-per-household unique index.
+  const longTitle = await a.from("plans").insert({ household_id: householdA, title: "x".repeat(81) }).select();
+  assert.equal(longTitle.error?.code, "23514", "title over 80 characters is rejected");
   // One plan per household: a second plan (e.g. two tabs racing to create it) is refused.
   const secondPlan = await a
     .from("plans")
@@ -364,7 +367,9 @@ test("parent B cannot read or modify household A", async () => {
   assertDenied(
     await b.from("plans").insert({ household_id: householdA, title: "Intruder" }).select(),
   );
-  assertDenied(await b.from("plans").update({ title: "Hacked" }).eq("id", planA.id).select());
+  // schedule: the one column parents may update, so this reaches the "Parents can update plans" policy.
+  assertDenied(await b.from("plans").update({ schedule: "Hacked" }).eq("id", planA.id).select());
+  assert.notEqual((await admin.from("plans").select("schedule").eq("id", planA.id).single()).data.schedule, "Hacked");
   assertDenied(await b.from("plans").delete().eq("id", planA.id).select());
   assertDenied(await b.from("tasks").insert({ plan_id: planA.id, title: "Intruder" }).select());
   assertDenied(await b.from("tasks").update({ title: "Hacked" }).in("id", taskIds).select());
@@ -548,7 +553,8 @@ test("caretaker cannot change the household, schedule, care info, invites, or me
     await c.from("households").update({ child_name: "Changed" }).eq("id", householdA).select(),
   );
   assertDenied(await c.from("plans").insert({ household_id: householdA, title: "New" }).select());
-  assertDenied(await c.from("plans").update({ title: "Changed" }).eq("id", planA.id).select());
+  assertDenied(await c.from("plans").update({ schedule: "Changed" }).eq("id", planA.id).select());
+  assert.notEqual((await admin.from("plans").select("schedule").eq("id", planA.id).single()).data.schedule, "Changed");
   assertDenied(await c.from("plans").delete().eq("id", planA.id).select());
   assertDenied(await c.from("tasks").insert({ plan_id: planA.id, title: "New" }).select());
   assertDenied(await c.from("tasks").update({ title: "Changed" }).in("id", taskIds).select());
