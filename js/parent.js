@@ -846,6 +846,7 @@
       const next = viewFromHash(view);
       if (next === view) return;
       view = next;
+      document.getElementById("feed-status").hidden = true; // its message was about the other view
       render();
     });
 
