@@ -196,10 +196,6 @@ button {
     padding-bottom: calc(112px + env(safe-area-inset-bottom));
   }
 
-  .sitter-header {
-    display: none;
-  }
-
   .primary-nav {
     position: fixed;
     z-index: 50;
@@ -270,55 +266,10 @@ button {
     width: 100%;
   }
 
-  .sitter-header {
-    grid-column: 1 / -1;
-    justify-content: center;
-    text-align: center;
-  }
-
   .side-column {
     position: sticky;
     top: 24px;
   }
-}
-
-/* Sitter welcome header */
-.sitter-header {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-}
-
-.sitter-avatar {
-  width: 39px;
-  height: 39px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.sitter-meta {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.sitter-welcome {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-tight);
-  color: var(--blue);
-}
-
-.sitter-address {
-  margin: 0;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  line-height: var(--leading-snug);
-  color: var(--grey);
 }
 
 /* Next shift */
@@ -483,7 +434,12 @@ button {
 .panel-link:hover,
 .panel-link:focus-visible {
   text-decoration: underline;
-  outline: none;
+}
+
+.panel-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .card {
@@ -638,8 +594,13 @@ button {
 .check-btn:hover,
 .check-btn:focus-visible {
   opacity: 1;
-  outline: none;
   transform: scale(1.06);
+}
+
+.check-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 50%;
 }
 
 .check-icon img,
@@ -760,7 +721,11 @@ button {
 .know-tile:focus-visible {
   box-shadow: var(--shadow-hover);
   transform: translateY(-1px);
-  outline: none;
+}
+
+.know-tile:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 @media (min-width: 768px) {
@@ -791,7 +756,11 @@ button {
 .back-btn:hover,
 .back-btn:focus-visible {
   opacity: 0.85;
-  outline: none;
+}
+
+.back-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .back-btn img {
@@ -1822,6 +1791,10 @@ body.modal-open {
   border: 1px solid var(--accent);
   border-radius: var(--radius);
   background: var(--accent-soft);
+}
+
+/* Set by js/moment.js only when a moment becomes due mid-page, never on load. */
+.moment-banner.is-arriving {
   animation: moment-in 0.3s ease-out;
 }
 
@@ -1874,7 +1847,7 @@ body.modal-open {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .moment-banner {
+  .moment-banner.is-arriving {
     animation: none;
   }
 
@@ -2625,7 +2598,12 @@ body.modal-open {
 .danger-btn:focus-visible {
   background: var(--danger);
   color: #ffffff;
+}
+
+/* Filled red on focus: white inner ring separates it from the focus ring. */
+.danger-btn:focus-visible {
   outline: none;
+  box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--focus);
 }
 
 .legal-footer {
@@ -2818,7 +2796,6 @@ body.modal-open {
 }
 
 .profile-avatar.contact-initials,
-.sitter-avatar.contact-initials,
 .shift-avatar.contact-initials {
   border-radius: 50%;
   flex-shrink: 0;

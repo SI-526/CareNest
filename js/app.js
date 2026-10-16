@@ -74,7 +74,6 @@
       profileAddress.textContent = data.babysitter.address || "";
       profileAddress.hidden = !data.babysitter.address;
     }
-    renderSitterHeader(document.getElementById("sitter-header"));
     renderShift();
     renderShiftControls();
     renderSchedule(document.getElementById("schedule-list"));
@@ -604,17 +603,6 @@
           <span class="emergency-card-text">${escapeHtml(emergency.summary)}</span>
         </span>
       </a>`;
-  }
-
-  function renderSitterHeader(el) {
-    if (!el) return;
-    const sitter = data.babysitter;
-    el.innerHTML = `
-      ${avatarHtml(sitter.avatar, sitter.name, "sitter-avatar", 39)}
-      <div class="sitter-meta">
-        <p class="sitter-welcome">Welcome ${escapeHtml(sitter.name)}</p>
-        ${sitter.address ? `<p class="sitter-address">${escapeHtml(sitter.address)}</p>` : ""}
-      </div>`;
   }
 
   function renderShift() {
