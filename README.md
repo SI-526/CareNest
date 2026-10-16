@@ -417,19 +417,28 @@ select status_code, left(content, 200), error_msg from net._http_response where 
 ```
 
 After a run (each hour at :17), the job's latest run should have succeeded and, when there was
-something to delete, Storage should have answered 200 (pg_net keeps responses for 6 hours). A
-rejected key shows only in `net._http_response`; the cron run itself still says succeeded.
+something to delete, Storage should have answered 200 (pg_net keeps responses for 6 hours).
+Storage answers after the sweep has committed, so a rejected delete (a wrong or revoked key)
+shows in the check job, `carenest-photo-cleanup-check` at :47: it fails with
+`photo_cleanup_failed`, and its `return_message` has the status and response. The refused
+paths are skipped with backoff (1 to 2 hours, doubling with each failure up to a day) so newer
+orphans still go; they are listed in `public.photo_sweep_failures`. To retry them at the next
+run, `update public.photo_sweep_failures set retry_at = now();`.
 pg_net briefly stores the key in `net.http_request_queue`: never add the `net` schema to the
 Data API's exposed schemas.
 
 ```sql
-select status, return_message, start_time from cron.job_run_details
- where jobid = (select jobid from cron.job where jobname = 'carenest-photo-cleanup')
- order by start_time desc limit 3;
+select j.jobname, d.status, d.return_message, d.start_time
+  from cron.job_run_details d join cron.job j using (jobid)
+ where j.jobname in ('carenest-photo-cleanup', 'carenest-photo-cleanup-check')
+ order by d.start_time desc limit 6;
 select status_code, left(content, 200), error_msg, created from net._http_response
  order by created desc limit 3;
 ```
 
 To rotate the key, `select vault.update_secret(id, '<new key>') from vault.secrets where name =
-'carenest_photo_cleanup_key';`. To pause the job,
-`select cron.unschedule('carenest-photo-cleanup');`; to resume, `select cron.schedule('carenest-photo-cleanup', '17 * * * *', 'select public.sweep_orphan_photos()');`.
+'carenest_photo_cleanup_key';`. To pause the cleanup, pause both jobs (the check alone would fail
+once pg_net drops the last response),
+`select cron.unschedule('carenest-photo-cleanup'); select cron.unschedule('carenest-photo-cleanup-check');`;
+to resume, `select cron.schedule('carenest-photo-cleanup', '17 * * * *', 'select public.sweep_orphan_photos()');
+select cron.schedule('carenest-photo-cleanup-check', '47 * * * *', 'select public.check_photo_sweep()');`.

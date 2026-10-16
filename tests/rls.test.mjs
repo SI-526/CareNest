@@ -145,8 +145,8 @@ const tables = [
 ];
 
 // Internal tables: RLS on, and no anon or authenticated privilege at all (only SECURITY DEFINER
-// functions use them). T3a: removed_photos.
-const internalTables = ["removed_photos"];
+// functions use them). T3a: removed_photos. Issue #27: the photo sweep's bookkeeping.
+const internalTables = ["removed_photos", "photo_sweep_requests", "photo_sweep_failures"];
 
 const rpcs = [
   ["create_household", { household_name: "X", acknowledged: true }],
@@ -321,8 +321,9 @@ test("parent can create plans, tasks, care items, and contacts", async () => {
   assert.ifError(contacts.error);
   contactIds = contacts.data.map((c) => c.id);
 
-  const tooLong = await a.from("plans").update({ title: "x".repeat(81) }).eq("id", planA.id).select();
-  assert.equal(tooLong.error?.code, "23514", "title over 80 characters is rejected");
+  // Parents edit only the schedule label (title and household are fixed once created).
+  const tooLong = await a.from("plans").update({ schedule: "x".repeat(101) }).eq("id", planA.id).select();
+  assert.equal(tooLong.error?.code, "23514", "schedule over 100 characters is rejected");
   // One plan per household: a second plan (e.g. two tabs racing to create it) is refused.
   const secondPlan = await a
     .from("plans")
