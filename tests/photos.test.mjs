@@ -1261,3 +1261,67 @@ test("a photo re-attached while a parent removes it is refused; the parent can s
     assert.equal((await mom.client.storage.from(BUCKET).remove([path])).data?.length, 1, `${removal}: parent deletes it`);
   }
 });
+
+// Issue #10: remove_all_photos records every path it returns, so nothing returned can be
+// attached or uploaded to again, and delete_my_account waits until the family's folder is empty.
+test("account deletion leaves no photo behind: returned paths are dead, a late upload blocks it", async () => {
+  const { mom, sitter, hh, plan, task, visit } = await photoFamily("t10-delete");
+  const unused = await uploadOk(sitter, hh, visit.id);
+  // A photo left behind by a deleted shift is returned (and deletable) too.
+  const gone = (await sitter.client.from("visits").insert({ plan_id: plan.id, visit_date: isoDate(-1) }).select().single()).data;
+  const orphan = await uploadOk(sitter, hh, gone.id);
+  assert.ifError((await admin.from("visits").delete().eq("id", gone.id)).error);
+
+  const bulk = await mom.client.rpc("remove_all_photos");
+  assert.ifError(bulk.error);
+  assert.deepEqual([...bulk.data].sort(), [unused, orphan].sort(), "only this family's folder");
+  assertRpcError(await complete(sitter, visit.id, task.id, unused), "photo_removed");
+  const erased = await mom.client.storage.from(BUCKET).remove(bulk.data);
+  assert.ifError(erased.error);
+  assert.equal(erased.data.length, 2, "the parent deletes every returned object, the orphan included");
+  assert.ok((await upload(sitter, unused)).error, "a returned path cannot be uploaded to again");
+
+  // The sitter uploads before the account goes: deletion is refused, and the retry clears it.
+  const late = await uploadOk(sitter, hh, visit.id);
+  assertRpcError(await mom.client.rpc("delete_my_account"), "photos_remaining");
+  const again = await mom.client.rpc("remove_all_photos");
+  assert.deepEqual(again.data, [late]);
+  assert.ifError((await mom.client.storage.from(BUCKET).remove(again.data)).error);
+  assert.ifError((await mom.client.rpc("delete_my_account")).error);
+  const { count } = await admin.from("households").select("*", { count: "exact", head: true }).eq("id", hh);
+  assert.equal(count, 0);
+  const { data: left } = await admin.storage.from(BUCKET).list(`${hh}/${visit.id}`);
+  assert.deepEqual(left ?? [], [], "no photos remain");
+});
+
+test("an outsider cannot tell whether a message has a photo", async () => {
+  const { mom, sitter, hh, task, visit } = await photoFamily("t10-probe");
+  const path = await uploadOk(sitter, hh, visit.id);
+  const proof = await complete(sitter, visit.id, task.id, path);
+  assert.ifError(proof.error);
+  const probe = async (messageId) => {
+    const results = [
+      await outsider.client.from("photo_saves").insert({ message_id: messageId }),
+      await outsider.client.from("concept_flags").insert({ message_id: messageId, text: "x" }),
+    ];
+    return results.map((r) => r.error?.code);
+  };
+  const withPhoto = await probe(proof.data);
+  assert.ifError((await mom.client.rpc("remove_photo", { target_message_id: proof.data })).error);
+  const removed = await probe(proof.data);
+  const missing = await probe(randomUUID());
+  assert.deepEqual(withPhoto, ["42501", "42501"], "refused by RLS");
+  assert.deepEqual(removed, withPhoto, "a removed photo looks the same");
+  assert.deepEqual(missing, withPhoto, "a missing message looks the same");
+});
+
+test("members download photos but cannot mint signed URLs", async () => {
+  const { mom, sitter, hh, visit } = await photoFamily("t10-sign");
+  const path = await uploadOk(sitter, hh, visit.id);
+  for (const user of [mom, sitter]) {
+    assert.ifError((await user.client.storage.from(BUCKET).download(path)).error, "download works");
+    assert.ok((await user.client.storage.from(BUCKET).createSignedUrl(path, 60)).error, "no signed URL");
+    const many = await user.client.storage.from(BUCKET).createSignedUrls([path], 60);
+    assert.ok(many.error || many.data.every((d) => !d.signedUrl), "no signed URLs in bulk");
+  }
+});
