@@ -29,7 +29,7 @@ test("localhost uses 55321 until a port is given, then remembers it", () => {
 
 test("invalid ports are ignored", () => {
   const store = new Map();
-  for (const bad of ["80", "70000", "evil.com", "5532a", "@evil.com"]) {
+  for (const bad of ["80", "70000", "evil.com", "5532a", "@evil.com", "57522", "59421", "055321"]) {
     assert.equal(load("localhost", `?supabasePort=${bad}`, store), "http://127.0.0.1:55321");
   }
 });

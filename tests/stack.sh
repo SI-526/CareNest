@@ -5,7 +5,7 @@
 #   ./stack.sh supabase start --workdir ..
 #
 # The main checkout uses supabase/config.toml as written (project "carenest", ports 553xx).
-# A linked git worktree gets its own stack: project "carenest-<worktree dir>" (its own Docker
+# A linked git worktree gets its own stack: project "carenest-<worktree dir>-<slot>" (its own Docker
 # containers and volumes, so `db reset` here never touches another checkout's data) and every
 # port shifted by SLOT*100. SLOT comes from the worktree name; set CARENEST_STACK_SLOT (0-40) to
 # pick one by hand, e.g. when two worktree names land on the same slot and `start` reports a
@@ -22,15 +22,18 @@ elif [ "$(git rev-parse --path-format=absolute --git-dir)" != "$(git rev-parse -
 else
   slot=0
 fi
-[[ $slot =~ ^[0-9]+$ ]] && [ "$slot" -le 40 ] || { echo "CARENEST_STACK_SLOT must be 0-40" >&2; exit 1; }
+# Exact match, no leading zeros: "09" would break $(( )) and fall through to the default stack.
+[[ $slot =~ ^([0-9]|[1-3][0-9]|40)$ ]] || { echo "CARENEST_STACK_SLOT must be 0-40" >&2; exit 1; }
 
 if [ "$slot" -gt 0 ]; then
   off=$(( slot * 100 ))
-  export SUPABASE_PROJECT_ID
-  SUPABASE_PROJECT_ID=$(basename "$top" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-')
-  [[ $SUPABASE_PROJECT_ID == carenest* ]] || SUPABASE_PROJECT_ID="carenest-$SUPABASE_PROJECT_ID"
-  # A slot set by hand in the main checkout must not reuse the default stack's volumes.
-  [ "$SUPABASE_PROJECT_ID" != carenest ] || SUPABASE_PROJECT_ID="carenest-$slot"
+  # The slot is part of the name, so a command run without the slot a stack was started with
+  # finds no running stack and fails, instead of reaching whichever stack owns those ports.
+  # The CLI cuts project ids at 40 characters, hence the 26-character folder part.
+  name=$(basename "$top" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-')
+  name=${name#carenest}
+  name=${name#-}
+  export SUPABASE_PROJECT_ID="carenest${name:+-${name:0:26}}-$slot"
   export SUPABASE_API_PORT=$(( 55321 + off ))
   export SUPABASE_DB_PORT=$(( 55322 + off ))
   export SUPABASE_DB_SHADOW_PORT=$(( 55320 + off ))

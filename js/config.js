@@ -37,7 +37,8 @@
   // pick a port on 127.0.0.1, so the hosted config cannot be redirected.
   function localApiPort() {
     const key = "carenest.localSupabasePort";
-    const valid = (p) => /^\d{4,5}$/.test(p) && +p >= 1024 && +p <= 65535;
+    // Only a stack API port: 55321 plus a whole slot (tests/stack.sh), slots 0-40.
+    const valid = (p) => /^\d{5}$/.test(p) && +p >= 55321 && +p <= 59321 && (p - 55321) % 100 === 0;
     try {
       const param = new URLSearchParams(window.location.search).get("supabasePort");
       if (param === "") localStorage.removeItem(key);
