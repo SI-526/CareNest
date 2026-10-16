@@ -609,7 +609,30 @@
         entry.refs.replyBtn.focus();
       } catch (err) {
         setStatus(entry, shift.errorMessage(err), true);
+        if (err.retry) offerRetry(entry, err.retry);
       }
+    }
+
+    // The photo is gone for everyone but its stored file isn't: "Try again" deletes only the file.
+    function offerRetry(entry, retry) {
+      const button = Object.assign(document.createElement("button"), {
+        type: "button",
+        className: "text-btn",
+        textContent: "Try again",
+      });
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          await retry();
+          setStatus(entry, `${entry.item.title} photo removed.`);
+          entry.refs.replyBtn.focus();
+        } catch (err) {
+          setStatus(entry, shift.errorMessage(err), true);
+          if (err.retry) offerRetry(entry, err.retry);
+        }
+      });
+      entry.refs.status.append(" ", button);
+      button.focus();
     }
 
     // ---------- live alerts (in-app only; no push) ----------

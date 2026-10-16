@@ -342,6 +342,24 @@
       .catch((err) => {
         button.disabled = false;
         setStatus(backend.errorMessage(err));
+        if (err.retry) offerRetry(err.retry);
       });
+  }
+
+  // The photo is gone for everyone but its stored file isn't: "Try again" deletes only the file.
+  function offerRetry(retry) {
+    const again = el("button", "text-btn", "Try again");
+    again.type = "button";
+    again.addEventListener("click", () => {
+      again.disabled = true;
+      retry()
+        .then(() => setStatus("Photo removed."))
+        .catch((err) => {
+          setStatus(backend.errorMessage(err));
+          if (err.retry) offerRetry(err.retry);
+        });
+    });
+    status.append(" ", again);
+    again.focus();
   }
 })();
