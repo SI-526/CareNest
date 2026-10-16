@@ -1290,8 +1290,9 @@ test("account deletion leaves no photo behind: returned paths are dead, a late u
   assert.ifError((await mom.client.rpc("delete_my_account")).error);
   const { count } = await admin.from("households").select("*", { count: "exact", head: true }).eq("id", hh);
   assert.equal(count, 0);
-  const { data: left } = await admin.storage.from(BUCKET).list(`${hh}/${visit.id}`);
-  assert.deepEqual(left ?? [], [], "no photos remain");
+  const [left] = localSql(`select count(*)::int as n from storage.objects
+                            where bucket_id = 'photos' and name like '${uuid(hh)}/%'`);
+  assert.equal(left.n, 0, "no photos remain anywhere in the family's folder");
 });
 
 test("an outsider cannot tell whether a message has a photo", async () => {
@@ -1315,7 +1316,7 @@ test("an outsider cannot tell whether a message has a photo", async () => {
   assert.deepEqual(missing, withPhoto, "a missing message looks the same");
 });
 
-test("members download photos but cannot mint signed URLs", async () => {
+test("members download photos but cannot mint signed download or upload URLs", async () => {
   const { mom, sitter, hh, visit } = await photoFamily("t10-sign");
   const path = await uploadOk(sitter, hh, visit.id);
   for (const user of [mom, sitter]) {
@@ -1323,5 +1324,8 @@ test("members download photos but cannot mint signed URLs", async () => {
     assert.ok((await user.client.storage.from(BUCKET).createSignedUrl(path, 60)).error, "no signed URL");
     const many = await user.client.storage.from(BUCKET).createSignedUrls([path], 60);
     assert.ok(many.error || many.data.every((d) => !d.signedUrl), "no signed URLs in bulk");
+    const signedUpload = await user.client.storage.from(BUCKET).createSignedUploadUrl(photoPath(hh, visit.id));
+    assert.ok(signedUpload.error, "no signed upload URL (its upload would skip RLS)");
   }
+  assert.ifError((await upload(sitter, photoPath(hh, visit.id))).error, "a normal upload still works");
 });

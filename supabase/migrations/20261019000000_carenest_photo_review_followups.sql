@@ -4,17 +4,18 @@
 --    messages used. A sitter can no longer attach a returned unused photo, or upload to its
 --    path, between the photo removal and delete_my_account(). It also returns photos left
 --    behind by deleted shifts, so the parent can delete them too.
--- 2. remove_all_photos() reads only the sole households' folders (o.name like '<household>/%'),
---    not the whole bucket.
+-- 2. remove_all_photos() reads only the sole households' folders (an index range on
+--    '<household>/'), not the whole bucket.
 -- 3. delete_my_account() refuses with photos_remaining while any photo is still in Storage under
 --    a household it would delete (a sitter uploaded one after remove_all_photos(), or the client
 --    skipped the Storage step). The app's retry repeats both steps, so that photo goes too.
 -- 4. require_message_photo() first checks that the caller is a member of the message's
---    household. An outsider now gets the RLS refusal whether or not a message has a photo, and
---    never waits on the message's row lock.
--- 5. can_read_photo() refuses signed URLs (storage.object.sign / sign_many). The app only uses
---    authenticated downloads, so no member can mint a link that outlives a photo's removal or
---    their membership.
+--    household, and refuses a non-member with RLS's own error. An outsider gets the same refusal
+--    whether or not a message has a photo, and never waits on the message's row lock.
+-- 5. can_read_photo() refuses signed URLs (storage.object.sign / sign_many), and
+--    can_upload_photo() refuses signed upload URLs (storage.object.sign_upload_url; the upload
+--    through such a token skips RLS). The app only uses authenticated downloads and uploads, so
+--    no member can mint a link that outlives a photo's removal or their membership.
 -- Each function is its latest body plus the change. create or replace keeps security definer,
 -- the search_path, grants, triggers and the storage policies that call them.
 
@@ -67,10 +68,12 @@ begin
    using public.messages m
    where m.id = f.message_id and m.household_id = any (sole_households);
 
-  -- Every object in those households' folders, including ones of deleted shifts.
+  -- Every object in those households' folders, including ones of deleted shifts. A byte range
+  -- ('<id>/' up to '<id>0', '0' follows '/') so each household is an index range scan.
   select coalesce(array_agg(o.name order by o.name), '{}') into result
     from storage.objects o
-    join unnest(sole_households) as h (id) on o.name like h.id::text || '/%'
+    join unnest(sole_households) as h (id)
+      on o.name collate "C" >= h.id::text || '/' and o.name collate "C" < h.id::text || '0'
    where o.bucket_id = 'photos';
 
   -- Recorded as removed: never attached or uploaded to again, and deletable by the parent
@@ -105,7 +108,8 @@ begin
        select 1
          from public.households h
          join storage.objects o
-           on o.bucket_id = 'photos' and o.name like h.id::text || '/%'
+           on o.bucket_id = 'photos'
+          and o.name collate "C" >= h.id::text || '/' and o.name collate "C" < h.id::text || '0'
         where exists (
                 select 1 from public.household_members m
                 where m.household_id = h.id and m.user_id = caller and m.role = 'parent'
@@ -143,12 +147,13 @@ as $$
 declare
   current_path text;
 begin
-  -- Not a member: leave the refusal to RLS, so a known message id reveals nothing.
+  -- Not a member: RLS's own refusal, so a known message id reveals nothing.
   if not exists (
        select 1 from public.messages m
         where m.id = new.message_id and public.is_member(m.household_id)
      ) then
-    return new;
+    raise exception 'new row violates row-level security policy for table "%"', tg_table_name
+      using errcode = '42501';
   end if;
   select m.photo_path into current_path
     from public.messages m
@@ -177,4 +182,55 @@ as $$
      where public.is_member(p.household_id)
        and not exists (select 1 from public.removed_photos r where r.path = object_name)
   );
+$$;
+
+create or replace function public.can_upload_photo(object_name text)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  target_household_id uuid;
+  target_visit_id uuid;
+  target_plan_id uuid;
+  photo_cap int;
+  photo_count int;
+begin
+  -- A signed upload URL is checked only when it is signed; the upload through it skips RLS.
+  if coalesce(storage.operation(), '') = 'storage.object.sign_upload_url' then
+    return false;
+  end if;
+  select p.household_id, v.id, v.plan_id
+    into target_household_id, target_visit_id, target_plan_id
+    from public.photo_path_parts(object_name) parts
+    join public.visits v on v.id = parts.visit_id
+    join public.plans p on p.id = v.plan_id and p.household_id = parts.household_id
+   where v.ended_at is null
+     and v.visit_date between (now() at time zone 'utc')::date - 1
+                          and (now() at time zone 'utc')::date + 1
+     and public.is_member(p.household_id);
+  if not found then
+    return false;
+  end if;
+  if exists (select 1 from public.messages m where m.photo_path = object_name)
+     or exists (select 1 from public.removed_photos r where r.path = object_name) then
+    return false;
+  end if;
+
+  -- + 20: room for stamp_message()'s photo-message cap; change both together.
+  select 2 * count(*) + 10 + 20 into photo_cap
+    from public.tasks t
+   where t.plan_id = target_plan_id and t.archived_at is null;
+  select count(*) into photo_count
+    from storage.objects o
+   where o.bucket_id = 'photos'
+     and o.name like target_household_id::text || '/' || target_visit_id::text || '/%';
+  if photo_count >= photo_cap then
+    -- 42501 so storage-api passes the message through (403) instead of a generic database error.
+    raise exception 'photo_limit_reached' using errcode = '42501';
+  end if;
+  return true;
+end;
 $$;
