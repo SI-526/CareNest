@@ -16,7 +16,7 @@ cd "$(dirname "$0")"
 top=$(git rev-parse --show-toplevel)
 if [ -n "${CARENEST_STACK_SLOT:-}" ]; then
   slot=$CARENEST_STACK_SLOT
-elif [ "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" ]; then
+elif [ "$(git rev-parse --path-format=absolute --git-dir)" != "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
   # ponytail: 40 slots from a name hash; a clash fails loudly on `start`, never shares data.
   slot=$(( $(basename "$top" | cksum | cut -d' ' -f1) % 40 + 1 ))
 else
@@ -29,6 +29,8 @@ if [ "$slot" -gt 0 ]; then
   export SUPABASE_PROJECT_ID
   SUPABASE_PROJECT_ID=$(basename "$top" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-')
   [[ $SUPABASE_PROJECT_ID == carenest* ]] || SUPABASE_PROJECT_ID="carenest-$SUPABASE_PROJECT_ID"
+  # A slot set by hand in the main checkout must not reuse the default stack's volumes.
+  [ "$SUPABASE_PROJECT_ID" != carenest ] || SUPABASE_PROJECT_ID="carenest-$slot"
   export SUPABASE_API_PORT=$(( 55321 + off ))
   export SUPABASE_DB_PORT=$(( 55322 + off ))
   export SUPABASE_DB_SHADOW_PORT=$(( 55320 + off ))
