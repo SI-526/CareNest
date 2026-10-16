@@ -23,7 +23,7 @@ else
   slot=0
 fi
 # Exact match, no leading zeros: "09" would break $(( )) and fall through to the default stack.
-[[ $slot =~ ^([0-9]|[1-3][0-9]|40)$ ]] || { echo "CARENEST_STACK_SLOT must be 0-40" >&2; exit 1; }
+[[ $slot =~ ^([0-9]|[1-3][0-9]|40)$ ]] || { echo "CARENEST_STACK_SLOT must be 1-40 (0 = the main checkout's shared stack)" >&2; exit 1; }
 
 if [ "$slot" -gt 0 ]; then
   off=$(( slot * 100 ))

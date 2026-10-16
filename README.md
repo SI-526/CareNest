@@ -111,7 +111,10 @@ shifted by `slot × 100`, where the slot (1-40) is derived from the folder name,
 data. `npm run db:env` prints the slot and ports. If two worktrees land on the same slot,
 `db:start` fails with "port is already allocated"; pick a free one with
 `CARENEST_STACK_SLOT=<n> npm run db:start` and use the same variable for that worktree's other
-commands (without it they find no running stack and fail). Stop stacks you are done with (`npm run db:stop`); each one holds a few GB of Docker
+commands (without it they find no running stack and fail). `CARENEST_STACK_SLOT=0` means the main
+checkout's shared stack. A stack started before this script existed (or under a hand-picked
+`project_id`) is not stopped by `db:stop`; stop it once by name with
+`npx supabase stop --project-id <old id>` if it holds the ports. Stop stacks you are done with (`npm run db:stop`); each one holds a few GB of Docker
 memory. When Docker is short on memory and `db:start` times out on health checks, start only what
 the tests need: `npm run db:start -- -x studio,logflare,vector,edge-runtime,imgproxy,postgres-meta`.
 
