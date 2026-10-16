@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Runs a command against this checkout's own local Supabase stack.
+#
+#   ./stack.sh                         # print this checkout's stack name and ports
+#   ./stack.sh supabase start --workdir ..
+#
+# The main checkout uses supabase/config.toml as written (project "carenest", ports 553xx).
+# A linked git worktree gets its own stack: project "carenest-<worktree dir>-<slot>" (its own Docker
+# containers and volumes, so `db reset` here never touches another checkout's data) and every
+# port shifted by SLOT*100. SLOT comes from the worktree name; set CARENEST_STACK_SLOT (0-40) to
+# pick one by hand, e.g. when two worktree names land on the same slot and `start` reports a
+# port already in use. The Supabase CLI reads SUPABASE_<SECTION>_<KEY> env vars over config.toml.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+top=$(git rev-parse --show-toplevel)
+if [ -n "${CARENEST_STACK_SLOT:-}" ]; then
+  slot=$CARENEST_STACK_SLOT
+elif [ "$(git rev-parse --path-format=absolute --git-dir)" != "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
+  # ponytail: 40 slots from a name hash; a clash fails loudly on `start`, never shares data.
+  slot=$(( $(basename "$top" | cksum | cut -d' ' -f1) % 40 + 1 ))
+else
+  slot=0
+fi
+# Exact match, no leading zeros: "09" would break $(( )) and fall through to the default stack.
+[[ $slot =~ ^([0-9]|[1-3][0-9]|40)$ ]] || { echo "CARENEST_STACK_SLOT must be 1-40 (0 = the main checkout's shared stack)" >&2; exit 1; }
+
+if [ "$slot" -gt 0 ]; then
+  off=$(( slot * 100 ))
+  # The slot is part of the name, so a command run without the slot a stack was started with
+  # finds no running stack and fails, instead of reaching whichever stack owns those ports.
+  # The CLI cuts project ids at 40 characters, hence the 26-character folder part.
+  name=$(basename "$top" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-')
+  name=${name#carenest}
+  name=${name#-}
+  export SUPABASE_PROJECT_ID="carenest${name:+-${name:0:26}}-$slot"
+  export SUPABASE_API_PORT=$(( 55321 + off ))
+  export SUPABASE_DB_PORT=$(( 55322 + off ))
+  export SUPABASE_DB_SHADOW_PORT=$(( 55320 + off ))
+  export SUPABASE_DB_POOLER_PORT=$(( 55329 + off ))
+  export SUPABASE_STUDIO_PORT=$(( 55323 + off ))
+  export SUPABASE_LOCAL_SMTP_PORT=$(( 55324 + off ))
+  export SUPABASE_ANALYTICS_PORT=$(( 55327 + off ))
+  export SUPABASE_EDGE_RUNTIME_INSPECTOR_PORT=$(( 58083 + off ))
+fi
+
+if [ $# -eq 0 ]; then
+  api=${SUPABASE_API_PORT:-55321}
+  echo "Stack: ${SUPABASE_PROJECT_ID:-carenest} (slot $slot)"
+  echo "API $api, Postgres ${SUPABASE_DB_PORT:-55322}, Studio ${SUPABASE_STUDIO_PORT:-55323}, Mailpit ${SUPABASE_LOCAL_SMTP_PORT:-55324}"
+  if [ "$slot" -gt 0 ]; then
+    echo "Site: serve this checkout on its own port and open it once with ?supabasePort=$api"
+  fi
+  exit 0
+fi
+exec "$@"

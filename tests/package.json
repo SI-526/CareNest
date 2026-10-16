@@ -4,12 +4,13 @@
   "type": "module",
   "description": "Local-only Supabase tooling and authorization tests for CareNest. Kept out of the repo root so Vercel keeps serving the site as static files.",
   "scripts": {
-    "db:start": "supabase start --workdir ..",
-    "db:reset": "supabase db reset --workdir ..",
-    "db:lint": "supabase db lint --workdir .. --level warning",
-    "db:stop": "supabase stop --workdir ..",
-    "test:rls": "node --test --test-concurrency=1 rls.test.mjs photos.test.mjs care-logs.test.mjs",
-    "test:unit": "node --test care-log-age.test.mjs"
+    "db:env": "./stack.sh",
+    "db:start": "./stack.sh supabase start --workdir ..",
+    "db:reset": "./stack.sh supabase db reset --workdir ..",
+    "db:lint": "./stack.sh supabase db lint --workdir .. --level warning",
+    "db:stop": "./stack.sh supabase stop --workdir ..",
+    "test:rls": "./stack.sh node --test --test-concurrency=1 rls.test.mjs photos.test.mjs care-logs.test.mjs",
+    "test:unit": "node --test care-log-age.test.mjs config.test.mjs"
   },
   "devDependencies": {
     "@supabase/supabase-js": "2.117.2",

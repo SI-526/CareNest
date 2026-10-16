@@ -14,13 +14,22 @@ import { after, before, test } from "node:test";
 import { createClient } from "@supabase/supabase-js";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
-const status = JSON.parse(
-  execFileSync("npx", ["supabase", "status", "-o", "json", "--workdir", repoRoot], {
-    cwd: fileURLToPath(new URL(".", import.meta.url)),
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-  }),
-);
+const status = JSON.parse(supabaseStatus());
+
+// `supabase status` exits non-zero when services were left out with `db:start -- -x ...`, but
+// still prints the JSON; take it when there is any, and fail as before when there is none.
+function supabaseStatus() {
+  try {
+    return execFileSync("npx", ["supabase", "status", "-o", "json", "--workdir", repoRoot], {
+      cwd: fileURLToPath(new URL(".", import.meta.url)),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch (err) {
+    if (err.stdout?.trim().startsWith("{")) return err.stdout;
+    throw err;
+  }
+}
 const apiUrl = status.API_URL;
 const publicKey = status.PUBLISHABLE_KEY ?? status.ANON_KEY;
 const serviceKey = status.SECRET_KEY ?? status.SERVICE_ROLE_KEY;

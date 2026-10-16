@@ -94,12 +94,35 @@ npm install          # pinned Supabase CLI + supabase-js
 npm run db:start     # local stack; ports are 553xx so it never collides with Carekeeper's 543xx
 npm run db:reset     # applies migrations, then supabase/seed.sql
 npm run test:rls     # authorization tests (refuse to run against a non-local URL)
-npm run test:unit    # care-log age parser and validation (no database needed)
+npm run test:unit    # care-log age parser, config port override (no database needed)
 npm run db:lint      # supabase db lint
 npm run db:stop
+npm run db:env       # which stack this checkout uses, and its ports
 ```
 
 Local ports: API `55321`, Postgres `55322`, Studio `55323`, Mailpit `55324`.
+
+### Parallel worktrees
+
+Every `npm run db:*` and `test:rls` goes through `tests/stack.sh`. In the main checkout it changes
+nothing. In a linked git worktree (`git worktree add ../CareNest-x`) it runs a separate stack:
+project `carenest-<worktree folder>-<slot>` with its own containers and volumes, and every port
+shifted by `slot × 100`, where the slot (1-40) is derived from the folder name, so one session's `db reset` cannot wipe another's
+data. `npm run db:env` prints the slot and ports. If two worktrees land on the same slot,
+`db:start` fails with "port is already allocated"; pick a free one with
+`CARENEST_STACK_SLOT=<n> npm run db:start` and use the same variable for that worktree's other
+commands (without it they find no running stack and fail). `CARENEST_STACK_SLOT=0` means the main
+checkout's shared stack. A stack started before this script existed (or under a hand-picked
+`project_id`) is not stopped by `db:stop`; stop it once by name with
+`npx supabase stop --project-id <old id>` if it holds the ports. Stop stacks you are done with (`npm run db:stop`); each one holds a few GB of Docker
+memory. When Docker is short on memory and `db:start` times out on health checks, start only what
+the tests need: `npm run db:start -- -x studio,logflare,vector,edge-runtime,imgproxy,postgres-meta`.
+
+To point the site at a worktree's stack, serve that checkout on its own port and open it once
+with `?supabasePort=<API port>` (for example `http://localhost:8001/?supabasePort=57521`). The
+page remembers it for that origin; `?supabasePort=` (empty) goes back to `55321`. The override
+works only on localhost, only changes the port on `127.0.0.1`, and only accepts stack API ports
+(`55321` plus a multiple of 100, up to `59321`).
 
 ### Demo family (local only)
 
@@ -311,3 +334,32 @@ The migration does not depend on dashboard toggles, but two settings must match 
   create a self-confirmed account under an invitee's address and accept their invite.
 - **"Automatically expose new tables" OFF** (Data API settings), matching the migration's revoked
   default privileges, so a table added later is not exposed until a migration grants it.
+
+Schema changes reach the hosted project (`carenest`, ref `ibwshlbhszznfhmeckda`) only through
+`supabase db push`, which records each version in `supabase_migrations.schema_migrations`, so
+the project's history shows exactly which migrations it has. Never apply a migration by pasting
+SQL or with `supabase db query`: that skips the history, and the next `db push` would try to run
+it again. From `tests/`, with the pinned CLI installed (`npm ci`) and logged in
+(`npx supabase login`):
+
+```bash
+npm ci
+npx supabase db push --workdir .. --project-ref ibwshlbhszznfhmeckda --dry-run
+npx supabase db push --workdir .. --project-ref ibwshlbhszznfhmeckda
+```
+
+- Run the dry run first: it must list exactly the new migration files, in version order. If it
+  lists a migration the project already has, stop and compare the hosted schema with that file
+  before repairing the history
+  (`npx supabase migration repair --workdir .. --project-ref ibwshlbhszznfhmeckda --status applied <version>`).
+- Deploy migrations before merging the frontend change that needs them: once the PR is
+  approved, rebase it on `main`, push, and merge right away. Vercel deploys `main` on merge, so the new pages must
+  never reach a database without their tables and functions (and the live site must keep
+  working against the migrated database until the merge lands).
+- A pushed migration is frozen: never edit its file (the history only records the version, so
+  `db push` would report up to date while production differs). Fix it with a new migration.
+- Never use `db push --include-all` or `migration repair --status reverted` here. If the dry run
+  says a remote version is missing locally, rebase on `main`; if a new migration's version is
+  older than one already pushed, rename it to a newer timestamp so it runs in order.
+- Migrations up to `20261017000000` were applied as SQL before the history existed and were
+  marked applied with `migration repair` after their hosted schema was compared with the repo.
