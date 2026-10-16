@@ -370,6 +370,10 @@
         </div>`;
       document.body.appendChild(accountDialog);
       accountDialog.addEventListener("close", () => opener.focus());
+      // Esc can't close it while the account is being deleted (its delete button is disabled).
+      accountDialog.addEventListener("cancel", (e) => {
+        if (accountDialog.querySelector("[data-delete-account]").disabled) e.preventDefault();
+      });
       accountDialog.querySelector("[data-sign-out]").addEventListener("click", async (e) => {
         const button = e.currentTarget;
         const errorEl = accountDialog.querySelector("[data-account-error]");
@@ -437,42 +441,88 @@
     });
     if (!ok) return;
     const errorEl = accountDialog && accountDialog.querySelector("[data-account-error]");
-    endingSession = true;
-    // A sole parent's family space goes with the account, but Storage objects are not removed by
-    // database cascades: remove_all_photos() detaches every photo of those households (messages
-    // read "Photo removed by ...") and returns every object path, which are deleted through the
-    // Storage API before the account. Any failure stops here with the account kept, and a retry
-    // repeats both steps. For a caretaker, or a parent with a co-parent, the list is empty.
-    let error = null;
-    if (ctx.role === "parent") {
-      const removed = await client.rpc("remove_all_photos");
-      error = removed.error;
-      const paths = (!error && removed.data) || [];
-      for (let i = 0; !error && i < paths.length; i += 100) {
-        ({ error } = await client.storage.from("photos").remove(paths.slice(i, i + 100)));
-      }
+    const button = accountDialog && accountDialog.querySelector("[data-delete-account]");
+    const label = button ? button.textContent : "";
+    // Sign out and Close wait too: closing would hide an error the deletion ends with.
+    const others = accountDialog ? accountDialog.querySelectorAll("[data-sign-out], form[method=dialog] button") : [];
+    others.forEach((control) => (control.disabled = true));
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Deleting…";
     }
-    if (!error) ({ error } = await client.rpc("delete_my_account"));
-    if (error) {
-      endingSession = false;
+    if (errorEl) errorEl.hidden = true;
+    endingSession = true;
+    let deleted = false;
+    try {
+      // A sole parent's family space goes with the account, but Storage objects are not removed
+      // by database cascades: remove_all_photos() detaches every photo of those households
+      // (messages read "Photo removed by ...") and returns every object path, which are deleted
+      // through the Storage API before the account. Any failure stops here with the account
+      // kept, and a retry repeats both steps. For a caretaker, or a parent with a co-parent, the
+      // list is empty.
+      let error = ctx.role === "parent" ? await removeAllPhotos() : null;
+      if (!error) ({ error } = await client.rpc("delete_my_account"));
+      if (error) {
+        if (errorEl) {
+          errorEl.textContent = typeof error === "string" ? error : friendlyError(error);
+          errorEl.hidden = false;
+        }
+        return;
+      }
+      deleted = true;
+      storeKey = null;
+      // This browser's own copies (every carenest:* key: photos, messages, demo data) go too.
+      try {
+        Object.keys(localStorage)
+          .filter((key) => key.startsWith("carenest:"))
+          .forEach((key) => localStorage.removeItem(key));
+      } catch (e) {
+        /* storage unavailable: nothing to clear */
+      }
+      // The account no longer exists, so only the local session needs clearing.
+      await client.auth.signOut({ scope: "local" }).catch(() => {});
+      window.location.replace("signin.html?deleted=1");
+    } catch (e) {
+      // A thrown network error (not an { error } result): the account is kept, say so.
       if (errorEl) {
-        errorEl.textContent = friendlyError(error);
+        errorEl.textContent = friendlyError(e);
         errorEl.hidden = false;
       }
-      return;
+    } finally {
+      if (!deleted) {
+        endingSession = false;
+        others.forEach((control) => (control.disabled = false));
+        if (button) {
+          button.disabled = false;
+          button.textContent = label;
+        }
+      }
     }
-    storeKey = null;
-    // This browser's own copies (every carenest:* key: photos, messages, demo data) go too.
-    try {
-      Object.keys(localStorage)
-        .filter((key) => key.startsWith("carenest:"))
-        .forEach((key) => localStorage.removeItem(key));
-    } catch (e) {
-      /* storage unavailable: nothing to clear */
+  }
+
+  // Deletes every photo file of the family space before the account goes. Each
+  // remove_all_photos() call detaches photos sent since the last one and returns every path
+  // still in the family's folder, so rounds repeat until it returns none. remove() returns the
+  // objects it actually deleted, so a file it skipped comes back in the next round: a path seen
+  // twice is a file that can't be deleted, and stops here. Only new paths (someone still sending
+  // photos) get more rounds. ponytail: 5 rounds converge unless someone keeps sending photos.
+  // Resolves null when done, else an { error } object or the message to show.
+  async function removeAllPhotos() {
+    let requested = new Set();
+    for (let round = 0; ; round += 1) {
+      const { data: paths, error } = await client.rpc("remove_all_photos");
+      if (error) return error;
+      if (!paths || !paths.length) return null;
+      if (paths.some((path) => requested.has(path))) {
+        return "Some photos couldn't be deleted, so your account was kept. Please try again later.";
+      }
+      if (round === 5) return "Photos were still being shared while we deleted them. Please try again in a moment.";
+      requested = new Set(paths);
+      for (let i = 0; i < paths.length; i += 100) {
+        const { error: removeError } = await client.storage.from("photos").remove(paths.slice(i, i + 100));
+        if (removeError) return removeError;
+      }
     }
-    // The account no longer exists, so only the local session needs clearing.
-    await client.auth.signOut({ scope: "local" });
-    window.location.replace("signin.html?deleted=1");
   }
 
   // A native <dialog> confirmation. Resolves true when confirmed.
