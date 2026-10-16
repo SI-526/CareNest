@@ -54,32 +54,25 @@
         } else initMessages();
       });
     } else if (page === "food") {
-      initFood();
+      renderFood();
+      onFamilyChange(renderFood);
     } else if (page === "info") {
-      initInfo();
+      renderInfo();
+      onFamilyChange(renderInfo);
     }
   });
 
+  // Issue #11: re-render when a parent's edits arrive (js/family-data.js; never in demo mode).
+  // Only renderers go here: the init* wiring adds listeners and must run once.
+  function onFamilyChange(fn) {
+    const family = window.CareNestFamily;
+    if (family && family.subscribe) family.subscribe(fn);
+  }
+
   function initHome() {
     initNavigation();
-    const profileHeading = document.getElementById("profile-heading");
-    if (profileHeading) profileHeading.textContent = `Welcome ${data.babysitter.name}`;
-    // The profile card's static markup is the sample sitter; replace it with real data.
-    const profileAvatar = document.querySelector(".profile-avatar");
-    if (profileAvatar) {
-      profileAvatar.outerHTML = avatarHtml(data.babysitter.avatar, data.babysitter.name, "profile-avatar", 56);
-    }
-    const profileAddress = document.querySelector(".profile-address");
-    if (profileAddress) {
-      profileAddress.textContent = data.babysitter.address || "";
-      profileAddress.hidden = !data.babysitter.address;
-    }
-    renderShift();
+    renderHomeFamily();
     renderShiftControls();
-    renderSchedule(document.getElementById("schedule-list"));
-    renderCareLog();
-    renderEmergencyEntry(document.getElementById("emergency-entry"));
-    renderContacts(document.getElementById("contacts-list"));
     renderKnowTiles(document.getElementById("know-grid"));
     initModal();
     initCompleteModal();
@@ -94,6 +87,28 @@
       renderCareLog();
       applyShiftLockToCompleteModal();
     });
+    onFamilyChange(renderHomeFamily);
+  }
+
+  // Everything on the home page drawn from the family's data (sitter, child, schedule, contacts).
+  function renderHomeFamily() {
+    const profileHeading = document.getElementById("profile-heading");
+    if (profileHeading) profileHeading.textContent = `Welcome ${data.babysitter.name}`;
+    // The profile card's static markup is the sample sitter; replace it with real data.
+    const profileAvatar = document.querySelector(".profile-avatar");
+    if (profileAvatar) {
+      profileAvatar.outerHTML = avatarHtml(data.babysitter.avatar, data.babysitter.name, "profile-avatar", 56);
+    }
+    const profileAddress = document.querySelector(".profile-address");
+    if (profileAddress) {
+      profileAddress.textContent = data.babysitter.address || "";
+      profileAddress.hidden = !data.babysitter.address;
+    }
+    renderShift();
+    renderSchedule(document.getElementById("schedule-list"));
+    renderCareLog();
+    renderEmergencyEntry(document.getElementById("emergency-entry"));
+    renderContacts(document.getElementById("contacts-list"));
   }
 
   // ---------- care log (SI-28): completed tasks in check-time order with their details ----------
@@ -375,7 +390,7 @@
     updateCurrentPage();
   }
 
-  function initFood() {
+  function renderFood() {
     const allergies = data.allergies;
     const list = document.getElementById("restriction-list");
     const careNoteEl = document.getElementById("care-note-body");
@@ -399,14 +414,11 @@
           .join("")
       : emptyStateHtml("");
 
-    if (allergies.careNote) {
-      careNoteEl.textContent = allergies.careNote;
-    } else {
-      careNoteEl.closest(".care-note").hidden = true;
-    }
+    if (allergies.careNote) careNoteEl.textContent = allergies.careNote;
+    careNoteEl.closest(".care-note").hidden = !allergies.careNote;
   }
 
-  function initInfo() {
+  function renderInfo() {
     const params = new URLSearchParams(window.location.search);
     const key = params.get("category") || "";
     const category = data.categories[key];
@@ -1519,13 +1531,17 @@
     const error = document.getElementById("message-error");
     const title = document.getElementById("messages-title");
     const sendBtn = form.querySelector('button[type="submit"]');
-    // The other person in the thread, from the viewer's side.
-    const parentName = role === "parent" ? data.babysitter.name : parentFirstName();
+    // The other person in the thread, from the viewer's side (re-read when family data changes).
+    let parentName;
+    const renderNames = () => {
+      parentName = role === "parent" ? data.babysitter.name : parentFirstName();
+      if (title) title.textContent = `Messages with ${parentName}`;
+      if (input) input.placeholder = `Message ${parentName}`;
+      const label = document.querySelector('label[for="message-input"]');
+      if (label) label.textContent = `Message to ${parentName}`;
+    };
+    renderNames();
     if (role === "parent") renderParentNav("messages");
-    if (title) title.textContent = `Messages with ${parentName}`;
-    if (input) input.placeholder = `Message ${parentName}`;
-    const label = document.querySelector('label[for="message-input"]');
-    if (label) label.textContent = `Message to ${parentName}`;
     renderParentMomentTrigger(document.querySelector(".messages-main"));
 
     let lastCount = -1;
@@ -1579,6 +1595,10 @@
 
     shift.subscribe(render);
     render();
+    onFamilyChange(() => {
+      renderNames();
+      render();
+    });
   }
 
   function openModal(item, opener) {

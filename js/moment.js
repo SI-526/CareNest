@@ -140,7 +140,8 @@ if (typeof window !== "undefined") (window.CareNestShift ? window.CareNestShift.
   if (document.body.dataset.role === "parent") return; // moments are the sitter's prompt
   if (!document.createElement("dialog").showModal) return;
 
-  const parent = (data.parentName && data.parentName.split(/\s+/)[0]) || (data.contacts && data.contacts[0] && data.contacts[0].firstName) || "the parent";
+  // Read live: js/family-data.js replaces the contacts when a parent's edits arrive (issue #11).
+  const parent = () => (data.parentName && data.parentName.split(/\s+/)[0]) || (data.contacts && data.contacts[0] && data.contacts[0].firstName) || "the parent";
   const LOCKED_TEXT = "This shift has ended. Photos can't be added after a shift.";
 
   // Static markup only; dynamic text is set with textContent below.
@@ -156,7 +157,7 @@ if (typeof window !== "undefined") (window.CareNestShift ? window.CareNestShift.
     </div>
     <div class="moment-progress" aria-hidden="true"><span data-bar></span></div>
     <button type="button" class="primary-btn" data-open>Share a moment</button>`;
-  banner.querySelector("#moment-heading").textContent = `Time to share a moment with ${parent}!`;
+  banner.querySelector("#moment-heading").textContent = `Time to share a moment with ${parent()}!`;
 
   const status = document.createElement("p");
   status.className = "visually-hidden";
@@ -201,7 +202,7 @@ if (typeof window !== "undefined") (window.CareNestShift ? window.CareNestShift.
   const errorEl = q("[data-error]");
   const stepEl = q("[data-step]");
   const captionEl = q("#moment-caption");
-  postBtn.textContent = `Post to ${parent}`;
+  postBtn.textContent = `Post to ${parent()}`;
 
   const nav = document.querySelector(".primary-nav") || document.querySelector(".detail-nav");
   const app = document.querySelector(".app");
@@ -257,7 +258,7 @@ if (typeof window !== "undefined") (window.CareNestShift ? window.CareNestShift.
     if (announcedFor !== m.momentAt) {
       announcedFor = m.momentAt;
       announced = new Set();
-      if (!m.late) announce(`Time to share a moment with ${parent}! You have ${formatLeft(left)}.`);
+      if (!m.late) announce(`Time to share a moment with ${parent()}! You have ${formatLeft(left)}.`);
       announced.add("start");
     }
     const checkpoints = [
@@ -443,18 +444,24 @@ if (typeof window !== "undefined") (window.CareNestShift ? window.CareNestShift.
       .then((result) => {
         dialog.close();
         // "Late" comes from the database, not from this page's clock.
-        announce(`Moment shared with ${parent}${result.late ? " (marked Late)" : ""}.`);
+        announce(`Moment shared with ${parent()}${result.late ? " (marked Late)" : ""}.`);
       })
       .catch((err) => {
         showError(shift.errorMessage(err));
         postBtn.disabled = !shift.state.active;
       })
       .finally(() => {
-        postBtn.textContent = `Post to ${parent}`;
+        postBtn.textContent = `Post to ${parent()}`;
       });
   });
 
   shift.subscribe(tick);
+  if (window.CareNestFamily && window.CareNestFamily.subscribe) {
+    window.CareNestFamily.subscribe(() => {
+      banner.querySelector("#moment-heading").textContent = `Time to share a moment with ${parent()}!`;
+      if (postBtn.textContent !== "Posting…") postBtn.textContent = `Post to ${parent()}`; // not mid-post
+    });
+  }
   tick();
   setInterval(tick, 1000);
 });

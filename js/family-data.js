@@ -11,6 +11,9 @@
 //   tasks of the household's plan            -> schedule
 //   care_items                                -> Good to know categories, food page, emergency steps
 //   contacts                                  -> Your Contacts, Who to contact; role "Hospital" -> hospital card
+//
+// Live (issue #11): after the first load, Realtime changes to those tables refetch everything and
+// call subscribe() listeners, so pages re-render a parent's edits without a reload.
 (function () {
   const auth = window.CareNestAuth;
   const sample = window.CareNestData;
@@ -218,7 +221,9 @@
   async function fetchRows(ctx) {
     const client = ctx.client;
     const householdId = ctx.household.id;
-    const [contacts, careItems, plans] = await Promise.all([
+    const [household, contacts, careItems, plans] = await Promise.all([
+      // Re-read so a renamed child shows live (the auth context's copy is from sign-in).
+      client.from("households").select("id, name, child_name, child_age_label").eq("id", householdId).maybeSingle(),
       client
         .from("contacts")
         .select("id, name, role, phone, address, position")
@@ -240,13 +245,40 @@
         .order("created_at", { ascending: true })
         .limit(1),
     ]);
-    const error = contacts.error || careItems.error || plans.error;
+    const error = household.error || contacts.error || careItems.error || plans.error;
     if (error) throw error;
     return {
+      household: household.data,
       contacts: contacts.data || [],
       careItems: careItems.data || [],
       plan: (plans.data && plans.data[0]) || null,
     };
+  }
+
+  // Ids of every row the current data came from: a Realtime DELETE carries only the id, so a
+  // delete matters only when its id is here.
+  let shownIds = new Set();
+  // Refreshes can overlap (a change, a tab return, a reconnect): each takes a number, and a
+  // result older than the one already applied is dropped. Rows equal to what is on screen are not
+  // re-applied, so a tab return or reconnect with no change does not re-render (or drop focus).
+  let lastStarted = 0;
+  let lastApplied = 0;
+  let lastSnapshot = null;
+
+  // Returns true when new rows were applied.
+  async function refresh(ctx) {
+    const generation = ++lastStarted;
+    const rows = await fetchRows(ctx);
+    if (generation < lastApplied) return false;
+    lastApplied = generation;
+    const snapshot = JSON.stringify(rows);
+    if (snapshot === lastSnapshot) return false;
+    lastSnapshot = snapshot;
+    if (rows.household) Object.assign(ctx.household, rows.household);
+    apply(ctx, rows);
+    const plan = rows.plan ? [rows.plan].concat(rows.plan.tasks || []) : [];
+    shownIds = new Set(rows.contacts.concat(rows.careItems, plan).map((r) => r.id));
+    return true;
   }
 
   // A full-screen loading / error layer while the family's data loads. Resolves once loaded;
@@ -262,7 +294,7 @@
       async function attempt() {
         layer.innerHTML = '<p class="data-status-text">Loading your family’s information…</p>';
         try {
-          apply(ctx, await fetchRows(ctx));
+          await refresh(ctx);
           layer.remove();
           resolve(ctx);
         } catch (error) {
@@ -277,11 +309,92 @@
     });
   }
 
-  const ready = auth.ready.then((ctx) => {
+  const listeners = new Set();
+  function subscribe(fn) {
+    listeners.add(fn);
+    return () => listeners.delete(fn);
+  }
+
+  // RLS limits the stream to this household. Realtime cannot filter DELETE events by column, so
+  // deletes arrive unfiltered: refetch only when a row on screen was deleted (as day notes do).
+  // Tasks get no DELETE listener: clients cannot delete a task, and a task goes only by cascade
+  // from a plan or family-space delete, which the plans DELETE or households event already shows.
+  function watch(ctx) {
+    const client = ctx.client;
+    const householdId = ctx.household.id;
+    let channel = null;
+    let channelPlanId;
+    let timer = null;
+
+    async function reload() {
+      let changed;
+      try {
+        changed = await refresh(ctx);
+      } catch (error) {
+        // Keep what is on screen; the next change, focus or reconnect tries again.
+        console.warn("CareNest: family data refresh failed", error);
+        return;
+      }
+      if (!changed) return;
+      // Re-listens only when the plan changed, so the SUBSCRIBED reload below cannot loop.
+      if (data.planId !== channelPlanId) listen();
+      listeners.forEach((fn) => {
+        try {
+          fn(data);
+        } catch (error) {
+          console.warn("CareNest: family data listener failed", error);
+        }
+      });
+    }
+
+    function scheduleReload() {
+      clearTimeout(timer);
+      timer = setTimeout(reload, 250);
+    }
+
+    const onDelete = (payload) => {
+      if (payload.old && shownIds.has(payload.old.id)) scheduleReload();
+    };
+    const changes = (table, filter) => ({ event: "*", schema: "public", table, filter });
+
+    // tasks are filtered by plan, so a new (first) plan needs a new channel. The topic names the
+    // plan because supabase-js hands back a still-closing channel of the same topic.
+    async function listen() {
+      channelPlanId = data.planId;
+      if (channel) await client.removeChannel(channel);
+      channel = client.channel(`carenest-family-${householdId}-${channelPlanId || "none"}`);
+      ["contacts", "care_items", "plans"].forEach((table) => {
+        channel
+          .on("postgres_changes", changes(table, `household_id=eq.${householdId}`), scheduleReload)
+          .on("postgres_changes", { event: "DELETE", schema: "public", table }, onDelete);
+      });
+      channel.on("postgres_changes", changes("households", `id=eq.${householdId}`), scheduleReload);
+      if (channelPlanId) {
+        channel.on("postgres_changes", changes("tasks", `plan_id=eq.${channelPlanId}`), scheduleReload);
+      }
+      // SUBSCRIBED comes on the first join and on every rejoin; refetch then, since changes made
+      // before the join (or while the socket was down) arrive with no event. This also catches the
+      // first plan's tasks, inserted before the plan-filtered channel joined.
+      channel.subscribe((status) => {
+        if (status === "SUBSCRIBED") scheduleReload();
+      });
+    }
+
+    listen();
+    // Changes made while the tab slept or was offline arrive with no event.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") scheduleReload();
+    });
+    window.addEventListener("online", scheduleReload);
+  }
+
+  const ready = auth.ready.then(async (ctx) => {
     if (!ctx || ctx.demo || !ctx.household) return ctx;
     if (!DATA_PAGES.includes(document.body.dataset.page)) return ctx;
-    return loadWithStatus(ctx);
+    await loadWithStatus(ctx);
+    watch(ctx);
+    return ctx;
   });
 
-  window.CareNestFamily = { ready, formatTaskTime, phoneHref, isHospital, HOSPITAL_ROLE };
+  window.CareNestFamily = { ready, subscribe, formatTaskTime, phoneHref, isHospital, HOSPITAL_ROLE };
 })();
