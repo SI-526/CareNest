@@ -217,6 +217,7 @@ if (typeof window !== "undefined") (window.CareNestShift ? window.CareNestShift.
   let announcedFor = null;
   let announced = new Set();
   let pickSeq = 0; // only the latest picked file may set the photo or the error
+  let ticked = false; // first tick = page load: show an already-due banner at once, no fade
 
   function formatLeft(ms) {
     const s = Math.max(0, Math.ceil(ms / 1000));
@@ -231,7 +232,11 @@ if (typeof window !== "undefined") (window.CareNestShift ? window.CareNestShift.
   function tick() {
     const m = shift.getMomentStatus();
     const due = m.state === "due";
+    // Fade in only when a moment becomes due while the page is open. Fading on load
+    // left the banner see-through for its first frames (and in screenshots).
+    if (due && banner.hidden && ticked) banner.classList.add("is-arriving");
     banner.hidden = !due;
+    ticked = true;
 
     if (dialog.open && !shift.state.active) {
       showError(LOCKED_TEXT);
@@ -393,6 +398,7 @@ if (typeof window !== "undefined") (window.CareNestShift ? window.CareNestShift.
   });
 
   banner.querySelector("[data-open]").addEventListener("click", openDialog);
+  banner.addEventListener("animationend", () => banner.classList.remove("is-arriving"));
   captureBtn.addEventListener("click", capture);
   retakeBtn.addEventListener("click", beginCapture);
   q("[data-cancel]").addEventListener("click", () => dialog.close());
