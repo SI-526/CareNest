@@ -1727,6 +1727,12 @@ test("delete_my_account removes the sole parent's household data and account", a
   const own = await countEvents((q) => q.in("visit_id", householdVisits));
   assert.ok(own > 0);
 
+  // The app's flow (js/auth.js): photos first, since Storage objects do not cascade.
+  assertRpcError(await a.rpc("delete_my_account"), "photos_remaining");
+  const photos = await a.rpc("remove_all_photos");
+  assert.ifError(photos.error);
+  assert.ok(photos.data.length > 0);
+  assert.ifError((await a.storage.from("photos").remove(photos.data)).error);
   const result = await a.rpc("delete_my_account");
   assert.ifError(result.error);
   assert.equal(
