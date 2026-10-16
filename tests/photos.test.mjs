@@ -1262,8 +1262,19 @@ test("a photo re-attached while a parent removes it is refused; the parent can s
   }
 });
 
-// Issue #7: the hourly sweep deletes orphans through the Storage API and keeps live photos.
-test("the photo cleanup removes every kind of orphan and keeps live photos", async () => {
+// Issue #7: the hourly sweep deletes orphans through the Storage API and keeps live photos. It
+// sweeps the whole bucket, so it must stay the last test of this file (test:rls runs files one
+// at a time); earlier tests' orphans go too.
+test("the photo cleanup removes every kind of orphan and keeps live photos", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this test needs a direct database connection");
+    return;
+  }
+  const secretNames = "('carenest_project_url', 'carenest_photo_cleanup_key')";
+  if (psqlQuery(`select count(*) from vault.secrets where name in ${secretNames}`) !== "0") {
+    t.skip("this stack has photo cleanup secrets configured; the test would replace them");
+    return;
+  }
   const live = await photoFamily("sweep");
   const { mom, sitter, hh, visit } = live;
   const send = (path) =>
@@ -1277,8 +1288,17 @@ test("the photo cleanup removes every kind of orphan and keeps live photos", asy
   backdate(used, "30 days"); // a used photo stays, however old
   const fresh = await uploadOk(sitter, hh, visit.id); // unused, under 24 hours: kept
   backdate(fresh, "23 hours");
-  const stale = await uploadOk(sitter, hh, visit.id); // unused, over 24 hours: orphan
+  const waiting = await uploadOk(sitter, hh, visit.id); // unused, old, its shift can still use it: kept
+  backdate(waiting, "60 hours");
+  // A shift dated 2 days ago can no longer take photos (stamp_message's date window).
+  const [{ id: closedVisit }] = localSql(`
+    insert into public.visits (plan_id, visit_date) values ('${uuid(live.plan.id)}', '${isoDate(-2)}')
+    returning id::text as id`);
+  const stale = photoPath(hh, uuid(closedVisit)); // unused, window closed, over 24 hours: orphan
+  assert.ifError((await upload({ client: admin }, stale)).error);
   backdate(stale, "25 hours");
+  const closedFresh = photoPath(hh, closedVisit); // window closed but under 24 hours: kept
+  assert.ifError((await upload({ client: admin }, closedFresh)).error);
   const removedPath = await uploadOk(sitter, hh, visit.id); // removed, Storage delete "failed"
   const removedMsg = await send(removedPath);
   assert.ifError(removedMsg.error);
@@ -1311,19 +1331,20 @@ test("the photo cleanup removes every kind of orphan and keeps live photos", asy
       assert.equal(psqlQuery(`select status_code from net._http_response where id = ${Number(requestId)}`), "200");
     }
   } finally {
-    psqlQuery("delete from vault.secrets where name in ('carenest_project_url', 'carenest_photo_cleanup_key')");
+    psqlQuery(`delete from vault.secrets where name in ${secretNames}`);
   }
 
+  const cases = { used, fresh, waiting, closedFresh, stale, removedPath, shiftOrphan, familyOrphan };
   const stored = new Set(
     localSql(`select name from storage.objects where bucket_id = 'photos'
-               and name in ('${[used, fresh, stale, removedPath, shiftOrphan, familyOrphan].join("','")}')`).map((r) => r.name),
+               and name in ('${Object.values(cases).join("','")}')`).map((r) => r.name),
   );
-  const outcome = Object.fromEntries(
-    Object.entries({ used, fresh, stale, removedPath, shiftOrphan, familyOrphan }).map(([k, p]) => [k, stored.has(p)]),
-  );
+  const outcome = Object.fromEntries(Object.entries(cases).map(([k, p]) => [k, stored.has(p)]));
   assert.deepEqual(outcome, {
     used: true,
     fresh: true,
+    waiting: true,
+    closedFresh: true,
     stale: false,
     removedPath: false,
     shiftOrphan: false,

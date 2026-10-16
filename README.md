@@ -316,7 +316,9 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   that household, so photos of a deleted shift or family space are hidden from everyone (and so
   cannot be deleted by clients either). An hourly pg_cron job (`carenest-photo-cleanup`, at :17)
   deletes them through the Storage API, together with removed photos whose client delete failed
-  and uploads no message uses after 24 hours (`photo_orphans()` lists them; up to 1000 per run).
+  and uploads no message uses once their shift can no longer use them (its date is outside
+  yesterday–tomorrow UTC) and they are over 24 hours old (`photo_orphans()` lists them; up to
+  1000 per run).
   It needs the one-time Vault setup under "Deploying to a hosted Supabase project"; locally it
   fails every hour with `photo_cleanup_not_configured` unless you add those secrets.
 - Known limitation (same as Carekeeper): Supabase Realtime does not apply RLS to DELETE events,
@@ -369,16 +371,41 @@ npx supabase db push --workdir .. --project-ref ibwshlbhszznfhmeckda
 ### Photo cleanup (one-time per project)
 
 The cleanup job reads two Vault secrets, which are not in any migration because one is a secret
-key. Create a dedicated secret key (Dashboard → Project Settings → API Keys → Secret keys → New,
-named `photo-cleanup`) so it can be revoked on its own, then run in the SQL editor:
+key. Its deletes are permanent: database backups do not restore Storage objects. So first, in the
+SQL editor (after `db push`), review what the first runs will delete, and move anything that must
+stay out of the `photos` bucket:
+
+```sql
+select o.name, o.created_at
+  from public.photo_orphans() n (name)
+  join storage.objects o on o.bucket_id = 'photos' and o.name = n.name;
+```
+
+Then create a dedicated secret key (Dashboard → Project Settings → API Keys → Secret keys → New,
+named `photo-cleanup`) so it can be revoked on its own, and run:
 
 ```sql
 select vault.create_secret('https://ibwshlbhszznfhmeckda.supabase.co', 'carenest_project_url');
 select vault.create_secret('<the sb_secret_... key>', 'carenest_photo_cleanup_key');
 ```
 
-Check it after the next run (each hour at :17): the job's latest run succeeded and Storage
-answered 200 (pg_net keeps responses for 6 hours).
+Check the URL and key right away, without waiting for an orphan: this must show 200 a few
+seconds later.
+
+```sql
+select net.http_get(
+  (select decrypted_secret from vault.decrypted_secrets where name = 'carenest_project_url')
+    || '/storage/v1/bucket/photos',
+  headers := jsonb_build_object('apikey',
+    (select decrypted_secret from vault.decrypted_secrets where name = 'carenest_photo_cleanup_key')));
+select status_code, left(content, 200), error_msg from net._http_response order by created desc limit 1;
+```
+
+After a run (each hour at :17), the job's latest run should have succeeded and, when there was
+something to delete, Storage should have answered 200 (pg_net keeps responses for 6 hours). A
+rejected key shows only in `net._http_response`; the cron run itself still says succeeded.
+pg_net briefly stores the key in `net.http_request_queue`: never add the `net` schema to the
+Data API's exposed schemas.
 
 ```sql
 select status, return_message, start_time from cron.job_run_details

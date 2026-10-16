@@ -10,8 +10,11 @@
 --     deleted);
 --   * no parent removed it (removed_photos), so a removal whose client-side delete failed is
 --     finished here;
---   * a message uses it, or it was uploaded less than 24 hours ago (an upload is attached right
---     after it is taken; unused ones go a day later).
+--   * a message uses it, or its shift can still use it: stamp_message() attaches a photo only
+--     while the shift's date is within the UTC day before or after today, so an unused upload
+--     goes once that window has closed and it is over 24 hours old (1 to 3 days after upload).
+--     Attaching runs in one short API transaction (statement_timeout is seconds), and the job
+--     runs at :17, so no attach that passed the date check can still commit when it runs.
 --
 -- One-time setup per project (not in this file, because it holds a secret): two Vault secrets,
 -- `carenest_project_url` (https://<ref>.supabase.co) and `carenest_photo_cleanup_key` (a secret
@@ -20,6 +23,19 @@
 
 create extension if not exists pg_cron with schema pg_catalog;
 create extension if not exists pg_net with schema extensions;
+
+-- `create extension if not exists` never upgrades an installed pg_net; fail the push rather than
+-- every run if it predates net.http_delete(..., body).
+do $$
+begin
+  if not exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'net' and p.proname = 'http_delete' and 'body' = any (p.proargnames)
+  ) then
+    raise exception 'pg_net too old: net.http_delete has no body parameter (alter extension pg_net update)';
+  end if;
+end;
+$$;
 
 -- Every orphaned object in the photos bucket, oldest first. Mirrors can_read_photo()'s shift
 -- check, so whatever members can no longer read is an orphan.
@@ -32,17 +48,19 @@ set search_path = ''
 as $$
   select o.name
     from storage.objects o
+    left join lateral (
+      select v.visit_date
+        from public.photo_path_parts(o.name) parts
+        join public.visits v on v.id = parts.visit_id
+        join public.plans p on p.id = v.plan_id and p.household_id = parts.household_id
+    ) shift on true
    where o.bucket_id = 'photos'
      and (
-       not exists (
-         select 1
-           from public.photo_path_parts(o.name) parts
-           join public.visits v on v.id = parts.visit_id
-           join public.plans p on p.id = v.plan_id and p.household_id = parts.household_id
-       )
+       shift.visit_date is null
        or exists (select 1 from public.removed_photos r where r.path = o.name)
        or (
          o.created_at < now() - interval '24 hours'
+         and shift.visit_date < (now() at time zone 'utc')::date - 1
          and not exists (select 1 from public.messages m where m.photo_path = o.name)
        )
      )
@@ -87,6 +105,9 @@ $$;
 -- Internal: only postgres (pg_cron) runs these.
 revoke execute on function public.photo_orphans(), public.sweep_orphan_photos()
   from public, anon, authenticated, service_role;
+
+comment on function public.photo_path_parts(text) is
+  'Objects in the photos bucket whose name does not match this format are deleted by the hourly cleanup (photo_orphans). Change both together.';
 
 -- Re-running schedule() with the same name updates the job.
 select cron.schedule('carenest-photo-cleanup', '17 * * * *', 'select public.sweep_orphan_photos()');
