@@ -257,9 +257,15 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   care info, contacts, plans, tasks, shifts, checks, and invites), removes your other
   memberships, and deletes your sign-in account. When a caretaker deletes their account, checks,
   notes, and shift-history entries they made stay in the family's history without their name
-  (the user column becomes null, shown as a former member).
-- Photos (T3a): the `photos` bucket is private (no public URLs). Members of the household in the
-  path's first folder read; a member uploads only into an open shift of their household whose
+  (the user column becomes null, shown as a former member). Storage objects do not cascade, so a
+  sole parent's app first calls `remove_all_photos` (every photo in those family spaces' folders,
+  including ones of deleted shifts, is marked removed and its path returned), deletes the returned
+  objects with the Storage API, then calls `delete_my_account`, which refuses with
+  `photos_remaining` while any photo is still there (e.g. a sitter uploaded one meanwhile; the
+  app says to try again and repeats both steps).
+- Photos (T3a): the `photos` bucket is private (no public URLs, and no signed download or upload
+  URLs for anyone: the app uses authenticated downloads and uploads only). Members of the
+  household in the path's first folder read; a member uploads only into an open shift of their household whose
   date is in the start window; nobody overwrites or moves a photo. A task is completed only with
   `complete_task(visit, task, photo_path, note, tag)`, which writes the check and the proof
   message together; proofs, moments, and photo messages re-check the shift under a share lock on
@@ -274,7 +280,9 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   `trigger_moment_now(visit)` on an open, in-window shift with no moment yet to move it to 1-5
   minutes from now (demo). Only a sitter posts the moment, once; its photo must have been
   uploaded at or after the prompt (Storage's server-set `created_at`), otherwise
-  `moment_photo_too_early`; it is `late` if posted more than 2 minutes after the prompt.
+  `moment_photo_too_early`; it is `late` if posted more than 2 minutes after the prompt. The app
+  also refuses an uploaded (not camera-captured) moment photo whose own capture time (EXIF) is
+  more than 2 minutes before the prompt; photos with no capture time are accepted.
 - Uploads: at most **2 photos per active (not archived) task of the plan + 10, + 20 for photo
   messages** per shift folder (every object in the folder counts, used or not, until it is
   deleted), so up to 20 photo messages never eat into the room task photos and the moment need.
@@ -291,7 +299,8 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   object is deleted, nobody can download it or sign a URL for it, nobody can upload to that path
   again, and it cannot be attached to a proof, moment, or photo message again (`photo_removed`). Saves and flags
   cannot be added to a removed photo, including one racing the removal (a trigger locks the
-  message and re-checks; `photo_removed`).
+  message and re-checks; `photo_removed`). Someone outside the family gets the same refusal
+  whether or not the message has a photo.
 - Photo messages: a `chat` row with `photo_path` and `visit_id` (the shift); the body may be empty.
   Only the sitter posts one, only into an open shift dated in the window, with a photo they
   uploaded to that shift's folder and no message uses yet (`not_caretaker`, `visit_ended`,
