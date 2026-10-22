@@ -197,13 +197,27 @@
     return notes.slice().sort((a, b) => order(a) - order(b) || a.createdAt - b.createdAt);
   }
 
+  function dayNoteIcon(category) {
+    const paths = {
+      food_meds: '<path d="M8.2 5.1 5.1 8.2a3.75 3.75 0 0 0 5.3 5.3l3.1-3.1-5.3-5.3Zm2.3-2.3a2 2 0 0 1 2.8 0l7.9 7.9a2 2 0 0 1 0 2.8l-2.1 2.1-10.7-10.7 2.1-2.1Z" /><path d="m5.2 14.8 4 4" />',
+      routine: '<path d="M9 3h6M10 3v4l-4 7a5 5 0 0 0 4.4 7h3.2a5 5 0 0 0 4.4-7l-4-7V3" /><path d="M7.5 15h9M19 6l2-2M18 9l3 1" />',
+      schedule: '<rect x="4" y="5" width="16" height="15" rx="1" /><path d="M8 3v4m8-4v4M7 10h10m-8 4h6m-6 3h4" />',
+      instructions: '<path d="M8 3h8v18H8zM6 6H4v13a2 2 0 0 0 2 2h8" /><path d="M10 8h4m-4 4h4m-4 4h3" />',
+      other: '<path d="M12 3a9 9 0 1 0 9 9" /><path d="M12 7v5l3 2" />',
+    };
+    return `<span class="day-note-icon day-note-icon--${escapeHtml(category)}" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths[category] || paths.other}</svg></span>`;
+  }
+
   function dayNoteHtml(note) {
     const category = DAY_NOTE_CATEGORIES.find((c) => c.key === note.category) || DAY_NOTE_CATEGORIES[4];
     const updated = note.updatedAt > note.createdAt
       ? `<span class="badge day-note-updated">Updated ${escapeHtml(clockLabel(note.updatedAt))}</span>`
       : "";
-    const head = `<span class="tag-chip day-note-chip day-note-chip--${escapeHtml(category.key)}">${escapeHtml(category.label)}</span>
-      <span class="day-note-title">${escapeHtml(note.title)}</span>${updated}`;
+    const head = `${dayNoteIcon(category.key)}<span class="day-note-copy">
+      <span class="day-note-category">${escapeHtml(category.label)}</span>
+      <span class="day-note-title">${escapeHtml(note.title)}</span>
+      ${note.detail ? `<span class="day-note-preview">${escapeHtml(note.detail.split("\n")[0])}</span>` : ""}
+    </span>${updated}`;
     if (!note.detail) {
       return `<li class="day-note"><div class="day-note-summary day-note-plain">${head}</div></li>`;
     }
@@ -219,6 +233,7 @@
     const listEl = document.getElementById("day-notes-list");
     const statusEl = document.getElementById("day-notes-status");
     const dateEl = document.getElementById("day-notes-date");
+    const countEl = document.getElementById("day-notes-count");
     if (!listEl || !statusEl) return;
 
     const live = Boolean(ctx && !ctx.demo && ctx.client && ctx.household && !shift.demo);
@@ -263,6 +278,10 @@
         }))
         .filter((g) => g.notes.length);
       const count = groups.reduce((sum, g) => sum + g.notes.length, 0);
+      if (countEl) {
+        countEl.textContent = `${count} ${count === 1 ? "update" : "updates"}`;
+        countEl.hidden = !count;
+      }
       shownIds = new Set(groups.flatMap((g) => g.notes.map((n) => n.id)));
       listEl.innerHTML =
         dates.length === 1
@@ -301,6 +320,7 @@
       listEl.hidden = true;
       statusEl.textContent = "Couldn't load today's notes.";
       statusEl.hidden = false;
+      if (countEl) countEl.hidden = true;
     }
 
     if (!live) {

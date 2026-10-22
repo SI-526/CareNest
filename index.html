@@ -61,8 +61,11 @@
         <div class="main-column">
           <section class="panel day-notes-panel" id="important-today" aria-labelledby="day-notes-heading">
             <div class="panel-header">
-              <h2 class="panel-title" id="day-notes-heading">Important today</h2>
-              <p class="panel-meta" id="day-notes-date"></p>
+              <div>
+                <h2 class="panel-title" id="day-notes-heading">What’s important today</h2>
+                <p class="day-notes-date" id="day-notes-date"></p>
+              </div>
+              <p class="day-notes-count" id="day-notes-count" hidden aria-live="polite"></p>
             </div>
             <ul class="day-notes-list" id="day-notes-list" hidden></ul>
             <p class="day-notes-status" id="day-notes-status">Loading today's notes…</p>
