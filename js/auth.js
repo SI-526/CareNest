@@ -22,6 +22,10 @@
     gallery: ["parent", "caretaker"],
     info: ["parent", "caretaker"],
     food: ["parent", "caretaker"],
+    schedule: ["parent", "caretaker"],
+    carelog: ["parent", "caretaker"],
+    children: ["parent", "caretaker"],
+    profile: ["parent", "caretaker"],
   };
   const HOME = { parent: "parent.html", caretaker: "index.html" };
 
