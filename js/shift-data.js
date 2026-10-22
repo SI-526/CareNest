@@ -1147,8 +1147,7 @@
       backend = createSupabaseBackend(ctx, data);
     } else {
       const asParent =
-        page === "parent" ||
-        ((page === "messages" || page === "gallery") && new URLSearchParams(window.location.search).get("as") === "parent");
+        page === "parent" || new URLSearchParams(window.location.search).get("as") === "parent";
       backend = createDemoBackend(data, asParent ? "parent" : "caretaker");
     }
     await backend.init();

@@ -635,6 +635,49 @@ button {
   border-top: 1px solid var(--line-soft);
 }
 
+.secondary-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.secondary-add,
+.secondary-row-action {
+  width: auto;
+  min-height: 36px;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.secondary-row:has(.secondary-row-action) {
+  grid-template-columns: 94px minmax(0, 1fr) auto;
+}
+
+.secondary-primary-action {
+  margin-top: 12px;
+}
+
+.secondary-edit-note {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--grey);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 420px) {
+  .secondary-row:has(.secondary-row-action) {
+    grid-template-columns: 1fr auto;
+  }
+
+  .secondary-row:has(.secondary-row-action) .secondary-time {
+    grid-column: 1 / -1;
+  }
+}
+
 .secondary-row strong,
 .secondary-row small {
   display: block;

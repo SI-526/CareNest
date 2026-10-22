@@ -101,8 +101,16 @@
   auth.whenReady((ctx) => {
     const main = document.querySelector(".manage-main");
     if (!ctx || ctx.demo) {
-      main.innerHTML =
-        '<p class="signin-note">Editing family info needs a signed-in parent. <a href="signin.html">Sign in</a></p>';
+      if (ctx && ctx.demo) {
+        if (window.CareNestUI) window.CareNestUI.renderParentNav("profile");
+      }
+      main.innerHTML = `
+        <header class="detail-nav"><h1 id="manage-title">Family info</h1></header>
+        <section class="panel">
+          <h2 class="panel-title">Sign in to edit family information</h2>
+          <p class="signin-note">The local demo shows sample family information. Sign in as a parent to edit your family’s schedule, care details, and contacts.</p>
+          <a class="primary-btn" href="signin.html">Sign in</a>
+        </section>`;
       return;
     }
     if (window.CareNestUI) window.CareNestUI.renderParentNav("profile");

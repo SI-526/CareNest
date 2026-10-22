@@ -252,7 +252,11 @@
       }
       reveal();
       showDemoBanner(session);
-      return { demo: true, role: null };
+      const params = new URLSearchParams(window.location.search);
+      const roles = PAGE_ROLES[page] || [];
+      const parentOnlyPage = roles.includes("parent") && !roles.includes("caretaker");
+      const role = page === "parent" || params.get("as") === "parent" || parentOnlyPage ? "parent" : "caretaker";
+      return { demo: true, role };
     }
     let ctx;
     try {

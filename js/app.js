@@ -17,11 +17,9 @@
   const isDevHost =
     ["localhost", "127.0.0.1", "[::1]", ""].includes(window.location.hostname) ||
     demoFlag();
-  // Until real accounts exist, the parent side is the same app opened as parent.html or
-  // messages.html?as=parent (a second tab in the same browser stays in sync via the store).
+  // Keep the parent-side navigation selection when the shared demo switches pages.
   const role =
-    page === "parent" ||
-    ((page === "messages" || page === "gallery") && new URLSearchParams(window.location.search).get("as") === "parent")
+    page === "parent" || new URLSearchParams(window.location.search).get("as") === "parent"
       ? "parent"
       : "sitter";
   if (role === "parent") document.body.dataset.role = "parent";
@@ -1792,25 +1790,25 @@
     },
     {
       id: "schedule",
-      href: "schedule.html",
+      href: "schedule.html?as=parent",
       label: "Schedule",
       icon: '<path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1Zm12 8H5v10h14V10ZM7 6H5v2h14V6h-2v1a1 1 0 1 1-2 0V6H8v1a1 1 0 1 1-2 0V6Z" />',
     },
     {
       id: "care-log",
-      href: "care-log.html",
+      href: "care-log.html?as=parent",
       label: "Care log",
       icon: '<path d="M9 2h6a1 1 0 0 1 1 1v1h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 1-1Zm1 2v2h4V4h-4Zm-2 7a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2H8Zm0 4a1 1 0 1 0 0 2h5a1 1 0 0 0 0-2H8Z" />',
     },
     {
       id: "children",
-      href: "children.html",
+      href: "children.html?as=parent",
       label: "Children",
       icon: '<path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-1a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM9 13c-3.87 0-7 2.24-7 5v3h14v-3c0-2.76-3.13-5-7-5Zm8.24.05c-.45-.03-.91-.05-1.38-.05a11.5 11.5 0 0 0-2.66.3c1.73.96 2.8 2.37 2.8 4V21H22v-3c0-2.42-2.1-4.47-4.76-4.95Z" />',
     },
     {
       id: "profile",
-      href: "profile.html",
+      href: "profile.html?as=parent",
       label: "Profile",
       icon: '<path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z" />',
     },
