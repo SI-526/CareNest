@@ -488,7 +488,11 @@ button {
 
 .secondary-header {
   max-width: 720px;
-  padding: 32px 8px 4px;
+  padding: 48px 8px 4px;
+}
+
+.detail-app > .detail-nav {
+  margin-top: 48px;
 }
 
 .secondary-header h1 {
@@ -517,6 +521,85 @@ button {
 .secondary-panel {
   min-height: 185px;
   justify-content: flex-start;
+}
+
+.profile-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.75fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.public-profile-card,
+.profile-preview {
+  min-height: auto;
+}
+
+.profile-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.profile-textarea {
+  resize: vertical;
+}
+
+.profile-visibility {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.profile-visibility label {
+  color: var(--blue);
+  font-size: var(--text-sm);
+}
+
+.profile-visibility input {
+  accent-color: var(--accent-strong);
+}
+
+.profile-save-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.profile-save-status,
+.profile-private-note {
+  margin: 0;
+  color: var(--grey);
+  font-size: var(--text-sm);
+}
+
+.profile-preview {
+  position: sticky;
+  top: 24px;
+}
+
+@media (max-width: 767px) {
+  .secondary-header,
+  .detail-app > .detail-nav {
+    margin-top: 0;
+    padding-top: 28px;
+  }
+
+  .profile-settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-preview {
+    position: static;
+  }
 }
 
 .secondary-link {
@@ -2674,7 +2757,7 @@ body.modal-open {
 }
 
 .auth-app {
-  max-width: 560px;
+  max-width: var(--max-width);
 }
 
 .auth-header {
