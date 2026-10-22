@@ -251,20 +251,21 @@ button {
 .side-column {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 @media (min-width: 768px) {
   .app {
     /* The shared desktop navigation is full-bleed and begins at the viewport edge. */
     padding: 0 32px 64px;
+    gap: 24px;
     align-items: center;
   }
 
   .page-main {
     display: grid;
     grid-template-columns: 1.45fr 1fr;
-    gap: 16px;
+    gap: 20px;
     align-items: start;
     width: 100%;
   }
@@ -482,12 +483,12 @@ button {
   display: flex;
   width: 100%;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
 .secondary-header {
   max-width: 720px;
-  padding: 32px 8px 12px;
+  padding: 32px 8px 4px;
 }
 
 .secondary-header h1 {
@@ -510,7 +511,7 @@ button {
 .secondary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 16px;
+  gap: 20px;
 }
 
 .secondary-panel {
@@ -1467,6 +1468,7 @@ body.modal-open {
     max-width: none;
     margin-right: calc(50% - 50vw);
     margin-left: calc(50% - 50vw);
+    margin-top: 0;
     padding-right: max(32px, calc((100vw - var(--max-width)) / 2));
     padding-left: max(32px, calc((100vw - var(--max-width)) / 2));
     border-right: 0;
