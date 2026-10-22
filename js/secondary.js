@@ -75,7 +75,10 @@
   }
 
   function render(ctx) {
-    const editable = Boolean(ctx && !ctx.demo && ctx.client && ctx.household);
+    // Household members can view this information, but only the parent can change it.
+    // Keeping this check tied to the membership role prevents a sitter opened on a
+    // parent-looking URL from being offered controls that row-level security rejects.
+    const editable = Boolean(ctx && ctx.role === "parent" && !ctx.demo && ctx.client && ctx.household);
     const child = data.child || {};
     const editNote = ctx && ctx.demo ? '<p class="secondary-edit-note">Sign in as a parent to edit this information.</p>' : "";
     const views = {
@@ -118,6 +121,10 @@
         try {
           if (dialog.returnValue === "save") {
             const saved = Object.fromEntries(fields.map((field) => [field.name, form.elements[field.name].value.trim()]));
+            const requiredField = fields.find((field) => field.required);
+            if (requiredField && !saved[requiredField.name]) {
+              throw new Error(`${requiredField.label} is required.`);
+            }
             const result = await onSave(saved);
             if (result && result.error) throw result.error;
             window.location.reload();
@@ -167,7 +174,7 @@
         const category = button.dataset.category;
         const source = category === "food" ? data.allergies.items : data.categories[category].items;
         const row = source.find((item) => item.id === id) || {};
-        const fields = [{ name: "title", label: "Title" }, { name: "detail", label: "Details", type: "textarea" }].concat(category === "food" ? [{ name: "severity", label: "Severity", type: "select", options: ["Mild", "Moderate", "Severe"] }] : []);
+        const fields = [{ name: "title", label: category === "food" ? "Food or allergy" : "Title", required: true }, { name: "detail", label: "Details", type: "textarea", required: false }].concat(category === "food" ? [{ name: "severity", label: "Severity", type: "select", options: ["Mild", "Moderate", "Severe"], required: false }] : []);
         const values = category === "food" ? { title: row.name, detail: row.description, severity: row.severity } : row;
         return openDialog(row.id ? `Edit ${category}` : `Add ${category}`, fields, values, (saved) => {
           if (category === "food" && !saved.severity) saved.severity = null;

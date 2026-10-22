@@ -71,7 +71,10 @@
   const data = window.CareNestData;
 
   // Which pages render the family's data (and so load it). people/manage only need the scrub.
-  const DATA_PAGES = ["home", "parent", "info", "food", "messages", "gallery"];
+  // Secondary parent tabs render the same household data as the home views. Include them
+  // here so an inline save is followed by a reload from Supabase instead of an empty local
+  // data object.
+  const DATA_PAGES = ["home", "parent", "info", "food", "messages", "gallery", "schedule", "carelog", "children", "profile"];
 
   const HOSPITAL_ROLE = "hospital";
   const SEVERITY_CLASS = { Severe: "badge--severe", Moderate: "badge--moderate", Mild: "badge--mild" };
