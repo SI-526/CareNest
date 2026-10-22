@@ -38,7 +38,8 @@
   window.CareNestShift.ready.then((b) => {
     backend = b;
     const isParent = backend.role === "parent";
-    if (isParent) ui.renderParentNav("gallery");
+    if (isParent) ui.renderParentNav("care-log");
+    else ui.renderSitterNav("care-log");
     if (isParent) addBox.remove();
     else {
       addBox.hidden = false;

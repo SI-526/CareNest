@@ -10,7 +10,7 @@
         '<p class="signin-note">People and invites need a signed-in parent. <a href="signin.html">Sign in</a></p>';
       return;
     }
-    if (window.CareNestUI) window.CareNestUI.renderParentNav("people");
+    if (window.CareNestUI) window.CareNestUI.renderParentNav("profile");
     auth.mountChrome(ctx);
 
     const client = ctx.client;

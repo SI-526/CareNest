@@ -105,7 +105,7 @@
         '<p class="signin-note">Editing family info needs a signed-in parent. <a href="signin.html">Sign in</a></p>';
       return;
     }
-    if (window.CareNestUI) window.CareNestUI.renderParentNav("manage");
+    if (window.CareNestUI) window.CareNestUI.renderParentNav("profile");
     auth.mountChrome(ctx);
 
     const client = ctx.client;

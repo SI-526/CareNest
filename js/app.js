@@ -70,6 +70,7 @@
   }
 
   function initHome() {
+    renderSitterNav("home");
     initNavigation();
     renderHomeFamily();
     renderShiftControls();
@@ -398,7 +399,7 @@
     const updateCurrentPage = () => {
       const hash = window.location.hash || "#home";
       links.forEach((link) => {
-        if (link.getAttribute("href") === hash) {
+        if (new URL(link.href, window.location.href).hash === hash) {
           link.setAttribute("aria-current", "page");
         } else {
           link.removeAttribute("aria-current");
@@ -1561,7 +1562,8 @@
       if (label) label.textContent = `Message to ${parentName}`;
     };
     renderNames();
-    if (role === "parent") renderParentNav("messages");
+    if (role === "parent") renderParentNav("care-log");
+    else renderSitterNav("care-log");
     renderParentMomentTrigger(document.querySelector(".messages-main"));
 
     let lastCount = -1;
@@ -1781,40 +1783,34 @@
   function parentNavItems() {
     return [
     {
-      id: "today",
+      id: "home",
       href: "parent.html#today",
-      label: "Today",
+      label: "Home",
       icon: '<path d="m12 3 9 7.5V21h-6v-6H9v6H3v-10.5L12 3Z" />',
     },
     {
-      id: "album",
-      href: "parent.html#album",
-      label: "Album",
-      icon: '<path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2ZM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5Z" />',
+      id: "schedule",
+      href: "parent.html#parent-schedule",
+      label: "Schedule",
+      icon: '<path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1Zm12 8H5v10h14V10ZM7 6H5v2h14V6h-2v1a1 1 0 1 1-2 0V6H8v1a1 1 0 1 1-2 0V6Z" />',
     },
     {
-      id: "gallery",
-      href: "gallery.html?as=parent",
-      label: "Gallery",
-      icon: '<path d="M22 16V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2Zm-11-4 2.03 2.71L16 11l4 5H8l3-4ZM2 6v14a2 2 0 0 0 2 2h14v-2H4V6H2Z" />',
+      id: "care-log",
+      href: "parent.html#parent-care-log",
+      label: "Care log",
+      icon: '<path d="M9 2h6a1 1 0 0 1 1 1v1h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 1-1Zm1 2v2h4V4h-4Zm-2 7a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2H8Zm0 4a1 1 0 1 0 0 2h5a1 1 0 0 0 0-2H8Z" />',
     },
     {
-      id: "messages",
-      href: "messages.html?as=parent",
-      label: "Messages",
-      icon: '<path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8.4L4.6 21.2A1 1 0 0 1 3 20.4V5a2 2 0 0 1 1-2Zm3 6a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 7 9Zm5 0a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 12 9Zm5 0a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 17 9Z" />',
-    },
-    {
-      id: "manage",
-      href: "manage.html",
-      label: "Family info",
-      icon: '<path d="M14.06 4.94 19.06 9.94 8 21H3v-5L14.06 4.94Zm1.41-1.41 1.42-1.42a2 2 0 0 1 2.83 0l2.17 2.17a2 2 0 0 1 0 2.83l-1.42 1.42-5-5Z" />',
-    },
-    {
-      id: "people",
-      href: "people.html",
-      label: "People",
+      id: "children",
+      href: "manage.html#child-heading",
+      label: "Children",
       icon: '<path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-1a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM9 13c-3.87 0-7 2.24-7 5v3h14v-3c0-2.76-3.13-5-7-5Zm8.24.05c-.45-.03-.91-.05-1.38-.05a11.5 11.5 0 0 0-2.66.3c1.73.96 2.8 2.37 2.8 4V21H22v-3c0-2.42-2.1-4.47-4.76-4.95Z" />',
+    },
+    {
+      id: "profile",
+      href: "manage.html",
+      label: "Profile",
+      icon: '<path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z" />',
     },
   ];
   }
@@ -1835,6 +1831,25 @@
     if (account) nav.appendChild(account);
   }
 
+  // The five primary destinations match the product's information architecture.
+  // Secondary content stays inside these areas instead of competing in the main bar.
+  function renderSitterNav(current) {
+    const nav = document.querySelector(".primary-nav");
+    if (!nav) return;
+    const account = nav.querySelector("[data-account-button]");
+    const items = [
+      ["home", "index.html#home", "Home", '<path d="m12 3 9 7.5V21h-6v-6H9v6H3v-10.5L12 3Z" />'],
+      ["schedule", "index.html#schedule", "Schedule", '<path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1Zm12 8H5v10h14V10ZM7 6H5v2h14V6h-2v1a1 1 0 1 1-2 0V6H8v1a1 1 0 1 1-2 0V6Z" />'],
+      ["care-log", "index.html#log", "Care log", '<path d="M9 2h6a1 1 0 0 1 1 1v1h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 1-1Zm1 2v2h4V4h-4Zm-2 7a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2H8Zm0 4a1 1 0 1 0 0 2h5a1 1 0 0 0 0-2H8Z" />'],
+      ["children", "info.html?category=preferences", "Children", '<path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-1a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM9 13c-3.87 0-7 2.24-7 5v3h14v-3c0-2.76-3.13-5-7-5Zm8.24.05c-.45-.03-.91-.05-1.38-.05a11.5 11.5 0 0 0-2.66.3c1.73.96 2.8 2.37 2.8 4V21H22v-3c0-2.42-2.1-4.47-4.76-4.95Z" />'],
+      ["profile", "index.html#profile", "Profile", '<path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z" />'],
+    ];
+    nav.innerHTML = items.map(([id, href, label, icon]) =>
+      `<a class="nav-item" href="${href}"${id === current ? ' aria-current="page"' : ""}><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span>${label}</span></a>`
+    ).join("");
+    if (account) nav.appendChild(account);
+  }
+
   // Shared helpers for js/parent.js.
   window.CareNestUI = {
     escapeHtml,
@@ -1845,6 +1860,7 @@
     photoTitle,
     photoImg,
     renderParentNav,
+    renderSitterNav,
     isDevHost,
   };
 
