@@ -1420,7 +1420,23 @@ body.modal-open {
 
 @media (min-width: 768px) {
   .detail-app {
-    max-width: var(--detail-width);
+    max-width: var(--max-width);
+  }
+}
+
+/* The app bar is shared navigation, so it deliberately runs edge-to-edge while
+   the content cards remain aligned to the common page container. */
+@media (min-width: 768px) {
+  .primary-nav {
+    width: 100vw;
+    max-width: none;
+    margin-right: calc(50% - 50vw);
+    margin-left: calc(50% - 50vw);
+    padding-right: max(32px, calc((100vw - var(--max-width)) / 2));
+    padding-left: max(32px, calc((100vw - var(--max-width)) / 2));
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
   }
 }
 
