@@ -22,6 +22,54 @@
     return data.schedule.map((item) => `<li class="secondary-row"><span class="secondary-time">${esc(item.time || "Any time")}</span><span><strong>${esc(item.title)}</strong><small>${esc(item.detail || item.location || "Details available in the session")}</small></span>${editable ? `<button class="photo-source-btn secondary-row-action" type="button" data-edit="task" data-id="${esc(item.id)}">Edit</button>` : ""}</li>`).join("");
   }
 
+  const DAY = 86400000;
+  const dateKey = (date) => {
+    const local = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    return `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`;
+  };
+  const parseDate = (key) => {
+    const [year, month, day] = String(key).split("-").map(Number);
+    return new Date(year, month - 1, day);
+  };
+  const timeValue = (value) => {
+    const match = /^(\d{1,2}):(\d{2})\s*(am|pm)?$/i.exec(value || "");
+    if (!match) return Number.MAX_SAFE_INTEGER;
+    let hours = Number(match[1]);
+    if (match[3] && match[3].toLowerCase() === "pm" && hours !== 12) hours += 12;
+    if (match[3] && match[3].toLowerCase() === "am" && hours === 12) hours = 0;
+    return hours * 60 + Number(match[2]);
+  };
+  const displayDate = (key, includeYear) => parseDate(key).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", ...(includeYear ? { year: "numeric" } : {}) });
+  const displayMonth = (key) => parseDate(key).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const initials = (name) => String(name || "CareNest").split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
+
+  function demoAppointments() {
+    const today = new Date();
+    const start = dateKey(today);
+    return [
+      { id: "today", date: start, start_time: "3:00 PM", end_time: "7:00 PM", note: "", activities: data.schedule.slice() },
+      { id: "upcoming-one", date: dateKey(new Date(today.getTime() + 3 * DAY)), start_time: "6:00 PM", end_time: "10:00 PM", note: "", activities: [] },
+      { id: "upcoming-two", date: dateKey(new Date(today.getTime() + 5 * DAY)), start_time: "11:00 AM", end_time: "5:00 PM", note: "", activities: [] },
+    ];
+  }
+
+  function schedulePage(ctx, editable) {
+    const appointments = (data.appointments && data.appointments.length ? data.appointments : (ctx && ctx.demo ? demoAppointments() : [])).slice();
+    const today = dateKey(new Date());
+    const people = `<div class="schedule-people"><span class="schedule-avatar">${esc(initials(data.child && data.child.name))}</span><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span></div>`;
+    const current = editable
+      ? `<section class="current-shift-card current-session-card"><div class="current-session-title"><div><p class="schedule-card-title">Current Session</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span>3:00 PM – 7:00 PM</span></p></div><button type="button" class="schedule-icon-button" data-edit-schedule aria-label="Edit current session">✎</button></div><div class="current-session-people"><div><strong>Children</strong>${people}</div><div><strong>Caregiver</strong><span class="caregiver-name">${esc(data.babysitter && data.babysitter.name || "Caregiver")}</span></div></div></section>`
+      : `<section class="current-shift-card"><div><p class="schedule-card-title">Current Shift</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span>3:00 PM – 7:00 PM</span></p></div>${people}</section>`;
+    return `<section class="schedule-page${editable ? " schedule-page--parent" : ""}" data-schedule-page data-parent="${editable}" data-today="${today}" data-appointments="${esc(JSON.stringify(appointments))}">
+      ${current}
+      <div class="schedule-heading"><h1>Schedule</h1></div>
+      <div class="schedule-tabs" role="tablist" aria-label="Schedule view"><button type="button" role="tab" aria-selected="true" data-view="list">List</button><button type="button" role="tab" aria-selected="false" data-view="calendar">Calendar</button></div>
+      <div class="schedule-date-controls"><button type="button" class="schedule-chevron" data-date="previous" aria-label="Previous date">‹</button><p data-date-label></p><button type="button" class="schedule-chevron" data-date="next" aria-label="Next date">›</button></div>
+      <div class="schedule-body-grid"><div class="schedule-primary-content" data-schedule-content></div><section class="upcoming-shifts"><h2>Upcoming Shifts</h2><div data-upcoming-shifts></div></section></div>
+      ${editable ? '<button type="button" class="schedule-new-session" data-book-appointment>＋ New Session</button>' : ""}<p class="schedule-request-status" data-request-status role="status"></p>
+    </section>`;
+  }
+
   function sitterProfile(ctx) {
     const key = `carenest:sitter-profile:${ctx.user ? ctx.user.id : "demo"}`;
     let saved = {};
@@ -83,8 +131,8 @@
     const editNote = ctx && ctx.demo ? '<p class="secondary-edit-note">Sign in as a parent to edit this information.</p>' : "";
     const views = {
       schedule: {
-        eyebrow: "CURRENT SESSION", title: "Today’s schedule", intro: "A clear plan for the day, with everything in time order.",
-        body: `<section class="panel secondary-panel"><div class="secondary-panel-heading"><h2 class="section-title">Current session schedule</h2>${editable ? '<button class="photo-source-btn secondary-add" type="button" data-edit="hours">Edit hours</button>' : ""}</div>${data.child.shiftTime ? `<p class="supporting-copy">Usual shift hours: ${esc(data.child.shiftTime)}</p>` : ""}<ul class="secondary-list">${taskRows(editable)}</ul>${editable ? '<button class="primary-btn secondary-primary-action" type="button" data-add="task">Add a task</button>' : ""}</section>${editNote}`,
+        eyebrow: "", title: "Schedule", intro: "",
+        body: schedulePage(ctx, Boolean(ctx && ctx.role === "parent")),
       },
       carelog: {
         eyebrow: "CURRENT SESSION", title: "Care log", intro: "Notes, photos, and handoff details from the care session.",
@@ -101,9 +149,125 @@
     }[page];
     if (!views) return;
     document.title = `CareNest — ${views.title}`;
-    root.innerHTML = `<header class="secondary-header"><p class="page-eyebrow">${views.eyebrow}</p><h1>${views.title}</h1><p>${views.intro}</p></header>${views.body}`;
+    root.innerHTML = page === "schedule" ? views.body : `<header class="secondary-header"><p class="page-eyebrow">${views.eyebrow}</p><h1>${views.title}</h1><p>${views.intro}</p></header>${views.body}`;
+    if (page === "schedule") bindSchedule(ctx, Boolean(ctx && ctx.role === "parent"));
     if (editable) bindEditors(ctx);
     if (page === "profile" && (!ctx || ctx.role !== "parent")) bindSitterProfile(ctx || {});
+  }
+
+  function bindSchedule(ctx, editable) {
+    const pageEl = root.querySelector("[data-schedule-page]");
+    if (!pageEl) return;
+    let appointments = [];
+    try { appointments = JSON.parse(pageEl.dataset.appointments || "[]"); } catch (e) { /* an empty schedule is valid */ }
+    let selected = pageEl.dataset.today;
+    let view = "list";
+    const content = pageEl.querySelector("[data-schedule-content]");
+    const upcomingEl = pageEl.querySelector("[data-upcoming-shifts]");
+    const label = pageEl.querySelector("[data-date-label]");
+    const status = pageEl.querySelector("[data-request-status]");
+    const today = pageEl.dataset.today;
+    const currentAppointment = () => appointments.find((item) => item.date === selected);
+    const taskItems = () => ((currentAppointment() && currentAppointment().activities) || []).slice().sort((a, b) => timeValue(a.time) - timeValue(b.time));
+    const eventDates = () => new Set(appointments.map((item) => item.date));
+
+    function appointmentHtml(item) {
+      return `<article class="upcoming-shift"><div><p><strong>${esc(displayDate(item.date))}</strong><span>${esc(item.start_time || "")}${item.end_time ? ` – ${esc(item.end_time)}` : ""}</span></p><small>Children: ${esc(data.child && data.child.name || "Child")} · Caregiver: ${esc(data.babysitter && data.babysitter.name || "Caregiver")}</small></div><div class="schedule-people"><span class="schedule-avatar">${esc(initials(data.child && data.child.name))}</span><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span></div></article>`;
+    }
+    function listHtml() {
+      const appointment = currentAppointment();
+      if (!appointment || !taskItems().length) return emptyHtml();
+      return `<ol class="schedule-activity-list">${taskItems().map((item) => `<li><time>${esc(item.time || "Any time")}</time><div><strong>${esc(item.title)}</strong>${item.detail || item.location ? `<p>${esc(item.detail || item.location)}</p>` : ""}</div></li>`).join("")}</ol>${appointment.note ? `<aside class="schedule-notes"><strong>Today’s Notes</strong><p>${esc(appointment.note)}</p></aside>` : ""}${editable ? '<button type="button" class="schedule-edit-button" data-edit-schedule>Edit Schedule</button>' : ""}`;
+    }
+    function emptyHtml() {
+      return `<div class="schedule-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3m10-3v3M4 9h16M6 5h12a2 2 0 0 1 2-2Z"/></svg><p>No schedule has been added${editable ? "." : " for this shift."}</p>${editable ? '<button class="schedule-empty-button" type="button" data-book-appointment>Add Schedule</button>' : '<button class="schedule-empty-button" type="button" data-request-schedule>Request Schedule</button><small>Send a reminder to the parent to add a schedule for this day.</small>'}</div>`;
+    }
+    function calendarHtml() {
+      const selectedDate = parseDate(selected);
+      const year = selectedDate.getFullYear(), month = selectedDate.getMonth();
+      const first = new Date(year, month, 1), last = new Date(year, month + 1, 0);
+      const start = (first.getDay() + 6) % 7;
+      const days = Array.from({ length: start + last.getDate() }, (_, index) => index < start ? "" : index - start + 1);
+      return `<div class="schedule-calendar"><div class="calendar-weekdays">${["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((day) => `<span>${day}</span>`).join("")}</div><div class="calendar-days">${days.map((day) => { if (!day) return "<span></span>"; const key = dateKey(new Date(year, month, day)); return `<button type="button" data-calendar-date="${key}" class="${key === selected ? "is-selected" : ""}${eventDates().has(key) ? " has-shift" : ""}" aria-label="${esc(displayDate(key, true))}">${day}</button>`; }).join("")}</div></div>${currentAppointment() && taskItems().length ? listHtml() : emptyHtml()}`;
+    }
+    function render() {
+      const isToday = selected === today;
+      label.textContent = view === "calendar" ? displayMonth(selected) : `${displayDate(selected)}${isToday ? " (Today)" : ""}`;
+      content.innerHTML = view === "list" ? listHtml() : calendarHtml();
+      upcomingEl.innerHTML = appointments.filter((item) => item.date > today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4).map(appointmentHtml).join("") || '<p class="schedule-no-upcoming">No upcoming shifts scheduled.</p>';
+      pageEl.querySelectorAll("[data-view]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.view === view)));
+    }
+    function openBooking() {
+      const existing = currentAppointment();
+      const activityList = existing && Array.isArray(existing.activities) ? existing.activities.slice() : [];
+      const dialog = document.createElement("dialog");
+      dialog.className = "confirm-dialog manage-dialog";
+      const toInputTime = (value, fallback) => { const found = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(value || ""); if (!found) return fallback; let hour = Number(found[1]); if (found[3].toLowerCase() === "pm" && hour < 12) hour += 12; if (found[3].toLowerCase() === "am" && hour === 12) hour = 0; return `${String(hour).padStart(2, "0")}:${found[2]}`; };
+      dialog.innerHTML = `<form class="confirm-dialog-body schedule-details-form" method="dialog"><div class="schedule-details-header"><button class="schedule-close" type="button" aria-label="Close">×</button><h2 class="panel-title">Schedule Details</h2><button class="schedule-save" value="save">Save</button></div><label class="field-label" for="appointment-date">Date</label><input class="text-input" id="appointment-date" name="date" type="date" required min="${today}" value="${selected}"><div class="schedule-time-fields"><label class="field-label" for="appointment-start">Start time<input class="text-input" id="appointment-start" name="start" type="time" required value="${toInputTime(existing && existing.start_time, "15:00")}"></label><label class="field-label" for="appointment-end">End time<input class="text-input" id="appointment-end" name="end" type="time" required value="${toInputTime(existing && existing.end_time, "19:00")}"></label></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Children</strong><small>Select all that apply</small></div><button type="button" class="schedule-choice selected" data-child-choice><span class="schedule-avatar">${esc(initials(data.child && data.child.name))}</span>${esc(data.child && data.child.name || "Child")}</button><input type="hidden" name="children" value="${esc(data.child && data.child.name || "Child")}"></div><div class="schedule-detail-group"><strong>Caregiver</strong><div class="schedule-caregiver-choice"><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span>${esc(data.babysitter && data.babysitter.name || "Caregiver")} <span>›</span></div></div><div class="schedule-detail-group"><strong>Activities</strong><div class="schedule-editor-activities">${activityList.map((item) => `<div><time>${esc(item.time || "Any time")}</time><span><b>${esc(item.title)}</b>${item.detail || item.location ? `<small>${esc(item.detail || item.location)}</small>` : ""}</span><button type="button" data-edit-activity="${esc(item.id)}" aria-label="Edit ${esc(item.title)}">✎</button></div>`).join("")}</div><button class="schedule-add-activity" type="button" data-add-activity>＋ Add Activity</button></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Today’s Notes</strong><small>Optional</small></div><textarea class="text-input manage-textarea" name="note" rows="3" placeholder="Anything else the caregiver should know?">${esc(existing && existing.note || "")}</textarea></div><p class="form-error" hidden></p></form>`;
+      document.body.appendChild(dialog);
+      dialog.querySelector(".schedule-close").addEventListener("click", () => dialog.close("cancel"));
+      dialog.querySelector("[data-child-choice]").addEventListener("click", (event) => {
+        const choice = event.currentTarget;
+        const input = dialog.querySelector("[name=children]");
+        choice.classList.toggle("selected");
+        input.value = choice.classList.contains("selected") ? (data.child && data.child.name || "Child") : "";
+      });
+      dialog.addEventListener("close", async () => {
+        if (dialog.returnValue !== "save") return dialog.remove();
+        const form = dialog.querySelector("form"), values = Object.fromEntries(new FormData(form).entries());
+        const errorEl = dialog.querySelector(".form-error");
+        const missing = !values.date ? "Enter a date." : !values.start ? "Enter a start time." : !values.end ? "Enter an end time." : !values.children ? "Select at least one child." : values.end <= values.start ? "End time must be after the start time." : "";
+        if (missing) { errorEl.textContent = missing; errorEl.hidden = false; dialog.showModal(); return; }
+        const format = (value) => new Date(`2000-01-01T${value}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+        const item = { id: existing && existing.id || `appointment-${Date.now()}`, date: values.date, start_time: format(values.start), end_time: format(values.end), note: values.note.trim(), activities: activityList };
+        try {
+          if (ctx && !ctx.demo && ctx.client && data.planId) {
+            const valuesToSave = { household_id: ctx.household.id, plan_id: data.planId, appointment_date: item.date, start_time: values.start, end_time: values.end, note: item.note, activities: item.activities };
+            const result = existing && existing.id ? await ctx.client.from("appointments").update(valuesToSave).eq("id", existing.id) : await ctx.client.from("appointments").insert(valuesToSave);
+            if (result.error) throw result.error;
+          }
+          const existingIndex = existing ? appointments.findIndex((appointment) => appointment.id === existing.id) : appointments.findIndex((appointment) => appointment.date === item.date);
+          if (existingIndex >= 0) appointments.splice(existingIndex, 1, item); else appointments.push(item);
+          selected = item.date; status.textContent = existing ? "Schedule saved." : "Schedule added."; render(); dialog.remove();
+        } catch (error) { const errorEl = dialog.querySelector(".form-error"); errorEl.textContent = auth.friendlyError(error); errorEl.hidden = false; dialog.showModal(); }
+      });
+      dialog.addEventListener("click", async (event) => {
+        const button = event.target.closest("[data-add-activity], [data-edit-activity], [data-save-activity]");
+        if (!button) return;
+        event.preventDefault();
+        if (button.hasAttribute("data-add-activity") || button.dataset.editActivity) {
+          const row = activityList.find((item) => item.id === button.dataset.editActivity) || {};
+          dialog.querySelector(".schedule-inline-activity")?.remove();
+          const editor = document.createElement("div");
+          editor.className = "schedule-inline-activity";
+          editor.innerHTML = `<label>Time<input class="text-input" name="activity-time" type="time" value="${toInputTime(row.time, "15:00")}"></label><label>Activity<input class="text-input" name="activity-title" value="${esc(row.title || "")}" placeholder="Activity name"></label><label>Notes<textarea class="text-input" name="activity-detail" rows="2" placeholder="Notes">${esc(row.detail || "")}</textarea></label><button class="schedule-save" type="button" data-save-activity="${esc(row.id || "")}">Save activity</button>`;
+          dialog.querySelector(".schedule-add-activity")?.parentElement.appendChild(editor);
+          editor.querySelector("input[name=activity-title]").focus();
+          return;
+        }
+        const editor = button.closest(".schedule-inline-activity");
+        const title = editor.querySelector("[name=activity-title]").value.trim();
+        if (!title) return editor.querySelector("[name=activity-title]").focus();
+        const rawTime = editor.querySelector("[name=activity-time]").value;
+        const displayTime = new Date(`2000-01-01T${rawTime}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).replace(" ", "").toLowerCase();
+        const values = { title, time: displayTime, detail: editor.querySelector("[name=activity-detail]").value.trim(), location: null };
+        const existingTask = activityList.find((item) => item.id === button.dataset.saveActivity);
+        try {
+          if (existingTask) Object.assign(existingTask, values); else activityList.push(Object.assign(values, { id: `activity-${Date.now()}` }));
+          editor.remove();
+        } catch (error) { const errorEl = dialog.querySelector(".form-error"); errorEl.textContent = auth.friendlyError(error); errorEl.hidden = false; }
+      });
+      dialog.showModal();
+    }
+    pageEl.addEventListener("click", (event) => {
+      const target = event.target.closest("button"); if (!target) return;
+      if (target.dataset.view) { view = target.dataset.view; render(); }
+      if (target.dataset.date) { selected = dateKey(new Date(parseDate(selected).getTime() + (target.dataset.date === "next" ? DAY : -DAY))); render(); }
+      if (target.dataset.calendarDate) { selected = target.dataset.calendarDate; render(); }
+      if (target.matches("[data-request-schedule]")) status.textContent = "Schedule request sent to the parent.";
+      if (target.matches("[data-book-appointment], [data-edit-schedule]")) openBooking();
+    });
+    render();
   }
 
   function bindEditors(ctx) {

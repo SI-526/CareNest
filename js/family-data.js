@@ -155,6 +155,14 @@
       address: "",
     };
     data.planId = plan ? plan.id : null;
+    data.appointments = (rows.appointments || []).map((appointment) => ({
+      id: appointment.id,
+      date: appointment.appointment_date,
+      start_time: formatTaskTime(appointment.start_time),
+      end_time: formatTaskTime(appointment.end_time),
+      note: appointment.note || "",
+      activities: Array.isArray(appointment.activities) ? appointment.activities : [],
+    }));
     // Set here too, not only by js/auth.js fillNames(): that may have run against the sample
     // object this file discarded.
     data.viewerFirstName = auth.firstName(ctx.membership);
@@ -224,7 +232,7 @@
   async function fetchRows(ctx) {
     const client = ctx.client;
     const householdId = ctx.household.id;
-    const [household, contacts, careItems, plans] = await Promise.all([
+    const [household, contacts, careItems, plans, appointments] = await Promise.all([
       // Re-read so a renamed child shows live (the auth context's copy is from sign-in).
       client.from("households").select("id, name, child_name, child_age_label").eq("id", householdId).maybeSingle(),
       client
@@ -247,14 +255,21 @@
         .order("position", { ascending: true })
         .order("created_at", { ascending: true })
         .limit(1),
+      client
+        .from("appointments")
+        .select("id, appointment_date, start_time, end_time, note, activities")
+        .eq("household_id", householdId)
+        .order("appointment_date", { ascending: true })
+        .order("start_time", { ascending: true }),
     ]);
-    const error = household.error || contacts.error || careItems.error || plans.error;
+    const error = household.error || contacts.error || careItems.error || plans.error || appointments.error;
     if (error) throw error;
     return {
       household: household.data,
       contacts: contacts.data || [],
       careItems: careItems.data || [],
       plan: (plans.data && plans.data[0]) || null,
+      appointments: appointments.data || [],
     };
   }
 
