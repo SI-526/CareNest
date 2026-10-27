@@ -48,7 +48,9 @@ localStorage. Signed-in people's photos and messages are not kept on the device.
 `carenest:v1:<user id>` for each account, picked by the auth guard; signed-out visitors get no key.
 Signing out, or the guard finding no family space, removes that account's key; deleting the
 account removes every `carenest:*` key in that browser. The pre-accounts shared key `carenest:v1`
-is discarded on load (it can't be attributed to one account).
+is discarded on load (it can't be attributed to one account). The sitter profile used to be kept only on the device
+under `carenest:sitter-profile:<user id>`; it now lives in the database, and the profile page
+moves that old copy there once and then deletes the key.
 
 Security headers (CSP with Google Identity Services' documented sources, `frame-ancestors
 'none'`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`) are set for every route in
@@ -162,6 +164,7 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 | `message_reads` | Which messages a user has seen | Each user, for themselves; private |
 | `photo_saves` | A parent's saved-photo album | Each parent, for themselves; private |
 | `concept_flags` | **Concept only**: the demo "child seems off" alert on a photo; nothing analyses photos | Parents set and clear; members read |
+| `sitter_profiles` | A sitter's public profile: display name, about, phone, availability, which of about/phone/availability parents may see, and their private "session update reminders" preference | Each user, for their own row only (create and edit; nobody deletes, account deletion removes it). Parents never read the table; they get only the shared fields through `household_sitter_profiles` |
 | `removed_photos` | Every Storage path a parent removed (internal) | Nobody directly; only `remove_photo` and `remove_all_photos`. Clients cannot read it |
 | Storage `photos` | Private bucket, 5 MB, JPEG/PNG/WebP, at `<household_id>/<visit_id>/<uuid>.<jpg\|png\|webp>` | Members upload into an open, in-window shift of their household (at most 2 photos per active task + 10 per shift); members read photos that were not removed; no overwrite |
 
@@ -185,6 +188,14 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   defaults, `CHECK` constraints, RLS or storage policies, and functions from extensions created
   by `postgres`. The migration author must add the grant; a missing grant fails closed with
   `42501` (permission denied).
+- **Sitter profiles.** Each sitter owns their `sitter_profiles` row; only they can read or change
+  it, and the row's owner is set by the database (`auth.uid()`), never by the client. Parents
+  see a sitter's profile only through `household_sitter_profiles(household)`, which returns
+  rows to a parent of that family space, only for its current caretakers, and returns about,
+  phone, and availability as NULL unless the sitter chose to share them. That filtering is
+  server-side, so hidden fields and the private reminders preference never reach a parent's
+  browser. A profile saved on a device before this change is moved to the database once and
+  the device copy is deleted.
 - Households, memberships, and invites are created only through `SECURITY DEFINER` functions with
   a fixed empty `search_path`. Creating a family space requires an explicit risk acknowledgement,
   stored as `households.risk_acknowledged_at`.

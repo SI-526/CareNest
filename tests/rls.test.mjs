@@ -144,6 +144,8 @@ const tables = [
   "day_notes",
   // 20261026000000_carenest_appointments.sql, hardened in 20261026100000; tested in "appointments: ...".
   "appointments",
+  // SI-51 (20261026110000_carenest_sitter_profiles.sql); tested in "sitter profiles: ...".
+  "sitter_profiles",
 ];
 
 // Internal tables: RLS on, and no anon or authenticated privilege at all (only SECURITY DEFINER
@@ -159,6 +161,7 @@ const rpcs = [
   ["delete_my_account", {}],
   ["is_member", { target_household_id: randomUUID() }],
   ["is_parent", { target_household_id: randomUUID() }],
+  ["household_sitter_profiles", { target_household_id: randomUUID() }],
 ];
 
 let parentA;
@@ -948,6 +951,125 @@ test("appointments: the update policy refuses a plan from another family space e
 
   const { data: kept } = await admin.from("appointments").select("plan_id").eq("id", booked.data.id).single();
   assert.equal(kept.plan_id, b.planId);
+});
+
+test("sitter profiles: sitters own their profile; parents get only shared fields of current sitters", async () => {
+  const a = await newFamily("sp-a", 1);
+  const b = await newFamily("sp-b", 1);
+  const outsiderUser = await signUp("sp-outsider");
+  const sitter = a.sitter.client;
+  const profile = {
+    display_name: "Sam Sitter",
+    bio: "Former preschool teacher",
+    phone: "734-555-0199",
+    availability: "Weekday afternoons",
+    show_bio: true,
+    show_phone: false,
+    show_availability: true,
+    wants_updates: false,
+  };
+
+  // The sitter creates and edits their own row; user_id comes from the session.
+  const created = await sitter.from("sitter_profiles").upsert(profile, { onConflict: "user_id" }).select("*").single();
+  assert.ifError(created.error);
+  assert.equal(created.data.user_id, a.sitter.id);
+  const edited = await sitter
+    .from("sitter_profiles")
+    .upsert({ ...profile, bio: "Former preschool teacher, CPR certified" }, { onConflict: "user_id" })
+    .select("bio")
+    .single();
+  assert.ifError(edited.error);
+  assert.equal(edited.data.bio, "Former preschool teacher, CPR certified");
+  const own = await sitter.from("sitter_profiles").select("*");
+  assert.equal(own.data?.length, 1);
+
+  // A forged user_id is refused on insert and update; the parent's row is not touched.
+  assertPermissionDenied(
+    await sitter.from("sitter_profiles").insert({ ...profile, user_id: a.parent.id }).select(),
+    "sitter inserted a profile for another user",
+  );
+  assertPermissionDenied(
+    await sitter.from("sitter_profiles").update({ user_id: a.parent.id }).eq("user_id", a.sitter.id).select(),
+    "sitter moved their profile to another user",
+  );
+  // Nor can anyone edit someone else's row (RLS hides it).
+  assertDenied(
+    await a.parent.client.from("sitter_profiles").update({ bio: "hijacked" }).eq("user_id", a.sitter.id).select(),
+  );
+
+  // Nobody deletes a profile directly; account deletion cascades.
+  assertPermissionDenied(
+    await sitter.from("sitter_profiles").delete().eq("user_id", a.sitter.id).select(),
+    "sitter deleted their profile",
+  );
+
+  // The parent cannot read the table row, only the shared fields through the RPC.
+  const direct = await a.parent.client.from("sitter_profiles").select("*").eq("user_id", a.sitter.id);
+  assert.deepEqual(direct.data ?? [], [], "parent read the sitter's profile row directly");
+  const shared = await a.parent.client.rpc("household_sitter_profiles", { target_household_id: a.householdId });
+  assert.ifError(shared.error);
+  assert.deepEqual(shared.data, [
+    {
+      user_id: a.sitter.id,
+      display_name: "Sam Sitter",
+      bio: "Former preschool teacher, CPR certified",
+      phone: null,
+      availability: "Weekday afternoons",
+    },
+  ]);
+  assert.ok(!("wants_updates" in shared.data[0]), "the private preference reached a parent");
+  assert.ok(!("show_phone" in shared.data[0]), "the visibility flags reached a parent");
+
+  // Flipping the flags changes what the parent sees; empty shared text comes back NULL.
+  assert.ifError(
+    (await sitter.from("sitter_profiles").update({ show_phone: true, show_bio: false, availability: "" }).eq("user_id", a.sitter.id)).error,
+  );
+  const flipped = await a.parent.client.rpc("household_sitter_profiles", { target_household_id: a.householdId });
+  assert.ifError(flipped.error);
+  assert.deepEqual(flipped.data, [
+    { user_id: a.sitter.id, display_name: "Sam Sitter", bio: null, phone: "734-555-0199", availability: null },
+  ]);
+
+  // Another family's parent, an outsider, and the sitter themselves get nothing for household A.
+  for (const [who, client] of [
+    ["parent B", b.parent.client],
+    ["outsider", outsiderUser.client],
+    ["the caretaker", sitter],
+  ]) {
+    const res = await client.rpc("household_sitter_profiles", { target_household_id: a.householdId });
+    assert.ifError(res.error);
+    assert.deepEqual(res.data, [], `${who} read household A's sitter profiles`);
+  }
+
+  // Anonymous visitors read nothing and cannot call the RPC.
+  const anonRead = await anon.from("sitter_profiles").select("*");
+  assert.ok(anonRead.error || anonRead.data.length === 0, "anon read sitter_profiles");
+  assertPermissionDenied(
+    await anon.rpc("household_sitter_profiles", { target_household_id: a.householdId }),
+    "anon called household_sitter_profiles",
+  );
+
+  // Once the parent removes the sitter, their profile is no longer returned to that family.
+  const removed = await a.parent.client
+    .from("household_members")
+    .delete()
+    .eq("household_id", a.householdId)
+    .eq("user_id", a.sitter.id)
+    .select();
+  assert.equal(removed.data?.length, 1);
+  const afterRemoval = await a.parent.client.rpc("household_sitter_profiles", { target_household_id: a.householdId });
+  assert.ifError(afterRemoval.error);
+  assert.deepEqual(afterRemoval.data, [], "a removed sitter's profile is still shared with the family");
+
+  // Privileges: select, plus insert/update of the editable columns only; never user_id or delete.
+  assert.deepEqual(
+    localSql(`
+      select has_table_privilege('authenticated', 'public.sitter_profiles', 'delete, truncate') as table_delete,
+             has_column_privilege('authenticated', 'public.sitter_profiles', 'user_id', 'insert, update') as user_id_write,
+             has_column_privilege('authenticated', 'public.sitter_profiles', 'bio', 'insert') as bio_insert,
+             has_column_privilege('authenticated', 'public.sitter_profiles', 'bio', 'update') as bio_update`),
+    [{ table_delete: false, user_id_write: false, bio_insert: true, bio_update: true }],
+  );
 });
 
 test("deleting an account that wrote or edited a day note keeps the note without their name", async () => {

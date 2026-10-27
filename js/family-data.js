@@ -151,6 +151,7 @@
     };
     data.babysitter = {
       name: sitter ? auth.firstName(sitter) : "your sitter",
+      userId: sitter ? sitter.user_id : null,
       avatar: null,
       address: "",
     };

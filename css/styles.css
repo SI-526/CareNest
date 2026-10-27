@@ -705,6 +705,7 @@ button {
 .current-session-people { margin-top: 14px; padding: 12px; border-radius: 7px; background: #ededf2; }
 .current-session-people > div { display: flex; align-items: center; gap: 10px; color: #1e1e21; font-size: var(--text-xs); }
 .current-session-people .schedule-people { margin-left: 2px; }
+.caregiver-details { margin: 0; font-size: var(--text-xs); }
 .caregiver-name { display: inline-flex; align-items: center; min-height: 30px; padding: 0 8px; border-radius: 7px; background: #fff; font-size: var(--text-xs); }
 .schedule-card-title, .schedule-card-meta, .schedule-card-meta span, .schedule-heading h1, .upcoming-shifts h2, .upcoming-shift p, .schedule-notes p, .schedule-empty p { margin: 0; }
 .schedule-card-title, .upcoming-shifts h2 { color: var(--blue); font-size: var(--text-lg); font-weight: var(--weight-bold); }

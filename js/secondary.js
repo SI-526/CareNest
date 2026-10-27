@@ -10,12 +10,79 @@
 
   const esc = auth.escapeHtml;
   const ready = (window.CareNestFamily || auth).ready;
-  ready.then((ctx) => {
+  // Loaded once before the page renders: the signed-in sitter's own profile (profile page) or
+  // the fields this family's sitters chose to share (parent schedule page).
+  let sitterProfileState = null;
+  let sharedSitter = null;
+
+  ready.then(async (ctx) => {
     const isParent = ctx && ctx.role === "parent";
     if (isParent) ui.renderParentNav(page === "carelog" ? "care-log" : page);
     else ui.renderSitterNav(page === "carelog" ? "care-log" : page);
+    if (page === "profile" && !isParent) sitterProfileState = await loadSitterProfile(ctx);
+    if (page === "schedule" && isParent) sharedSitter = await loadSharedSitter(ctx);
     render(ctx);
   });
+
+  // The sitter profile lives in public.sitter_profiles. Parents never read that table; they get
+  // only the shared fields through household_sitter_profiles(), filtered in the database.
+  const PROFILE_COLUMNS = "display_name, bio, phone, availability, show_bio, show_phone, show_availability, wants_updates";
+  const legacyProfileKey = (userId) => `carenest:sitter-profile:${userId}`;
+  const dropLegacyProfile = (userId) => { try { localStorage.removeItem(legacyProfileKey(userId)); } catch (e) { /* nothing stored */ } };
+  const profileDefaults = () => ({
+    name: data.babysitter && data.babysitter.name || "",
+    bio: "Friendly, dependable care for busy families.",
+    phone: "",
+    availability: "Weekday afternoons and weekends",
+    showBio: true,
+    showPhone: false,
+    showAvailability: true,
+    updates: true,
+  });
+  const profileFromRow = (row) => ({
+    name: row.display_name, bio: row.bio, phone: row.phone, availability: row.availability,
+    showBio: row.show_bio, showPhone: row.show_phone, showAvailability: row.show_availability, updates: row.wants_updates,
+  });
+  const profileToRow = (profile) => ({
+    display_name: String(profile.name || "").slice(0, 80),
+    bio: String(profile.bio || "").slice(0, 500),
+    phone: String(profile.phone || "").slice(0, 40),
+    availability: String(profile.availability || "").slice(0, 160),
+    show_bio: Boolean(profile.showBio),
+    show_phone: Boolean(profile.showPhone),
+    show_availability: Boolean(profile.showAvailability),
+    wants_updates: Boolean(profile.updates),
+  });
+  const saveProfile = (ctx, profile) => ctx.client.from("sitter_profiles").upsert(profileToRow(profile), { onConflict: "user_id" });
+
+  async function loadSitterProfile(ctx) {
+    const defaults = profileDefaults();
+    if (!ctx || ctx.demo || !ctx.client || !ctx.user) return { profile: defaults };
+    const { data: row, error } = await ctx.client.from("sitter_profiles").select(PROFILE_COLUMNS).eq("user_id", ctx.user.id).maybeSingle();
+    if (error) return { profile: defaults, error };
+    if (row) {
+      dropLegacyProfile(ctx.user.id);
+      return { profile: profileFromRow(row) };
+    }
+    // One-time move of a profile saved on this device before profiles reached the database.
+    let legacy = null;
+    try { legacy = JSON.parse(localStorage.getItem(legacyProfileKey(ctx.user.id)) || "null"); } catch (e) { /* unreadable: start fresh */ }
+    if (!legacy || typeof legacy !== "object") return { profile: defaults };
+    const profile = { ...defaults };
+    Object.keys(defaults).forEach((name) => { if (name in legacy) profile[name] = legacy[name]; });
+    const saved = await saveProfile(ctx, profile);
+    if (saved.error) return { profile, error: saved.error };
+    dropLegacyProfile(ctx.user.id);
+    return { profile };
+  }
+
+  async function loadSharedSitter(ctx) {
+    if (!ctx || ctx.demo || !ctx.client || !ctx.household) return null;
+    const { data: rows, error } = await ctx.client.rpc("household_sitter_profiles", { target_household_id: ctx.household.id });
+    if (error || !rows || !rows.length) return null;
+    const userId = data.babysitter && data.babysitter.userId;
+    return rows.find((row) => row.user_id === userId) || rows[0];
+  }
 
   function taskRows(editable) {
     if (!data.schedule.length) return '<li class="secondary-row"><span><strong>No tasks yet</strong><small>Add the first task for this session.</small></span></li>';
@@ -58,7 +125,7 @@
     const today = dateKey(new Date());
     const people = `<div class="schedule-people"><span class="schedule-avatar">${esc(initials(data.child && data.child.name))}</span><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span></div>`;
     const current = editable
-      ? `<section class="current-shift-card current-session-card"><div class="current-session-title"><div><p class="schedule-card-title">Current Session</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span>3:00 PM – 7:00 PM</span></p></div><button type="button" class="schedule-icon-button" data-edit-schedule aria-label="Edit current session">✎</button></div><div class="current-session-people"><div><strong>Children</strong>${people}</div><div><strong>Caregiver</strong><span class="caregiver-name">${esc(data.babysitter && data.babysitter.name || "Caregiver")}</span></div></div></section>`
+      ? `<section class="current-shift-card current-session-card"><div class="current-session-title"><div><p class="schedule-card-title">Current Session</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span>3:00 PM – 7:00 PM</span></p></div><button type="button" class="schedule-icon-button" data-edit-schedule aria-label="Edit current session">✎</button></div><div class="current-session-people"><div><strong>Children</strong>${people}</div><div><strong>Caregiver</strong><span class="caregiver-name">${esc(sharedSitter && sharedSitter.display_name || data.babysitter && data.babysitter.name || "Caregiver")}</span>${caregiverDetails()}</div></div></section>`
       : `<section class="current-shift-card"><div><p class="schedule-card-title">Current Shift</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span>3:00 PM – 7:00 PM</span></p></div>${people}</section>`;
     return `<section class="schedule-page${editable ? " schedule-page--parent" : ""}" data-schedule-page data-parent="${editable}" data-today="${today}" data-appointments="${esc(JSON.stringify(appointments))}">
       ${current}
@@ -70,40 +137,45 @@
     </section>`;
   }
 
-  function sitterProfile(ctx) {
-    const key = `carenest:sitter-profile:${ctx.user ? ctx.user.id : "demo"}`;
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(key) || "{}"); } catch (e) { /* start with defaults */ }
-    const defaults = {
-      name: data.babysitter && data.babysitter.name || "",
-      bio: "Friendly, dependable care for busy families.",
-      phone: "",
-      availability: "Weekday afternoons and weekends",
-      showBio: true,
-      showPhone: false,
-      showAvailability: true,
-      updates: true,
-    };
-    const profile = { ...defaults, ...saved };
+  // Shared availability and phone under the caregiver's name (parent schedule page).
+  function caregiverDetails() {
+    if (!sharedSitter || (!sharedSitter.availability && !sharedSitter.phone)) return "";
+    const href = sharedSitter.phone && window.CareNestFamily ? window.CareNestFamily.phoneHref(sharedSitter.phone) : "";
+    const phone = sharedSitter.phone ? (href ? `<a href="${esc(href)}">${esc(sharedSitter.phone)}</a>` : esc(sharedSitter.phone)) : "";
+    return `<p class="supporting-copy caregiver-details">${[sharedSitter.availability ? esc(sharedSitter.availability) : "", phone].filter(Boolean).join(" · ")}</p>`;
+  }
+
+  function sitterProfile() {
+    const profile = (sitterProfileState && sitterProfileState.profile) || profileDefaults();
     return `<section class="profile-settings-layout"><article class="panel secondary-panel public-profile-card"><p class="page-eyebrow">VISIBLE TO PARENTS</p><h2 class="section-title">Your public profile</h2><p class="supporting-copy">Parents only see the fields you choose to share below.</p><form class="profile-settings-form" id="profile-settings-form"><label class="field-label" for="profile-name">Display name</label><input class="text-input" id="profile-name" name="name" maxlength="80" value="${esc(profile.name)}"><label class="field-label" for="profile-bio">About you</label><textarea class="text-input profile-textarea" id="profile-bio" name="bio" maxlength="500" rows="4">${esc(profile.bio)}</textarea><label class="field-label" for="profile-phone">Phone number</label><input class="text-input" id="profile-phone" name="phone" type="tel" maxlength="40" value="${esc(profile.phone)}"><label class="field-label" for="profile-availability">Availability</label><input class="text-input" id="profile-availability" name="availability" maxlength="160" value="${esc(profile.availability)}"><fieldset class="profile-visibility"><legend class="field-label">What parents can see</legend><label><input type="checkbox" name="showBio"${profile.showBio ? " checked" : ""}> About you</label><label><input type="checkbox" name="showPhone"${profile.showPhone ? " checked" : ""}> Phone number</label><label><input type="checkbox" name="showAvailability"${profile.showAvailability ? " checked" : ""}> Availability</label></fieldset><fieldset class="profile-visibility"><legend class="field-label">Your preferences</legend><label><input type="checkbox" name="updates"${profile.updates ? " checked" : ""}> Receive session update reminders</label></fieldset><div class="profile-save-row"><button class="primary-btn" type="submit">Save profile</button><p class="profile-save-status" id="profile-save-status" role="status" aria-live="polite"></p></div></form></article><aside class="panel secondary-panel profile-preview"><p class="page-eyebrow">PARENT PREVIEW</p><h2 class="section-title" id="profile-preview-name">${esc(profile.name) || "Your name"}</h2><p class="supporting-copy" id="profile-preview-bio"${profile.showBio ? "" : " hidden"}>${esc(profile.bio)}</p><p class="supporting-copy" id="profile-preview-phone"${profile.showPhone ? "" : " hidden"}>${esc(profile.phone)}</p><p class="supporting-copy" id="profile-preview-availability"${profile.showAvailability ? "" : " hidden"}>${esc(profile.availability)}</p><p class="profile-private-note">Private fields stay visible only to you.</p></aside></section>`;
   }
 
   function bindSitterProfile(ctx) {
     const form = document.getElementById("profile-settings-form");
     if (!form) return;
-    const key = `carenest:sitter-profile:${ctx.user ? ctx.user.id : "demo"}`;
-    form.addEventListener("submit", (event) => {
+    const status = document.getElementById("profile-save-status");
+    if (sitterProfileState && sitterProfileState.error) status.textContent = auth.friendlyError(sitterProfileState.error);
+    const canSave = Boolean(!ctx.demo && ctx.client && ctx.user);
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const values = Object.fromEntries(new FormData(form).entries());
       ["showBio", "showPhone", "showAvailability", "updates"].forEach((name) => { values[name] = form.elements[name].checked; });
-      try { localStorage.setItem(key, JSON.stringify(values)); } catch (e) { /* the page still reflects this visit */ }
+      if (canSave) {
+        const button = form.querySelector('[type="submit"]');
+        button.disabled = true;
+        status.textContent = "Saving…";
+        const { error } = await saveProfile(ctx, values);
+        button.disabled = false;
+        if (error) { status.textContent = auth.friendlyError(error); return; }
+        dropLegacyProfile(ctx.user.id);
+      }
       document.getElementById("profile-preview-name").textContent = values.name || "Your name";
       [["bio", "showBio"], ["phone", "showPhone"], ["availability", "showAvailability"]].forEach(([field, visible]) => {
         const el = document.getElementById(`profile-preview-${field}`);
         el.textContent = values[field] || "";
         el.hidden = !values[visible] || !values[field];
       });
-      document.getElementById("profile-save-status").textContent = "Profile saved.";
+      status.textContent = canSave ? "Profile saved." : "Preview updated. Demo profiles are not saved.";
     });
   }
 
@@ -144,7 +216,7 @@
       },
       profile: {
         eyebrow: "PROFILE & SETTINGS", title: ctx && ctx.role === "parent" ? "Your CareNest settings" : "Your sitter profile", intro: ctx && ctx.role === "parent" ? "Manage your details and the family space with confidence." : "Choose what parents can see, and keep your personal preferences in one place.",
-        body: ctx && ctx.role === "parent" ? `<section class="secondary-grid"><article class="panel secondary-panel"><h2 class="section-title">My profile</h2><p class="supporting-copy">Your name and sign-in controls are available from the Account menu.</p></article><article class="panel secondary-panel"><h2 class="section-title">Manage household</h2><p class="supporting-copy">Use the Children and Schedule tabs to edit family care information directly where it is shown.</p><a class="secondary-link" href="people.html">People and invites</a></article><article class="panel secondary-panel"><h2 class="section-title">Notification preferences</h2><p class="supporting-copy">Notification controls will appear here as they become available.</p></article></section>` : sitterProfile(ctx || {}),
+        body: ctx && ctx.role === "parent" ? `<section class="secondary-grid"><article class="panel secondary-panel"><h2 class="section-title">My profile</h2><p class="supporting-copy">Your name and sign-in controls are available from the Account menu.</p></article><article class="panel secondary-panel"><h2 class="section-title">Manage household</h2><p class="supporting-copy">Use the Children and Schedule tabs to edit family care information directly where it is shown.</p><a class="secondary-link" href="people.html">People and invites</a></article><article class="panel secondary-panel"><h2 class="section-title">Notification preferences</h2><p class="supporting-copy">Notification controls will appear here as they become available.</p></article></section>` : sitterProfile(),
       },
     }[page];
     if (!views) return;
