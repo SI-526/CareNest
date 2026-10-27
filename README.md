@@ -156,6 +156,7 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 | `day_notes` | "Important today": notes for one calendar date (category, title, detail); who wrote and last edited each, and when | Parents add, edit, delete; members read. Authorship and edit times are set by the database (a trigger), so "Updated" cannot be forged; a note never moves to another family space |
 | `plans`, `tasks` | The child's day (one plan per family space): ordered tasks with time, detail, location, care note, usual hours | Parents; clients update only a plan's `schedule` (its household and title are fixed); archived tasks are frozen |
 | `appointments` | Care booked ahead on the plan: date, start and end time, note, activities | Parents book and edit the date, times, note, and activities; members read. Household and plan are fixed (an appointment never moves to another family space or plan); nobody deletes |
+| `schedule_requests` | A sitter's "Request Schedule" reminder: family space, date, who asked, when, and when it was resolved | Caretakers ask (today or later in the app; the database accepts yesterday UTC onwards; one open request per day); members read; parents dismiss (set `resolved_at`). `requested_by` is set by the database. Booking or moving an appointment onto that date resolves it (a trigger). Nobody deletes |
 | `visits` | One babysitting shift per plan per date (yesterday, today, or tomorrow); start, handoff note, current end, moment time | Members start and write the note (dates in the window only); any member can `end_visit` and `reopen_visit` |
 | `task_checks` | Which tasks are done in a shift, by whom, and when (`checked_at`) | Only `complete_task` (photo required for caretakers, optional for parents), while the shift is open and in the window; members uncheck |
 | `shift_events` | Append-only shift history: ends, reopens, and unchecks of original-shift tasks after a reopen, with who, which task, and when | Nobody directly; only `end_visit`, `reopen_visit`, and the uncheck trigger write it. Members read |
@@ -345,13 +346,20 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   a delete; refused paths back off (up to a day) so newer orphans still go.
   It needs the one-time Vault setup under "Deploying to a hosted Supabase project"; locally it
   fails every hour with `photo_cleanup_not_configured` unless you add those secrets.
+- Schedule requests (SI-50): a sitter's "Request Schedule" on `schedule.html` saves a
+  `schedule_requests` row; the family's parents see it on their schedule page and on `parent.html`
+  (live, Realtime) and can dismiss it. Adding a schedule (appointment) for that date clears it
+  automatically. Only caretakers can ask, only parents can dismiss, nobody can ask in someone
+  else's name. In-app only: no email or push notification is sent.
 - Known limitation (same as Carekeeper): Supabase Realtime does not apply RLS to DELETE events,
   so a signed-in user subscribed to `task_checks` also receives the primary keys (two random
   UUIDs, no content) of unchecks in other family spaces. The same applies to `visits` and
   `shift_events` rows removed when a family space or plan is deleted (one random UUID each), and
   to `messages` and `care_logs` (one random UUID each; clients never delete messages or care
   logs, so only cascades emit them), to `day_notes` (one random UUID per deleted note), and to
-  `contacts`, `care_items`, `plans`, `tasks`, and `households` (one random UUID per deleted row;
+  `contacts`, `care_items`, `plans`, `tasks`, `households`, `appointments`, and
+  `schedule_requests` (one random UUID per deleted row; clients never delete appointments or
+  schedule requests, so only cascades emit them;
   with RLS on, a DELETE event carries only the primary key whatever the replica identity, so no
   content is sent; it stays default because FULL adds write-ahead-log volume for no benefit).
   `tasks` go only by cascade from a plan or family-space delete, so those cascades still emit task

@@ -146,6 +146,8 @@ const tables = [
   "appointments",
   // SI-51 (20261026110000_carenest_sitter_profiles.sql); tested in "sitter profiles: ...".
   "sitter_profiles",
+  // SI-50 (20261026120000_carenest_schedule_requests.sql); tested in "schedule requests: ...".
+  "schedule_requests",
 ];
 
 // Internal tables: RLS on, and no anon or authenticated privilege at all (only SECURITY DEFINER
@@ -951,6 +953,124 @@ test("appointments: the update policy refuses a plan from another family space e
 
   const { data: kept } = await admin.from("appointments").select("plan_id").eq("id", booked.data.id).single();
   assert.equal(kept.plan_id, b.planId);
+});
+
+test("schedule requests: sitters ask, parents read and dismiss, booking that date resolves it", async () => {
+  const a = await newFamily("sreq-a", 1);
+  const b = await newFamily("sreq-b", 1);
+  const p = a.parent.client;
+  const c = a.sitter.client;
+  const req = (date, extra) => Object.assign({ household_id: a.householdId, request_date: date }, extra);
+  const openFor = async (date) => {
+    const { data, error } = await admin
+      .from("schedule_requests")
+      .select("id, requested_by, resolved_at")
+      .eq("household_id", a.householdId)
+      .eq("request_date", date);
+    assert.ifError(error);
+    return data;
+  };
+
+  // The caretaker asks for today (what js/secondary.js sends); requested_by is the caller.
+  const asked = await c.from("schedule_requests").insert(req(isoDate(0))).select("*").single();
+  assert.ifError(asked.error);
+  assert.equal(asked.data.requested_by, a.sitter.id);
+  assert.equal(asked.data.resolved_at, null);
+
+  // A second open request for the same date is a unique violation ("already sent").
+  const again = await c.from("schedule_requests").insert(req(isoDate(0))).select();
+  assert.equal(again.error && again.error.code, "23505", "second open request for the same date");
+
+  // A parent cannot file a request; the caretaker cannot dismiss one.
+  assertDenied(await p.from("schedule_requests").insert(req(isoDate(3))).select(), "parent filed a schedule request");
+  assertDenied(
+    await c.from("schedule_requests").update({ resolved_at: new Date().toISOString() }).eq("id", asked.data.id).select(),
+    "caretaker dismissed a schedule request",
+  );
+  assert.equal((await openFor(isoDate(0)))[0].resolved_at, null, "the caretaker's update changed nothing");
+
+  // requested_by is not insertable (comes from auth.uid()); dates before yesterday are refused.
+  assertPermissionDenied(
+    await c.from("schedule_requests").insert(req(isoDate(4), { requested_by: a.parent.id })).select(),
+    "caretaker sent a request in the parent's name",
+  );
+  assertDenied(await c.from("schedule_requests").insert(req(isoDate(-2))).select(), "request for a date 2 days ago");
+  const yesterday = await c.from("schedule_requests").insert(req(isoDate(-1))).select("id").single();
+  assert.ifError(yesterday.error);
+
+  // The parent reads the household's open requests and dismisses one.
+  const listed = await p.from("schedule_requests").select("id").eq("household_id", a.householdId).is("resolved_at", null);
+  assert.ifError(listed.error);
+  assert.deepEqual(listed.data.map((r) => r.id).sort(), [asked.data.id, yesterday.data.id].sort());
+  const dismissed = await p
+    .from("schedule_requests")
+    .update({ resolved_at: new Date().toISOString() })
+    .eq("id", asked.data.id)
+    .select("resolved_at")
+    .single();
+  assert.ifError(dismissed.error);
+  assert.ok(dismissed.data.resolved_at, "dismiss set resolved_at");
+  // A dismissed request is not reopened.
+  assertDenied(
+    await p.from("schedule_requests").update({ resolved_at: null }).eq("id", asked.data.id).select(),
+    "parent reopened a dismissed request",
+  );
+  // After a dismiss the caretaker can ask for that date again.
+  const reasked = await c.from("schedule_requests").insert(req(isoDate(0))).select("id").single();
+  assert.ifError(reasked.error);
+
+  // Nothing else moves, and nobody deletes.
+  for (const values of [{ household_id: b.householdId }, { request_date: isoDate(5) }, { requested_by: a.sitter.id }]) {
+    assertPermissionDenied(
+      await p.from("schedule_requests").update(values).eq("id", reasked.data.id).select(),
+      `parent updated ${Object.keys(values)[0]}`,
+    );
+  }
+  for (const [label, client] of [["parent", p], ["caretaker", c]]) {
+    assertPermissionDenied(
+      await client.from("schedule_requests").delete().eq("id", reasked.data.id).select(),
+      `${label} deleted a schedule request`,
+    );
+  }
+
+  // Parent B and a user with no household see nothing and cannot write A's requests.
+  for (const [label, user] of [["parent B", b.parent], ["caretaker B", b.sitter], ["outsider", outsider]]) {
+    const read = await user.client.from("schedule_requests").select("*").eq("household_id", a.householdId);
+    assert.ifError(read.error);
+    assert.deepEqual(read.data, [], `${label} reads A's schedule requests`);
+    assertDenied(await user.client.from("schedule_requests").insert(req(isoDate(6))).select(), `${label} asked in A`);
+    assertDenied(
+      await user.client.from("schedule_requests").update({ resolved_at: new Date().toISOString() }).eq("id", reasked.data.id).select(),
+      `${label} dismissed A's request`,
+    );
+  }
+  const anonRead = await anon.from("schedule_requests").select("*");
+  assert.ok(anonRead.error || anonRead.data.length === 0, "anon read schedule requests");
+  assertDenied(await anon.from("schedule_requests").insert(req(isoDate(6))).select(), "anon asked in A");
+
+  // Booking an appointment for a requested date resolves that request; moving one onto another
+  // requested date resolves that one too. Other dates and other households are untouched.
+  const asked1 = await c.from("schedule_requests").insert(req(isoDate(1))).select("id").single();
+  const asked2 = await c.from("schedule_requests").insert(req(isoDate(2))).select("id").single();
+  const otherFamily = await b.sitter.client
+    .from("schedule_requests")
+    .insert({ household_id: b.householdId, request_date: isoDate(1) })
+    .select("id")
+    .single();
+  assert.ifError(asked1.error || asked2.error || otherFamily.error);
+  const booked = await p
+    .from("appointments")
+    .insert({ household_id: a.householdId, plan_id: a.planId, appointment_date: isoDate(1), start_time: "09:00", end_time: "12:00" })
+    .select("id")
+    .single();
+  assert.ifError(booked.error);
+  assert.ok((await openFor(isoDate(1)))[0].resolved_at, "booking the requested date resolved the request");
+  assert.equal((await openFor(isoDate(2)))[0].resolved_at, null, "another date's request stayed open");
+  const { data: bRow } = await admin.from("schedule_requests").select("resolved_at").eq("id", otherFamily.data.id).single();
+  assert.equal(bRow.resolved_at, null, "another family's request stayed open");
+  const moved = await p.from("appointments").update({ appointment_date: isoDate(2) }).eq("id", booked.data.id).select("id");
+  assert.ifError(moved.error);
+  assert.ok((await openFor(isoDate(2)))[0].resolved_at, "moving an appointment onto a requested date resolved it");
 });
 
 test("sitter profiles: sitters own their profile; parents get only shared fields of current sitters", async () => {

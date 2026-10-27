@@ -14,6 +14,8 @@
   // the fields this family's sitters chose to share (parent schedule page).
   let sitterProfileState = null;
   let sharedSitter = null;
+  // The schedule page's re-sync with window.CareNestData (set by bindSchedule).
+  let syncSchedule = null;
 
   ready.then(async (ctx) => {
     const isParent = ctx && ctx.role === "parent";
@@ -22,6 +24,12 @@
     if (page === "profile" && !isParent) sitterProfileState = await loadSitterProfile(ctx);
     if (page === "schedule" && isParent) sharedSitter = await loadSharedSitter(ctx);
     render(ctx);
+    // Live (SI-50): a parent's new session reaches the sitter, and a sitter's schedule request
+    // (or its dismissal or auto-clear) reaches every member, without a reload. Only the schedule
+    // view re-renders, keeping its selected date and view; the editors' listeners bind once.
+    if (page === "schedule" && window.CareNestFamily && window.CareNestFamily.subscribe) {
+      window.CareNestFamily.subscribe(() => { if (syncSchedule) syncSchedule(); });
+    }
   });
 
   // The sitter profile lives in public.sitter_profiles. Parents never read that table; they get
@@ -128,6 +136,7 @@
       ? `<section class="current-shift-card current-session-card"><div class="current-session-title"><div><p class="schedule-card-title">Current Session</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span>3:00 PM – 7:00 PM</span></p></div><button type="button" class="schedule-icon-button" data-edit-schedule aria-label="Edit current session">✎</button></div><div class="current-session-people"><div><strong>Children</strong>${people}</div><div><strong>Caregiver</strong><span class="caregiver-name">${esc(sharedSitter && sharedSitter.display_name || data.babysitter && data.babysitter.name || "Caregiver")}</span>${caregiverDetails()}</div></div></section>`
       : `<section class="current-shift-card"><div><p class="schedule-card-title">Current Shift</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span>3:00 PM – 7:00 PM</span></p></div>${people}</section>`;
     return `<section class="schedule-page${editable ? " schedule-page--parent" : ""}" data-schedule-page data-parent="${editable}" data-today="${today}" data-appointments="${esc(JSON.stringify(appointments))}">
+      ${editable ? '<div class="schedule-request-notices" data-request-notices aria-live="polite"></div>' : ""}
       ${current}
       <div class="schedule-heading"><h1>Schedule</h1></div>
       <div class="schedule-tabs" role="tablist" aria-label="Schedule view"><button type="button" role="tab" aria-selected="true" data-view="list">List</button><button type="button" role="tab" aria-selected="false" data-view="calendar">Calendar</button></div>
@@ -154,10 +163,17 @@
     const form = document.getElementById("profile-settings-form");
     if (!form) return;
     const status = document.getElementById("profile-save-status");
-    if (sitterProfileState && sitterProfileState.error) status.textContent = auth.friendlyError(sitterProfileState.error);
     const canSave = Boolean(!ctx.demo && ctx.client && ctx.user);
+    // A failed load shows defaults; saving them would overwrite the saved profile, so Save stays
+    // off until the page is reloaded and the profile loads.
+    const loadFailed = Boolean(canSave && sitterProfileState && sitterProfileState.error);
+    if (loadFailed) {
+      form.querySelector('[type="submit"]').disabled = true;
+      status.textContent = `Your saved profile could not be loaded (${auth.friendlyError(sitterProfileState.error)}), so saving is turned off to keep it safe. Reload the page to try again.`;
+    }
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (loadFailed) return;
       const values = Object.fromEntries(new FormData(form).entries());
       ["showBio", "showPhone", "showAvailability", "updates"].forEach((name) => { values[name] = form.elements[name].checked; });
       if (canSave) {
@@ -232,7 +248,13 @@
     if (!pageEl) return;
     let appointments = [];
     try { appointments = JSON.parse(pageEl.dataset.appointments || "[]"); } catch (e) { /* an empty schedule is valid */ }
+    // Open "Request Schedule" reminders (SI-50): from the database, or this tab only in demo mode.
+    const live = Boolean(ctx && !ctx.demo && ctx.client && ctx.household);
+    let requests = live ? (data.scheduleRequests || []).slice() : [];
     let selected = pageEl.dataset.today;
+    // parent.html links here with ?date=YYYY-MM-DD to open a requested day.
+    const linkedDate = new URLSearchParams(window.location.search).get("date");
+    if (linkedDate && /^\d{4}-\d{2}-\d{2}$/.test(linkedDate) && !Number.isNaN(parseDate(linkedDate).getTime())) selected = linkedDate;
     let view = "list";
     const content = pageEl.querySelector("[data-schedule-content]");
     const upcomingEl = pageEl.querySelector("[data-upcoming-shifts]");
@@ -242,17 +264,33 @@
     const currentAppointment = () => appointments.find((item) => item.date === selected);
     const taskItems = () => ((currentAppointment() && currentAppointment().activities) || []).slice().sort((a, b) => timeValue(a.time) - timeValue(b.time));
     const eventDates = () => new Set(appointments.map((item) => item.date));
+    const openRequest = (date) => requests.find((item) => item.date === date);
+    const parentFirst = () => String(data.parentName || "").trim().split(/\s+/)[0] || "";
+    const notices = pageEl.querySelector("[data-request-notices]");
+    function setStatus(text, isError) {
+      status.textContent = text;
+      status.classList.toggle("is-error", Boolean(isError));
+    }
 
     function appointmentHtml(item) {
       return `<article class="upcoming-shift"><div><p><strong>${esc(displayDate(item.date))}</strong><span>${esc(item.start_time || "")}${item.end_time ? ` – ${esc(item.end_time)}` : ""}</span></p><small>Children: ${esc(data.child && data.child.name || "Child")} · Caregiver: ${esc(data.babysitter && data.babysitter.name || "Caregiver")}</small></div><div class="schedule-people"><span class="schedule-avatar">${esc(initials(data.child && data.child.name))}</span><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span></div></article>`;
     }
     function listHtml() {
       const appointment = currentAppointment();
-      if (!appointment || !taskItems().length) return emptyHtml();
+      if (!appointment) return emptyHtml();
+      // A booked session with no activities yet is still a schedule: show its hours, not "Request".
+      if (!taskItems().length) return `<div class="schedule-empty"><p>Session ${esc(appointment.start_time || "")}${appointment.end_time ? ` – ${esc(appointment.end_time)}` : ""}</p><small>No activities added yet.</small>${editable ? '<button class="schedule-empty-button" type="button" data-edit-schedule>Edit Schedule</button>' : ""}</div>${appointment.note ? `<aside class="schedule-notes"><strong>Today’s Notes</strong><p>${esc(appointment.note)}</p></aside>` : ""}`;
       return `<ol class="schedule-activity-list">${taskItems().map((item) => `<li><time>${esc(item.time || "Any time")}</time><div><strong>${esc(item.title)}</strong>${item.detail || item.location ? `<p>${esc(item.detail || item.location)}</p>` : ""}</div></li>`).join("")}</ol>${appointment.note ? `<aside class="schedule-notes"><strong>Today’s Notes</strong><p>${esc(appointment.note)}</p></aside>` : ""}${editable ? '<button type="button" class="schedule-edit-button" data-edit-schedule>Edit Schedule</button>' : ""}`;
     }
     function emptyHtml() {
-      return `<div class="schedule-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3m10-3v3M4 9h16M6 5h12a2 2 0 0 1 2-2Z"/></svg><p>No schedule has been added${editable ? "." : " for this shift."}</p>${editable ? '<button class="schedule-empty-button" type="button" data-book-appointment>Add Schedule</button>' : '<button class="schedule-empty-button" type="button" data-request-schedule>Request Schedule</button><small>Send a reminder to the parent to add a schedule for this day.</small>'}</div>`;
+      const parent = parentFirst();
+      let action;
+      if (editable) action = '<button class="schedule-empty-button" type="button" data-book-appointment>Add Schedule</button>';
+      // Past days cannot get a schedule (booking starts today), so there is nothing to request.
+      else if (selected < today) action = "";
+      else if (openRequest(selected)) action = `<button class="schedule-empty-button" type="button" disabled>Reminder sent to ${esc(parent || "the parent")}</button><small>${esc(parent || "The parent")} will see it on their schedule.</small>`;
+      else action = '<button class="schedule-empty-button" type="button" data-request-schedule>Request Schedule</button><small>Send a reminder to the parent to add a schedule for this day.</small>';
+      return `<div class="schedule-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3m10-3v3M4 9h16M6 5h12a2 2 0 0 1 2-2Z"/></svg><p>No schedule has been added${editable ? "." : " for this shift."}</p>${action}</div>`;
     }
     function calendarHtml() {
       const selectedDate = parseDate(selected);
@@ -260,7 +298,7 @@
       const first = new Date(year, month, 1), last = new Date(year, month + 1, 0);
       const start = (first.getDay() + 6) % 7;
       const days = Array.from({ length: start + last.getDate() }, (_, index) => index < start ? "" : index - start + 1);
-      return `<div class="schedule-calendar"><div class="calendar-weekdays">${["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((day) => `<span>${day}</span>`).join("")}</div><div class="calendar-days">${days.map((day) => { if (!day) return "<span></span>"; const key = dateKey(new Date(year, month, day)); return `<button type="button" data-calendar-date="${key}" class="${key === selected ? "is-selected" : ""}${eventDates().has(key) ? " has-shift" : ""}" aria-label="${esc(displayDate(key, true))}">${day}</button>`; }).join("")}</div></div>${currentAppointment() && taskItems().length ? listHtml() : emptyHtml()}`;
+      return `<div class="schedule-calendar"><div class="calendar-weekdays">${["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((day) => `<span>${day}</span>`).join("")}</div><div class="calendar-days">${days.map((day) => { if (!day) return "<span></span>"; const key = dateKey(new Date(year, month, day)); return `<button type="button" data-calendar-date="${key}" class="${key === selected ? "is-selected" : ""}${eventDates().has(key) ? " has-shift" : ""}" aria-label="${esc(displayDate(key, true))}">${day}</button>`; }).join("")}</div></div>${listHtml()}`;
     }
     function render() {
       const isToday = selected === today;
@@ -268,6 +306,45 @@
       content.innerHTML = view === "list" ? listHtml() : calendarHtml();
       upcomingEl.innerHTML = appointments.filter((item) => item.date > today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4).map(appointmentHtml).join("") || '<p class="schedule-no-upcoming">No upcoming shifts scheduled.</p>';
       pageEl.querySelectorAll("[data-view]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.view === view)));
+      if (notices) notices.innerHTML = requests.map(noticeHtml).join("");
+    }
+    // Parent schedule page: one notice per open request.
+    function noticeHtml(request) {
+      const name = request.requesterName || "Your sitter";
+      const canAdd = request.date >= today; // booking starts today
+      return `<div class="auth-status schedule-request-notice"><p>${esc(name)} asked for a schedule for ${esc(displayDate(request.date))}.</p><div class="schedule-request-actions">${canAdd ? `<button type="button" class="primary-btn" data-request-add="${esc(request.date)}">Add schedule</button>` : ""}<button type="button" class="photo-source-btn" data-request-dismiss="${esc(request.id)}">Dismiss</button></div></div>`;
+    }
+    async function requestSchedule(button) {
+      const date = selected;
+      const parent = parentFirst();
+      if (!live) {
+        setStatus("Demo only: no reminder was sent. Sign in as a sitter to send a real one.");
+        return;
+      }
+      button.disabled = true;
+      setStatus("Sending…");
+      const { error } = await ctx.client.from("schedule_requests").insert({ household_id: ctx.household.id, request_date: date });
+      // 23505: an open request for this day already exists, so the parent already has it.
+      if (error && error.code !== "23505") {
+        button.disabled = false;
+        setStatus(auth.friendlyError(error), true);
+        return;
+      }
+      if (!openRequest(date)) requests = requests.concat({ id: `sent-${date}`, date });
+      setStatus(`Reminder sent. ${parent || "The parent"} will see it on their schedule.`);
+      render();
+    }
+    async function dismissRequest(button) {
+      button.disabled = true;
+      const { error } = await ctx.client.from("schedule_requests").update({ resolved_at: new Date().toISOString() }).eq("id", button.dataset.requestDismiss);
+      if (error) {
+        button.disabled = false;
+        setStatus(auth.friendlyError(error), true);
+        return;
+      }
+      requests = requests.filter((item) => item.id !== button.dataset.requestDismiss);
+      setStatus("Request dismissed.");
+      render();
     }
     function openBooking() {
       const existing = currentAppointment();
@@ -301,7 +378,8 @@
           }
           const existingIndex = existing ? appointments.findIndex((appointment) => appointment.id === existing.id) : appointments.findIndex((appointment) => appointment.date === item.date);
           if (existingIndex >= 0) appointments.splice(existingIndex, 1, item); else appointments.push(item);
-          selected = item.date; status.textContent = existing ? "Schedule saved." : "Schedule added."; render(); dialog.remove();
+          requests = requests.filter((request) => request.date !== item.date); // the database resolves it too
+          selected = item.date; setStatus(existing ? "Schedule saved." : "Schedule added."); render(); dialog.remove();
         } catch (error) { const errorEl = dialog.querySelector(".form-error"); errorEl.textContent = auth.friendlyError(error); errorEl.hidden = false; dialog.showModal(); }
       });
       dialog.addEventListener("click", async (event) => {
@@ -337,9 +415,20 @@
       if (target.dataset.view) { view = target.dataset.view; render(); }
       if (target.dataset.date) { selected = dateKey(new Date(parseDate(selected).getTime() + (target.dataset.date === "next" ? DAY : -DAY))); render(); }
       if (target.dataset.calendarDate) { selected = target.dataset.calendarDate; render(); }
-      if (target.matches("[data-request-schedule]")) status.textContent = "Schedule request sent to the parent.";
+      if (target.matches("[data-request-schedule]")) requestSchedule(target);
+      if (target.dataset.requestAdd) { selected = target.dataset.requestAdd; view = "list"; render(); openBooking(); }
+      if (target.dataset.requestDismiss && live) dismissRequest(target);
       if (target.matches("[data-book-appointment], [data-edit-schedule]")) openBooking();
     });
+    // Re-read what js/family-data.js loaded (live changes); keeps the selected date and view.
+    syncSchedule = () => {
+      if (!live) return;
+      appointments = (data.appointments || []).slice();
+      requests = (data.scheduleRequests || []).slice();
+      // The sitter's "Reminder sent" line goes once the parent adds that day or dismisses it.
+      if (!editable && !openRequest(selected) && !status.classList.contains("is-error")) setStatus("");
+      render();
+    };
     render();
   }
 
