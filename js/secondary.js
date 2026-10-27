@@ -223,7 +223,8 @@
         try {
           if (ctx && !ctx.demo && ctx.client && data.planId) {
             const valuesToSave = { household_id: ctx.household.id, plan_id: data.planId, appointment_date: item.date, start_time: values.start, end_time: values.end, note: item.note, activities: item.activities };
-            const result = existing && existing.id ? await ctx.client.from("appointments").update(valuesToSave).eq("id", existing.id) : await ctx.client.from("appointments").insert(valuesToSave);
+            const { household_id, plan_id, ...editable } = valuesToSave; // an appointment never moves to another family space or plan
+            const result = existing && existing.id ? await ctx.client.from("appointments").update(editable).eq("id", existing.id) : await ctx.client.from("appointments").insert(valuesToSave);
             if (result.error) throw result.error;
           }
           const existingIndex = existing ? appointments.findIndex((appointment) => appointment.id === existing.id) : appointments.findIndex((appointment) => appointment.date === item.date);

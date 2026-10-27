@@ -6,7 +6,7 @@
 // random throwaway passwords and are deleted when the run ends.
 
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
@@ -142,6 +142,8 @@ const tables = [
   "care_logs",
   // 20261016100000_carenest_day_notes.sql; tested in "day notes: ...".
   "day_notes",
+  // 20261026000000_carenest_appointments.sql, hardened in 20261026100000; tested in "appointments: ...".
+  "appointments",
 ];
 
 // Internal tables: RLS on, and no anon or authenticated privilege at all (only SECURITY DEFINER
@@ -795,6 +797,157 @@ test("day notes: parents write, members read, and the database stamps who edited
   const removed = await p.from("day_notes").delete().eq("id", plain.data.id).select("id");
   assert.ifError(removed.error);
   assert.equal(removed.data.length, 1);
+});
+
+test("appointments: parents book and edit in their own plan, members read, nothing moves or is deleted", async () => {
+  const a = await newFamily("appt-a", 1);
+  const b = await newFamily("appt-b", 1);
+  const p = a.parent.client;
+  const c = a.sitter.client;
+  const row = (fam, extra) =>
+    Object.assign(
+      {
+        household_id: fam.householdId,
+        plan_id: fam.planId,
+        appointment_date: isoDate(7),
+        start_time: "09:00",
+        end_time: "12:00",
+        note: "Pickup at noon",
+        activities: [],
+      },
+      extra,
+    );
+
+  // A parent books in their own family space and plan.
+  const booked = await p.from("appointments").insert(row(a)).select("*").single();
+  assert.ifError(booked.error);
+  const appt = booked.data;
+  assert.equal(appt.household_id, a.householdId);
+  assert.equal(appt.plan_id, a.planId);
+
+  // Another family's plan is refused, whichever household the row names.
+  assertDenied(
+    await p.from("appointments").insert(row(a, { plan_id: b.planId, appointment_date: isoDate(8) })).select(),
+    "parent A booked into another family's plan",
+  );
+  assertDenied(
+    await b.parent.client.from("appointments").insert(row(b, { plan_id: a.planId })).select(),
+    "parent B booked into A's plan under B's household",
+  );
+
+  // The caretaker reads the household's appointments but cannot write any.
+  const read = await c.from("appointments").select("id").eq("household_id", a.householdId);
+  assert.ifError(read.error);
+  assert.deepEqual(read.data.map((r) => r.id), [appt.id]);
+  assertDenied(
+    await c.from("appointments").insert(row(a, { appointment_date: isoDate(9) })).select(),
+    "caretaker booked an appointment",
+  );
+  assertDenied(
+    await c.from("appointments").update({ note: "From sitter" }).eq("id", appt.id).select(),
+    "caretaker edited an appointment",
+  );
+
+  // Parent B and a user with no household see nothing and cannot write A's appointments.
+  for (const [label, user] of [["parent B", b.parent], ["outsider", outsider]]) {
+    const own = await user.client.from("appointments").select("*").eq("household_id", a.householdId);
+    assert.ifError(own.error);
+    assert.deepEqual(own.data, [], `${label} reads A's appointments`);
+    assertDenied(
+      await user.client.from("appointments").insert(row(a, { appointment_date: isoDate(10) })).select(),
+      `${label} booked into A`,
+    );
+    assertDenied(
+      await user.client.from("appointments").update({ note: "Changed" }).eq("id", appt.id).select(),
+      `${label} edited A's appointment`,
+    );
+  }
+  const anonRead = await anon.from("appointments").select("*");
+  assert.ok(anonRead.error || anonRead.data.length === 0, "anon read appointments");
+
+  // The parent edits the booking details (what js/secondary.js sends on save).
+  const edited = await p
+    .from("appointments")
+    .update({
+      appointment_date: isoDate(8),
+      start_time: "10:00",
+      end_time: "13:30",
+      note: "Pickup at 1:30",
+      activities: [{ title: "Park" }],
+    })
+    .eq("id", appt.id)
+    .select("*")
+    .single();
+  assert.ifError(edited.error);
+  assert.equal(edited.data.appointment_date, isoDate(8));
+  assert.equal(edited.data.start_time, "10:00:00");
+  assert.equal(edited.data.end_time, "13:30:00");
+  assert.equal(edited.data.note, "Pickup at 1:30");
+  assert.deepEqual(edited.data.activities, [{ title: "Park" }]);
+
+  // An appointment never moves to another family space or plan, and nobody deletes one.
+  for (const values of [
+    { plan_id: b.planId },
+    { household_id: b.householdId },
+    { id: randomUUID() },
+    { created_at: "2000-01-01T00:00:00Z" },
+  ]) {
+    assertPermissionDenied(
+      await p.from("appointments").update(values).eq("id", appt.id).select(),
+      `parent updated ${Object.keys(values)[0]}`,
+    );
+  }
+  assertPermissionDenied(
+    await p.from("appointments").delete().eq("id", appt.id).select(),
+    "parent deleted an appointment",
+  );
+  assertPermissionDenied(
+    await c.from("appointments").delete().eq("id", appt.id).select(),
+    "caretaker deleted an appointment",
+  );
+  const { data: kept } = await admin.from("appointments").select("household_id, plan_id").eq("id", appt.id).single();
+  assert.deepEqual(kept, { household_id: a.householdId, plan_id: a.planId });
+});
+
+test("appointments: the update policy refuses a plan from another family space even if plan_id were updatable", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this test needs a direct database connection");
+    return;
+  }
+  const a = await newFamily("apptpol-a", 1);
+  const b = await newFamily("apptpol-b", 1);
+  const booked = await b.parent.client
+    .from("appointments")
+    .insert({ household_id: b.householdId, plan_id: b.planId, appointment_date: isoDate(7), start_time: "09:00", end_time: "10:00" })
+    .select("id")
+    .single();
+  assert.ifError(booked.error);
+
+  // Grants block plan_id on their own, so widen them inside a rolled-back transaction and act as
+  // parent B: only the policy's with check stands between B and A's plan.
+  const claims = JSON.stringify({ sub: uuid(b.parent.id), role: "authenticated" });
+  const repoint = (planId) =>
+    psqlScript(`
+      begin;
+      grant update (plan_id) on public.appointments to authenticated;
+      set local role authenticated;
+      select set_config('request.jwt.claims', '${claims}', true) is not null;
+      with u as (
+        update public.appointments set plan_id = '${uuid(planId)}' where id = '${uuid(booked.data.id)}' returning id
+      ) select count(*) from u;
+      rollback;`);
+
+  // Control: the same statement with B's own plan updates the row, so the setup is sound.
+  const own = repoint(b.planId);
+  assert.equal(own.code, 0, own.stderr);
+  assert.equal(own.stdout.split("\n").at(-1), "1", "the control update reached B's appointment");
+
+  const moved = repoint(a.planId);
+  assert.notEqual(moved.code, 0, "parent B repointed an appointment at A's plan");
+  assert.match(moved.stderr, /new row violates row-level security policy/);
+
+  const { data: kept } = await admin.from("appointments").select("plan_id").eq("id", booked.data.id).single();
+  assert.equal(kept.plan_id, b.planId);
 });
 
 test("deleting an account that wrote or edited a day note keeps the note without their name", async () => {
@@ -1991,6 +2144,13 @@ function psqlQuery(sql) {
   }).trim();
 }
 
+// Runs a psql script (stdin) in one session; returns its exit code, unaligned stdout, and stderr.
+function psqlScript(sql) {
+  const r = spawnSync("psql", [dbUrl, "-XAtq", "-v", "ON_ERROR_STOP=1"], { input: sql, encoding: "utf8" });
+  if (r.error) throw r.error;
+  return { code: r.status, stdout: r.stdout.trim(), stderr: r.stderr };
+}
+
 // Runs `sql` in its own psql session; resolves to psql's exit code, or to { code, stderr } with
 // captureStderr (so a test can assert which error psql printed).
 function spawnPsql(sql, { captureStderr = false } = {}) {
@@ -2090,7 +2250,13 @@ test("every relation in public has RLS (tables), invoker rights (views), and gra
              has_column_privilege('authenticated', 'public.task_checks', 'checked_by',
                'insert, update') as checked_by_write,
              has_table_privilege('authenticated', 'public.task_checks', 'update')
-               as task_checks_update`),
+               as task_checks_update,
+             has_table_privilege('authenticated', 'public.appointments', 'update, delete, truncate')
+               as appointments_table_write,
+             has_column_privilege('authenticated', 'public.appointments', 'plan_id', 'update')
+               as appointments_plan_update,
+             has_column_privilege('authenticated', 'public.appointments', 'household_id', 'update')
+               as appointments_household_update`),
     [
       {
         shift_events_table_write: false,
@@ -2098,6 +2264,9 @@ test("every relation in public has RLS (tables), invoker rights (views), and gra
         checked_at_write: false,
         checked_by_write: false,
         task_checks_update: false,
+        appointments_table_write: false,
+        appointments_plan_update: false,
+        appointments_household_update: false,
       },
     ],
     "authenticated has a write privilege it must not have",
