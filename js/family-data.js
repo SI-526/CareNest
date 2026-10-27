@@ -122,6 +122,13 @@
     return new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   }
 
+  // The local calendar date `offsetDays` from today as YYYY-MM-DD (the schedule page's dateKey).
+  function localDateKey(offsetDays) {
+    const now = new Date();
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays);
+    return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+  }
+
   function toContact(row) {
     return {
       id: row.id,
@@ -280,18 +287,21 @@
         .select("id, request_date, requested_by, created_at")
         .eq("household_id", householdId)
         .is("resolved_at", null)
+        .gte("request_date", localDateKey(-1))
         .order("request_date", { ascending: true }),
     ]);
-    const error =
-      household.error || contacts.error || careItems.error || plans.error || appointments.error || scheduleRequests.error;
+    const error = household.error || contacts.error || careItems.error || plans.error || appointments.error;
     if (error) throw error;
+    // Reminders are optional: if they cannot load (e.g. the table is not there yet), the family
+    // pages still work, just without them.
+    if (scheduleRequests.error) console.warn("Schedule requests unavailable", scheduleRequests.error);
     return {
       household: household.data,
       contacts: contacts.data || [],
       careItems: careItems.data || [],
       plan: (plans.data && plans.data[0]) || null,
       appointments: appointments.data || [],
-      scheduleRequests: scheduleRequests.data || [],
+      scheduleRequests: (!scheduleRequests.error && scheduleRequests.data) || [],
     };
   }
 

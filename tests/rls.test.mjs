@@ -997,11 +997,15 @@ test("schedule requests: sitters ask, parents read and dismiss, booking that dat
   assertDenied(await c.from("schedule_requests").insert(req(isoDate(-2))).select(), "request for a date 2 days ago");
   const yesterday = await c.from("schedule_requests").insert(req(isoDate(-1))).select("id").single();
   assert.ifError(yesterday.error);
+  // Up to a year ahead (today + 366, UTC); later dates are refused.
+  assertDenied(await c.from("schedule_requests").insert(req(isoDate(367))).select(), "request for a date over a year ahead");
+  const farthest = await c.from("schedule_requests").insert(req(isoDate(366))).select("id").single();
+  assert.ifError(farthest.error);
 
   // The parent reads the household's open requests and dismisses one.
   const listed = await p.from("schedule_requests").select("id").eq("household_id", a.householdId).is("resolved_at", null);
   assert.ifError(listed.error);
-  assert.deepEqual(listed.data.map((r) => r.id).sort(), [asked.data.id, yesterday.data.id].sort());
+  assert.deepEqual(listed.data.map((r) => r.id).sort(), [asked.data.id, yesterday.data.id, farthest.data.id].sort());
   const dismissed = await p
     .from("schedule_requests")
     .update({ resolved_at: new Date().toISOString() })
@@ -1071,6 +1075,25 @@ test("schedule requests: sitters ask, parents read and dismiss, booking that dat
   const moved = await p.from("appointments").update({ appointment_date: isoDate(2) }).eq("id", booked.data.id).select("id");
   assert.ifError(moved.error);
   assert.ok((await openFor(isoDate(2)))[0].resolved_at, "moving an appointment onto a requested date resolved it");
+
+  // A day that already has a session cannot be requested (the policy reads appointments as the
+  // caretaker, through appointments RLS); the day the appointment moved off can be again.
+  assertDenied(await c.from("schedule_requests").insert(req(isoDate(2))).select(), "request for a day that has a session");
+  assert.equal((await openFor(isoDate(2))).length, 1, "no new request row for the booked day");
+  const freed = await c.from("schedule_requests").insert(req(isoDate(1))).select("id").single();
+  assert.ifError(freed.error);
+  // Another family's appointment on a date does not block this family's request for it.
+  const bPlan = await admin.from("plans").select("id").eq("household_id", b.householdId).single();
+  assert.ifError(bPlan.error);
+  assert.ifError(
+    (
+      await b.parent.client
+        .from("appointments")
+        .insert({ household_id: b.householdId, plan_id: bPlan.data.id, appointment_date: isoDate(7), start_time: "09:00", end_time: "10:00" })
+    ).error,
+  );
+  const unblocked = await c.from("schedule_requests").insert(req(isoDate(7))).select("id").single();
+  assert.ifError(unblocked.error);
 });
 
 test("sitter profiles: sitters own their profile; parents get only shared fields of current sitters", async () => {
@@ -1167,6 +1190,19 @@ test("sitter profiles: sitters own their profile; parents get only shared fields
   assertPermissionDenied(
     await anon.rpc("household_sitter_profiles", { target_household_id: a.householdId }),
     "anon called household_sitter_profiles",
+  );
+
+  // A parent who also keeps a sitter profile (e.g. they sit for another family) is not returned:
+  // only caretakers of the household are.
+  assert.ifError(
+    (await a.parent.client.from("sitter_profiles").upsert({ ...profile, display_name: "Pat Parent" }, { onConflict: "user_id" })).error,
+  );
+  const withParentProfile = await a.parent.client.rpc("household_sitter_profiles", { target_household_id: a.householdId });
+  assert.ifError(withParentProfile.error);
+  assert.deepEqual(
+    withParentProfile.data.map((row) => row.user_id),
+    [a.sitter.id],
+    "a parent's own sitter profile was returned as the household's sitter",
   );
 
   // Once the parent removes the sitter, their profile is no longer returned to that family.
@@ -2552,6 +2588,74 @@ test("every relation in public has RLS (tables), invoker rights (views), and gra
     false,
     `new functions are still executable by PUBLIC: ${globalFunctionDefaults[0].acl}`,
   );
+});
+
+test("authenticated can execute only the pinned public functions; Realtime publishes only the pinned tables", () => {
+  // A new grant (e.g. on the security-definer trigger function resolve_schedule_requests) must be
+  // a deliberate change to this list. log_original_uncheck and stamp_handoff are trigger
+  // functions: Postgres refuses to run a trigger function outside a trigger.
+  const executable = localSql(`
+    select p.oid::regprocedure::text as fn
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and has_function_privilege('authenticated', p.oid, 'execute')`)
+    .map((r) => r.fn)
+    .sort();
+  assert.deepEqual(
+    executable,
+    [
+      "accept_invite(text)",
+      "can_delete_photo(text,text)",
+      "can_delete_removed_photo(text)",
+      "can_read_photo(text)",
+      "can_upload_photo(text)",
+      "complete_task(uuid,uuid,text,text,text)",
+      "create_household(text,boolean)",
+      "create_invite(uuid,text)",
+      "delete_my_account()",
+      "end_visit(uuid)",
+      "household_sitter_profiles(uuid)",
+      "is_member(uuid)",
+      "is_parent(uuid)",
+      "log_original_uncheck()",
+      "photo_path_parts(text)",
+      "remove_all_photos()",
+      "remove_photo(uuid)",
+      "reopen_visit(uuid)",
+      "stamp_handoff()",
+      "trigger_moment_now(uuid)",
+    ],
+    "the public functions authenticated can execute changed",
+  );
+
+  // Realtime INSERT/UPDATE events are RLS-filtered, but DELETE events are not (README), so the
+  // publication is pinned too. sitter_profiles is private to its owner and stays out.
+  const published = localSql(`
+    select tablename
+      from pg_publication_tables
+     where pubname = 'supabase_realtime' and schemaname = 'public'`)
+    .map((r) => r.tablename)
+    .sort();
+  assert.deepEqual(
+    published,
+    [
+      "appointments",
+      "care_items",
+      "care_logs",
+      "contacts",
+      "day_notes",
+      "households",
+      "messages",
+      "plans",
+      "schedule_requests",
+      "shift_events",
+      "task_checks",
+      "tasks",
+      "visits",
+    ],
+    "the public tables in the supabase_realtime publication changed",
+  );
+  assert.ok(!published.includes("sitter_profiles"), "sitter_profiles is published to Realtime");
 });
 
 // Only ever interpolate ids this run created.

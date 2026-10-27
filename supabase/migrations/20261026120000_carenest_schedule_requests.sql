@@ -12,8 +12,9 @@
 --     and update of resolved_at only. requested_by is not insertable: it comes from its default,
 --     auth.uid() (the insert policy repeats this as defence in depth), so nobody can send a
 --     request in someone else's name. No delete: a family-space delete removes the rows (cascade).
---   * Dates: from yesterday (UTC, the same window edge shifts use) onwards, so nobody files
---     requests for long-past days.
+--   * Dates: from yesterday (UTC, the same window edge shifts use) up to a year ahead (today
+--     + 366), so nobody files requests for long-past or far-future days; and not for a day that
+--     already has an appointment (the schedule exists, so there is nothing to ask for).
 --   * Auto-clear: when a parent books an appointment for that date, or moves one to it, a trigger
 --     resolves the open request, so the reminder disappears once the schedule exists.
 --   * Published to Realtime so the parent's pages show a new request without a reload. Realtime
@@ -47,7 +48,15 @@ create policy "Caretakers can request a schedule"
     public.is_member(household_id)
     and not public.is_parent(household_id)
     and request_date >= (now() at time zone 'utc')::date - 1
+    and request_date <= (now() at time zone 'utc')::date + 366
     and requested_by = (select auth.uid())
+    -- A day that already has a session needs no reminder. Runs as the caller, so appointments
+    -- RLS applies: a member reads their own household's appointments, which is all this needs.
+    and not exists (
+      select 1 from public.appointments a
+       where a.household_id = schedule_requests.household_id
+         and a.appointment_date = schedule_requests.request_date
+    )
   );
 
 create policy "Parents can dismiss schedule requests"

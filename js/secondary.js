@@ -78,10 +78,13 @@
     if (!legacy || typeof legacy !== "object") return { profile: defaults };
     const profile = { ...defaults };
     Object.keys(defaults).forEach((name) => { if (name in legacy) profile[name] = legacy[name]; });
-    const saved = await saveProfile(ctx, profile);
-    if (saved.error) return { profile, error: saved.error };
+    // Insert only: if another device saved a profile meanwhile, that newer row wins over this copy.
+    const moved = await ctx.client.from("sitter_profiles").upsert(profileToRow(profile), { onConflict: "user_id", ignoreDuplicates: true });
+    if (moved.error) return { profile, error: moved.error };
     dropLegacyProfile(ctx.user.id);
-    return { profile };
+    const { data: stored, error: reread } = await ctx.client.from("sitter_profiles").select(PROFILE_COLUMNS).eq("user_id", ctx.user.id).maybeSingle();
+    if (reread || !stored) return { profile, error: reread || undefined };
+    return { profile: profileFromRow(stored) };
   }
 
   async function loadSharedSitter(ctx) {
@@ -373,8 +376,9 @@
           if (ctx && !ctx.demo && ctx.client && data.planId) {
             const valuesToSave = { household_id: ctx.household.id, plan_id: data.planId, appointment_date: item.date, start_time: values.start, end_time: values.end, note: item.note, activities: item.activities };
             const { household_id, plan_id, ...editable } = valuesToSave; // an appointment never moves to another family space or plan
-            const result = existing && existing.id ? await ctx.client.from("appointments").update(editable).eq("id", existing.id) : await ctx.client.from("appointments").insert(valuesToSave);
+            const result = existing && existing.id ? await ctx.client.from("appointments").update(editable).eq("id", existing.id) : await ctx.client.from("appointments").insert(valuesToSave).select("id").single();
             if (result.error) throw result.error;
+            if (!(existing && existing.id) && result.data && result.data.id) item.id = result.data.id; // so an edit before Realtime catches up targets the real row
           }
           const existingIndex = existing ? appointments.findIndex((appointment) => appointment.id === existing.id) : appointments.findIndex((appointment) => appointment.date === item.date);
           if (existingIndex >= 0) appointments.splice(existingIndex, 1, item); else appointments.push(item);
