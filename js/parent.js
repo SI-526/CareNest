@@ -150,6 +150,8 @@
       document.title = `CareNest — ${heading}`;
       document.getElementById("feed-heading").textContent = view === "album" ? "Album" : "Photos";
       document.getElementById("day-status").hidden = view === "album";
+      const notes = document.getElementById("important-today");
+      if (notes) notes.hidden = view === "album";
       document.getElementById("parent-schedule").hidden = view === "album";
       document.getElementById("parent-care-log").hidden = view === "album";
     }
