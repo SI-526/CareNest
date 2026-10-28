@@ -56,6 +56,20 @@
           <p class="photo-upload-error" id="parent-error" role="alert" hidden></p>
         </section>
 
+        <section class="panel day-notes-panel" id="important-today" aria-labelledby="day-notes-heading">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title" id="day-notes-heading">What’s important today</h2>
+              <p class="day-notes-date" id="day-notes-date"></p>
+            </div>
+            <p class="day-notes-count" id="day-notes-count" hidden aria-live="polite"></p>
+          </div>
+          <ul class="day-notes-list" id="day-notes-list" hidden></ul>
+          <p class="day-notes-status" id="day-notes-status">Loading today's notes…</p>
+          <button type="button" class="primary-btn day-notes-add" id="day-notes-add" hidden>Add a note</button>
+          <p class="form-error" id="day-notes-write-error" role="alert" hidden></p>
+        </section>
+
         <section class="panel parent-schedule" id="parent-schedule" aria-labelledby="parent-schedule-heading">
           <h2 class="panel-title" id="parent-schedule-heading">Today's schedule</h2>
           <ul class="parent-task-list" id="parent-task-list"></ul>
@@ -76,6 +90,37 @@
     </div>
 
     <p class="visually-hidden" id="app-status" aria-live="polite"></p>
+
+    <dialog class="confirm-dialog manage-dialog" id="day-note-dialog" aria-labelledby="day-note-dialog-title">
+      <form class="confirm-dialog-body" id="day-note-form" novalidate>
+        <h2 class="panel-title" id="day-note-dialog-title">Add a note</h2>
+        <div class="manage-fields">
+          <div class="manage-field">
+            <label class="field-label" for="day-note-category">Type</label>
+            <select class="text-input" id="day-note-category" name="category" required>
+              <option value="routine">Routine change</option>
+              <option value="instructions">Special instruction</option>
+              <option value="schedule">Schedule change</option>
+              <option value="food_meds">Food or medication</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="manage-field">
+            <label class="field-label" for="day-note-title">Title</label>
+            <input class="text-input" id="day-note-title" name="title" type="text" maxlength="140" required autocomplete="off" />
+          </div>
+          <div class="manage-field">
+            <label class="field-label" for="day-note-detail">Details <span class="field-optional">(optional)</span></label>
+            <textarea class="text-input manage-textarea" id="day-note-detail" name="detail" rows="3" maxlength="2000"></textarea>
+          </div>
+        </div>
+        <p class="form-error" id="day-note-error" role="alert" hidden></p>
+        <div class="moment-dialog-actions">
+          <button type="submit" class="primary-btn" id="day-note-save">Save</button>
+          <button type="button" class="photo-source-btn" id="day-note-cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
 
     <script
       src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"

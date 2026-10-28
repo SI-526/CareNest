@@ -2038,14 +2038,7 @@ body.modal-open {
   display: none;
 }
 
-/* Important today (day notes): same emphasis pattern as the emergency card —
-   a standard surface with a 4px left bar (accent here, danger there). */
-.day-notes-panel {
-  border: 0;
-  background: #f8f9ff;
-  box-shadow: none;
-  padding: 20px 16px 14px;
-}
+/* Important today uses the same white card as the other session panels. */
 
 .day-notes-date {
   margin: 3px 0 0;
@@ -2082,8 +2075,9 @@ body.modal-open {
 }
 
 .day-notes-list[hidden],
-.day-notes-status[hidden] {
-  display: none;
+.day-notes-status[hidden],
+.day-notes-add[hidden] {
+  display: none !important;
 }
 
 .day-note {
@@ -2176,10 +2170,23 @@ body.modal-open {
 }
 
 .day-note-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
   font-weight: var(--weight-semibold);
   line-height: var(--leading-snug);
   overflow-wrap: anywhere;
+}
+
+.day-note-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: #c70000;
 }
 
 .day-note-preview {
@@ -2191,14 +2198,11 @@ body.modal-open {
   white-space: nowrap;
 }
 
-.day-note-updated {
-  align-self: flex-start;
-  margin-top: 2px;
-  padding: 1px 6px;
-  border: 1px solid #d10000;
-  background: #fff;
+.day-note-updated-time {
+  margin: -2px 8px 12px 60px;
   color: #b00000;
-  font-size: 0.625rem;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
 }
 
 .day-note-detail {
@@ -2210,6 +2214,25 @@ body.modal-open {
   line-height: var(--leading-normal);
   white-space: pre-line;
   overflow-wrap: anywhere;
+}
+
+.day-note-detail + .day-note-updated-time {
+  margin-top: -4px;
+}
+
+.day-note-plain + .day-note-updated-time {
+  margin-top: 0;
+}
+
+.day-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: -4px 8px 10px 60px;
+}
+
+.day-notes-add {
+  margin: 12px 0 4px;
 }
 
 .day-notes-status {
