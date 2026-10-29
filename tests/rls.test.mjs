@@ -6,7 +6,7 @@
 // random throwaway passwords and are deleted when the run ends.
 
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
@@ -142,6 +142,12 @@ const tables = [
   "care_logs",
   // 20261016100000_carenest_day_notes.sql; tested in "day notes: ...".
   "day_notes",
+  // 20261026000000_carenest_appointments.sql, hardened in 20261026100000; tested in "appointments: ...".
+  "appointments",
+  // SI-51 (20261026110000_carenest_sitter_profiles.sql); tested in "sitter profiles: ...".
+  "sitter_profiles",
+  // SI-50 (20261026120000_carenest_schedule_requests.sql); tested in "schedule requests: ...".
+  "schedule_requests",
 ];
 
 // Internal tables: RLS on, and no anon or authenticated privilege at all (only SECURITY DEFINER
@@ -157,6 +163,7 @@ const rpcs = [
   ["delete_my_account", {}],
   ["is_member", { target_household_id: randomUUID() }],
   ["is_parent", { target_household_id: randomUUID() }],
+  ["household_sitter_profiles", { target_household_id: randomUUID() }],
 ];
 
 let parentA;
@@ -795,6 +802,430 @@ test("day notes: parents write, members read, and the database stamps who edited
   const removed = await p.from("day_notes").delete().eq("id", plain.data.id).select("id");
   assert.ifError(removed.error);
   assert.equal(removed.data.length, 1);
+});
+
+test("appointments: parents book and edit in their own plan, members read, nothing moves or is deleted", async () => {
+  const a = await newFamily("appt-a", 1);
+  const b = await newFamily("appt-b", 1);
+  const p = a.parent.client;
+  const c = a.sitter.client;
+  const row = (fam, extra) =>
+    Object.assign(
+      {
+        household_id: fam.householdId,
+        plan_id: fam.planId,
+        appointment_date: isoDate(7),
+        start_time: "09:00",
+        end_time: "12:00",
+        note: "Pickup at noon",
+        activities: [],
+      },
+      extra,
+    );
+
+  // A parent books in their own family space and plan.
+  const booked = await p.from("appointments").insert(row(a)).select("*").single();
+  assert.ifError(booked.error);
+  const appt = booked.data;
+  assert.equal(appt.household_id, a.householdId);
+  assert.equal(appt.plan_id, a.planId);
+
+  // Another family's plan is refused, whichever household the row names.
+  assertDenied(
+    await p.from("appointments").insert(row(a, { plan_id: b.planId, appointment_date: isoDate(8) })).select(),
+    "parent A booked into another family's plan",
+  );
+  assertDenied(
+    await b.parent.client.from("appointments").insert(row(b, { plan_id: a.planId })).select(),
+    "parent B booked into A's plan under B's household",
+  );
+
+  // The caretaker reads the household's appointments but cannot write any.
+  const read = await c.from("appointments").select("id").eq("household_id", a.householdId);
+  assert.ifError(read.error);
+  assert.deepEqual(read.data.map((r) => r.id), [appt.id]);
+  assertDenied(
+    await c.from("appointments").insert(row(a, { appointment_date: isoDate(9) })).select(),
+    "caretaker booked an appointment",
+  );
+  assertDenied(
+    await c.from("appointments").update({ note: "From sitter" }).eq("id", appt.id).select(),
+    "caretaker edited an appointment",
+  );
+
+  // Parent B and a user with no household see nothing and cannot write A's appointments.
+  for (const [label, user] of [["parent B", b.parent], ["outsider", outsider]]) {
+    const own = await user.client.from("appointments").select("*").eq("household_id", a.householdId);
+    assert.ifError(own.error);
+    assert.deepEqual(own.data, [], `${label} reads A's appointments`);
+    assertDenied(
+      await user.client.from("appointments").insert(row(a, { appointment_date: isoDate(10) })).select(),
+      `${label} booked into A`,
+    );
+    assertDenied(
+      await user.client.from("appointments").update({ note: "Changed" }).eq("id", appt.id).select(),
+      `${label} edited A's appointment`,
+    );
+  }
+  const anonRead = await anon.from("appointments").select("*");
+  assert.ok(anonRead.error || anonRead.data.length === 0, "anon read appointments");
+
+  // The parent edits the booking details (what js/secondary.js sends on save).
+  const edited = await p
+    .from("appointments")
+    .update({
+      appointment_date: isoDate(8),
+      start_time: "10:00",
+      end_time: "13:30",
+      note: "Pickup at 1:30",
+      activities: [{ title: "Park" }],
+    })
+    .eq("id", appt.id)
+    .select("*")
+    .single();
+  assert.ifError(edited.error);
+  assert.equal(edited.data.appointment_date, isoDate(8));
+  assert.equal(edited.data.start_time, "10:00:00");
+  assert.equal(edited.data.end_time, "13:30:00");
+  assert.equal(edited.data.note, "Pickup at 1:30");
+  assert.deepEqual(edited.data.activities, [{ title: "Park" }]);
+
+  // An appointment never moves to another family space or plan, and nobody deletes one.
+  for (const values of [
+    { plan_id: b.planId },
+    { household_id: b.householdId },
+    { id: randomUUID() },
+    { created_at: "2000-01-01T00:00:00Z" },
+  ]) {
+    assertPermissionDenied(
+      await p.from("appointments").update(values).eq("id", appt.id).select(),
+      `parent updated ${Object.keys(values)[0]}`,
+    );
+  }
+  assertPermissionDenied(
+    await p.from("appointments").delete().eq("id", appt.id).select(),
+    "parent deleted an appointment",
+  );
+  assertPermissionDenied(
+    await c.from("appointments").delete().eq("id", appt.id).select(),
+    "caretaker deleted an appointment",
+  );
+  const { data: kept } = await admin.from("appointments").select("household_id, plan_id").eq("id", appt.id).single();
+  assert.deepEqual(kept, { household_id: a.householdId, plan_id: a.planId });
+});
+
+test("appointments: the update policy refuses a plan from another family space even if plan_id were updatable", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this test needs a direct database connection");
+    return;
+  }
+  const a = await newFamily("apptpol-a", 1);
+  const b = await newFamily("apptpol-b", 1);
+  const booked = await b.parent.client
+    .from("appointments")
+    .insert({ household_id: b.householdId, plan_id: b.planId, appointment_date: isoDate(7), start_time: "09:00", end_time: "10:00" })
+    .select("id")
+    .single();
+  assert.ifError(booked.error);
+
+  // Grants block plan_id on their own, so widen them inside a rolled-back transaction and act as
+  // parent B: only the policy's with check stands between B and A's plan.
+  const claims = JSON.stringify({ sub: uuid(b.parent.id), role: "authenticated" });
+  const repoint = (planId) =>
+    psqlScript(`
+      begin;
+      grant update (plan_id) on public.appointments to authenticated;
+      set local role authenticated;
+      select set_config('request.jwt.claims', '${claims}', true) is not null;
+      with u as (
+        update public.appointments set plan_id = '${uuid(planId)}' where id = '${uuid(booked.data.id)}' returning id
+      ) select count(*) from u;
+      rollback;`);
+
+  // Control: the same statement with B's own plan updates the row, so the setup is sound.
+  const own = repoint(b.planId);
+  assert.equal(own.code, 0, own.stderr);
+  assert.equal(own.stdout.split("\n").at(-1), "1", "the control update reached B's appointment");
+
+  const moved = repoint(a.planId);
+  assert.notEqual(moved.code, 0, "parent B repointed an appointment at A's plan");
+  assert.match(moved.stderr, /new row violates row-level security policy/);
+
+  const { data: kept } = await admin.from("appointments").select("plan_id").eq("id", booked.data.id).single();
+  assert.equal(kept.plan_id, b.planId);
+});
+
+test("schedule requests: sitters ask, parents read and dismiss, booking that date resolves it", async () => {
+  const a = await newFamily("sreq-a", 1);
+  const b = await newFamily("sreq-b", 1);
+  const p = a.parent.client;
+  const c = a.sitter.client;
+  const req = (date, extra) => Object.assign({ household_id: a.householdId, request_date: date }, extra);
+  const openFor = async (date) => {
+    const { data, error } = await admin
+      .from("schedule_requests")
+      .select("id, requested_by, resolved_at")
+      .eq("household_id", a.householdId)
+      .eq("request_date", date);
+    assert.ifError(error);
+    return data;
+  };
+
+  // The caretaker asks for today (what js/secondary.js sends); requested_by is the caller.
+  const asked = await c.from("schedule_requests").insert(req(isoDate(0))).select("*").single();
+  assert.ifError(asked.error);
+  assert.equal(asked.data.requested_by, a.sitter.id);
+  assert.equal(asked.data.resolved_at, null);
+
+  // A second open request for the same date is a unique violation ("already sent").
+  const again = await c.from("schedule_requests").insert(req(isoDate(0))).select();
+  assert.equal(again.error && again.error.code, "23505", "second open request for the same date");
+
+  // A parent cannot file a request; the caretaker cannot dismiss one.
+  assertDenied(await p.from("schedule_requests").insert(req(isoDate(3))).select(), "parent filed a schedule request");
+  assertDenied(
+    await c.from("schedule_requests").update({ resolved_at: new Date().toISOString() }).eq("id", asked.data.id).select(),
+    "caretaker dismissed a schedule request",
+  );
+  assert.equal((await openFor(isoDate(0)))[0].resolved_at, null, "the caretaker's update changed nothing");
+
+  // requested_by is not insertable (comes from auth.uid()); dates before yesterday are refused.
+  assertPermissionDenied(
+    await c.from("schedule_requests").insert(req(isoDate(4), { requested_by: a.parent.id })).select(),
+    "caretaker sent a request in the parent's name",
+  );
+  assertDenied(await c.from("schedule_requests").insert(req(isoDate(-2))).select(), "request for a date 2 days ago");
+  const yesterday = await c.from("schedule_requests").insert(req(isoDate(-1))).select("id").single();
+  assert.ifError(yesterday.error);
+  // Up to a year ahead (today + 366, UTC); later dates are refused.
+  assertDenied(await c.from("schedule_requests").insert(req(isoDate(367))).select(), "request for a date over a year ahead");
+  const farthest = await c.from("schedule_requests").insert(req(isoDate(366))).select("id").single();
+  assert.ifError(farthest.error);
+
+  // The parent reads the household's open requests and dismisses one.
+  const listed = await p.from("schedule_requests").select("id").eq("household_id", a.householdId).is("resolved_at", null);
+  assert.ifError(listed.error);
+  assert.deepEqual(listed.data.map((r) => r.id).sort(), [asked.data.id, yesterday.data.id, farthest.data.id].sort());
+  const dismissed = await p
+    .from("schedule_requests")
+    .update({ resolved_at: new Date().toISOString() })
+    .eq("id", asked.data.id)
+    .select("resolved_at")
+    .single();
+  assert.ifError(dismissed.error);
+  assert.ok(dismissed.data.resolved_at, "dismiss set resolved_at");
+  // A dismissed request is not reopened.
+  assertDenied(
+    await p.from("schedule_requests").update({ resolved_at: null }).eq("id", asked.data.id).select(),
+    "parent reopened a dismissed request",
+  );
+  // After a dismiss the caretaker can ask for that date again.
+  const reasked = await c.from("schedule_requests").insert(req(isoDate(0))).select("id").single();
+  assert.ifError(reasked.error);
+
+  // Nothing else moves, and nobody deletes.
+  for (const values of [{ household_id: b.householdId }, { request_date: isoDate(5) }, { requested_by: a.sitter.id }]) {
+    assertPermissionDenied(
+      await p.from("schedule_requests").update(values).eq("id", reasked.data.id).select(),
+      `parent updated ${Object.keys(values)[0]}`,
+    );
+  }
+  for (const [label, client] of [["parent", p], ["caretaker", c]]) {
+    assertPermissionDenied(
+      await client.from("schedule_requests").delete().eq("id", reasked.data.id).select(),
+      `${label} deleted a schedule request`,
+    );
+  }
+
+  // Parent B and a user with no household see nothing and cannot write A's requests.
+  for (const [label, user] of [["parent B", b.parent], ["caretaker B", b.sitter], ["outsider", outsider]]) {
+    const read = await user.client.from("schedule_requests").select("*").eq("household_id", a.householdId);
+    assert.ifError(read.error);
+    assert.deepEqual(read.data, [], `${label} reads A's schedule requests`);
+    assertDenied(await user.client.from("schedule_requests").insert(req(isoDate(6))).select(), `${label} asked in A`);
+    assertDenied(
+      await user.client.from("schedule_requests").update({ resolved_at: new Date().toISOString() }).eq("id", reasked.data.id).select(),
+      `${label} dismissed A's request`,
+    );
+  }
+  const anonRead = await anon.from("schedule_requests").select("*");
+  assert.ok(anonRead.error || anonRead.data.length === 0, "anon read schedule requests");
+  assertDenied(await anon.from("schedule_requests").insert(req(isoDate(6))).select(), "anon asked in A");
+
+  // Booking an appointment for a requested date resolves that request; moving one onto another
+  // requested date resolves that one too. Other dates and other households are untouched.
+  const asked1 = await c.from("schedule_requests").insert(req(isoDate(1))).select("id").single();
+  const asked2 = await c.from("schedule_requests").insert(req(isoDate(2))).select("id").single();
+  const otherFamily = await b.sitter.client
+    .from("schedule_requests")
+    .insert({ household_id: b.householdId, request_date: isoDate(1) })
+    .select("id")
+    .single();
+  assert.ifError(asked1.error || asked2.error || otherFamily.error);
+  const booked = await p
+    .from("appointments")
+    .insert({ household_id: a.householdId, plan_id: a.planId, appointment_date: isoDate(1), start_time: "09:00", end_time: "12:00" })
+    .select("id")
+    .single();
+  assert.ifError(booked.error);
+  assert.ok((await openFor(isoDate(1)))[0].resolved_at, "booking the requested date resolved the request");
+  assert.equal((await openFor(isoDate(2)))[0].resolved_at, null, "another date's request stayed open");
+  const { data: bRow } = await admin.from("schedule_requests").select("resolved_at").eq("id", otherFamily.data.id).single();
+  assert.equal(bRow.resolved_at, null, "another family's request stayed open");
+  const moved = await p.from("appointments").update({ appointment_date: isoDate(2) }).eq("id", booked.data.id).select("id");
+  assert.ifError(moved.error);
+  assert.ok((await openFor(isoDate(2)))[0].resolved_at, "moving an appointment onto a requested date resolved it");
+
+  // A day that already has a session cannot be requested (the policy reads appointments as the
+  // caretaker, through appointments RLS); the day the appointment moved off can be again.
+  assertDenied(await c.from("schedule_requests").insert(req(isoDate(2))).select(), "request for a day that has a session");
+  assert.equal((await openFor(isoDate(2))).length, 1, "no new request row for the booked day");
+  const freed = await c.from("schedule_requests").insert(req(isoDate(1))).select("id").single();
+  assert.ifError(freed.error);
+  // Another family's appointment on a date does not block this family's request for it.
+  const bPlan = await admin.from("plans").select("id").eq("household_id", b.householdId).single();
+  assert.ifError(bPlan.error);
+  assert.ifError(
+    (
+      await b.parent.client
+        .from("appointments")
+        .insert({ household_id: b.householdId, plan_id: bPlan.data.id, appointment_date: isoDate(7), start_time: "09:00", end_time: "10:00" })
+    ).error,
+  );
+  const unblocked = await c.from("schedule_requests").insert(req(isoDate(7))).select("id").single();
+  assert.ifError(unblocked.error);
+});
+
+test("sitter profiles: sitters own their profile; parents get only shared fields of current sitters", async () => {
+  const a = await newFamily("sp-a", 1);
+  const b = await newFamily("sp-b", 1);
+  const outsiderUser = await signUp("sp-outsider");
+  const sitter = a.sitter.client;
+  const profile = {
+    display_name: "Sam Sitter",
+    bio: "Former preschool teacher",
+    phone: "734-555-0199",
+    availability: "Weekday afternoons",
+    show_bio: true,
+    show_phone: false,
+    show_availability: true,
+    wants_updates: false,
+  };
+
+  // The sitter creates and edits their own row; user_id comes from the session.
+  const created = await sitter.from("sitter_profiles").upsert(profile, { onConflict: "user_id" }).select("*").single();
+  assert.ifError(created.error);
+  assert.equal(created.data.user_id, a.sitter.id);
+  const edited = await sitter
+    .from("sitter_profiles")
+    .upsert({ ...profile, bio: "Former preschool teacher, CPR certified" }, { onConflict: "user_id" })
+    .select("bio")
+    .single();
+  assert.ifError(edited.error);
+  assert.equal(edited.data.bio, "Former preschool teacher, CPR certified");
+  const own = await sitter.from("sitter_profiles").select("*");
+  assert.equal(own.data?.length, 1);
+
+  // A forged user_id is refused on insert and update; the parent's row is not touched.
+  assertPermissionDenied(
+    await sitter.from("sitter_profiles").insert({ ...profile, user_id: a.parent.id }).select(),
+    "sitter inserted a profile for another user",
+  );
+  assertPermissionDenied(
+    await sitter.from("sitter_profiles").update({ user_id: a.parent.id }).eq("user_id", a.sitter.id).select(),
+    "sitter moved their profile to another user",
+  );
+  // Nor can anyone edit someone else's row (RLS hides it).
+  assertDenied(
+    await a.parent.client.from("sitter_profiles").update({ bio: "hijacked" }).eq("user_id", a.sitter.id).select(),
+  );
+
+  // Nobody deletes a profile directly; account deletion cascades.
+  assertPermissionDenied(
+    await sitter.from("sitter_profiles").delete().eq("user_id", a.sitter.id).select(),
+    "sitter deleted their profile",
+  );
+
+  // The parent cannot read the table row, only the shared fields through the RPC.
+  const direct = await a.parent.client.from("sitter_profiles").select("*").eq("user_id", a.sitter.id);
+  assert.deepEqual(direct.data ?? [], [], "parent read the sitter's profile row directly");
+  const shared = await a.parent.client.rpc("household_sitter_profiles", { target_household_id: a.householdId });
+  assert.ifError(shared.error);
+  assert.deepEqual(shared.data, [
+    {
+      user_id: a.sitter.id,
+      display_name: "Sam Sitter",
+      bio: "Former preschool teacher, CPR certified",
+      phone: null,
+      availability: "Weekday afternoons",
+    },
+  ]);
+  assert.ok(!("wants_updates" in shared.data[0]), "the private preference reached a parent");
+  assert.ok(!("show_phone" in shared.data[0]), "the visibility flags reached a parent");
+
+  // Flipping the flags changes what the parent sees; empty shared text comes back NULL.
+  assert.ifError(
+    (await sitter.from("sitter_profiles").update({ show_phone: true, show_bio: false, availability: "" }).eq("user_id", a.sitter.id)).error,
+  );
+  const flipped = await a.parent.client.rpc("household_sitter_profiles", { target_household_id: a.householdId });
+  assert.ifError(flipped.error);
+  assert.deepEqual(flipped.data, [
+    { user_id: a.sitter.id, display_name: "Sam Sitter", bio: null, phone: "734-555-0199", availability: null },
+  ]);
+
+  // Another family's parent, an outsider, and the sitter themselves get nothing for household A.
+  for (const [who, client] of [
+    ["parent B", b.parent.client],
+    ["outsider", outsiderUser.client],
+    ["the caretaker", sitter],
+  ]) {
+    const res = await client.rpc("household_sitter_profiles", { target_household_id: a.householdId });
+    assert.ifError(res.error);
+    assert.deepEqual(res.data, [], `${who} read household A's sitter profiles`);
+  }
+
+  // Anonymous visitors read nothing and cannot call the RPC.
+  const anonRead = await anon.from("sitter_profiles").select("*");
+  assert.ok(anonRead.error || anonRead.data.length === 0, "anon read sitter_profiles");
+  assertPermissionDenied(
+    await anon.rpc("household_sitter_profiles", { target_household_id: a.householdId }),
+    "anon called household_sitter_profiles",
+  );
+
+  // A parent who also keeps a sitter profile (e.g. they sit for another family) is not returned:
+  // only caretakers of the household are.
+  assert.ifError(
+    (await a.parent.client.from("sitter_profiles").upsert({ ...profile, display_name: "Pat Parent" }, { onConflict: "user_id" })).error,
+  );
+  const withParentProfile = await a.parent.client.rpc("household_sitter_profiles", { target_household_id: a.householdId });
+  assert.ifError(withParentProfile.error);
+  assert.deepEqual(
+    withParentProfile.data.map((row) => row.user_id),
+    [a.sitter.id],
+    "a parent's own sitter profile was returned as the household's sitter",
+  );
+
+  // Once the parent removes the sitter, their profile is no longer returned to that family.
+  const removed = await a.parent.client
+    .from("household_members")
+    .delete()
+    .eq("household_id", a.householdId)
+    .eq("user_id", a.sitter.id)
+    .select();
+  assert.equal(removed.data?.length, 1);
+  const afterRemoval = await a.parent.client.rpc("household_sitter_profiles", { target_household_id: a.householdId });
+  assert.ifError(afterRemoval.error);
+  assert.deepEqual(afterRemoval.data, [], "a removed sitter's profile is still shared with the family");
+
+  // Privileges: select, plus insert/update of the editable columns only; never user_id or delete.
+  assert.deepEqual(
+    localSql(`
+      select has_table_privilege('authenticated', 'public.sitter_profiles', 'delete, truncate') as table_delete,
+             has_column_privilege('authenticated', 'public.sitter_profiles', 'user_id', 'insert, update') as user_id_write,
+             has_column_privilege('authenticated', 'public.sitter_profiles', 'bio', 'insert') as bio_insert,
+             has_column_privilege('authenticated', 'public.sitter_profiles', 'bio', 'update') as bio_update`),
+    [{ table_delete: false, user_id_write: false, bio_insert: true, bio_update: true }],
+  );
 });
 
 test("deleting an account that wrote or edited a day note keeps the note without their name", async () => {
@@ -1991,6 +2422,13 @@ function psqlQuery(sql) {
   }).trim();
 }
 
+// Runs a psql script (stdin) in one session; returns its exit code, unaligned stdout, and stderr.
+function psqlScript(sql) {
+  const r = spawnSync("psql", [dbUrl, "-XAtq", "-v", "ON_ERROR_STOP=1"], { input: sql, encoding: "utf8" });
+  if (r.error) throw r.error;
+  return { code: r.status, stdout: r.stdout.trim(), stderr: r.stderr };
+}
+
 // Runs `sql` in its own psql session; resolves to psql's exit code, or to { code, stderr } with
 // captureStderr (so a test can assert which error psql printed).
 function spawnPsql(sql, { captureStderr = false } = {}) {
@@ -2090,7 +2528,13 @@ test("every relation in public has RLS (tables), invoker rights (views), and gra
              has_column_privilege('authenticated', 'public.task_checks', 'checked_by',
                'insert, update') as checked_by_write,
              has_table_privilege('authenticated', 'public.task_checks', 'update')
-               as task_checks_update`),
+               as task_checks_update,
+             has_table_privilege('authenticated', 'public.appointments', 'update, delete, truncate')
+               as appointments_table_write,
+             has_column_privilege('authenticated', 'public.appointments', 'plan_id', 'update')
+               as appointments_plan_update,
+             has_column_privilege('authenticated', 'public.appointments', 'household_id', 'update')
+               as appointments_household_update`),
     [
       {
         shift_events_table_write: false,
@@ -2098,6 +2542,9 @@ test("every relation in public has RLS (tables), invoker rights (views), and gra
         checked_at_write: false,
         checked_by_write: false,
         task_checks_update: false,
+        appointments_table_write: false,
+        appointments_plan_update: false,
+        appointments_household_update: false,
       },
     ],
     "authenticated has a write privilege it must not have",
@@ -2141,6 +2588,74 @@ test("every relation in public has RLS (tables), invoker rights (views), and gra
     false,
     `new functions are still executable by PUBLIC: ${globalFunctionDefaults[0].acl}`,
   );
+});
+
+test("authenticated can execute only the pinned public functions; Realtime publishes only the pinned tables", () => {
+  // A new grant (e.g. on the security-definer trigger function resolve_schedule_requests) must be
+  // a deliberate change to this list. log_original_uncheck and stamp_handoff are trigger
+  // functions: Postgres refuses to run a trigger function outside a trigger.
+  const executable = localSql(`
+    select p.oid::regprocedure::text as fn
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and has_function_privilege('authenticated', p.oid, 'execute')`)
+    .map((r) => r.fn)
+    .sort();
+  assert.deepEqual(
+    executable,
+    [
+      "accept_invite(text)",
+      "can_delete_photo(text,text)",
+      "can_delete_removed_photo(text)",
+      "can_read_photo(text)",
+      "can_upload_photo(text)",
+      "complete_task(uuid,uuid,text,text,text)",
+      "create_household(text,boolean)",
+      "create_invite(uuid,text)",
+      "delete_my_account()",
+      "end_visit(uuid)",
+      "household_sitter_profiles(uuid)",
+      "is_member(uuid)",
+      "is_parent(uuid)",
+      "log_original_uncheck()",
+      "photo_path_parts(text)",
+      "remove_all_photos()",
+      "remove_photo(uuid)",
+      "reopen_visit(uuid)",
+      "stamp_handoff()",
+      "trigger_moment_now(uuid)",
+    ],
+    "the public functions authenticated can execute changed",
+  );
+
+  // Realtime INSERT/UPDATE events are RLS-filtered, but DELETE events are not (README), so the
+  // publication is pinned too. sitter_profiles is private to its owner and stays out.
+  const published = localSql(`
+    select tablename
+      from pg_publication_tables
+     where pubname = 'supabase_realtime' and schemaname = 'public'`)
+    .map((r) => r.tablename)
+    .sort();
+  assert.deepEqual(
+    published,
+    [
+      "appointments",
+      "care_items",
+      "care_logs",
+      "contacts",
+      "day_notes",
+      "households",
+      "messages",
+      "plans",
+      "schedule_requests",
+      "shift_events",
+      "task_checks",
+      "tasks",
+      "visits",
+    ],
+    "the public tables in the supabase_realtime publication changed",
+  );
+  assert.ok(!published.includes("sitter_profiles"), "sitter_profiles is published to Realtime");
 });
 
 // Only ever interpolate ids this run created.

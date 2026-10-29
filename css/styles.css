@@ -705,6 +705,7 @@ button {
 .current-session-people { margin-top: 14px; padding: 12px; border-radius: 7px; background: #ededf2; }
 .current-session-people > div { display: flex; align-items: center; gap: 10px; color: #1e1e21; font-size: var(--text-xs); }
 .current-session-people .schedule-people { margin-left: 2px; }
+.caregiver-details { margin: 0; font-size: var(--text-xs); }
 .caregiver-name { display: inline-flex; align-items: center; min-height: 30px; padding: 0 8px; border-radius: 7px; background: #fff; font-size: var(--text-xs); }
 .schedule-card-title, .schedule-card-meta, .schedule-card-meta span, .schedule-heading h1, .upcoming-shifts h2, .upcoming-shift p, .schedule-notes p, .schedule-empty p { margin: 0; }
 .schedule-card-title, .upcoming-shifts h2 { color: var(--blue); font-size: var(--text-lg); font-weight: var(--weight-bold); }
@@ -752,6 +753,17 @@ button {
 .upcoming-shift small { display: block; margin-top: 5px; color: var(--grey); font-size: var(--text-xs); }
 .schedule-no-upcoming, .schedule-request-status { margin: 0; color: var(--grey); font-size: var(--text-sm); }
 .schedule-request-status:not(:empty) { margin-top: 12px; color: var(--success); font-weight: var(--weight-semibold); }
+/* SI-50: a failed request or dismiss reads as an error, not a success. */
+.schedule-request-status.is-error:not(:empty) { color: var(--danger); }
+.schedule-empty-button:disabled { background: var(--accent-soft); color: var(--accent-strong); cursor: default; }
+/* A sitter's schedule request, shown to parents (schedule page and parent.html). */
+.schedule-request-notices { display: grid; gap: 8px; margin: 0 0 12px; }
+.schedule-request-notices:empty { display: none; }
+.schedule-request-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.schedule-request-notice p { flex: 1 1 220px; margin: 0; }
+.schedule-request-notice a { text-decoration: underline; text-underline-offset: 2px; font-weight: var(--weight-semibold); }
+.schedule-request-actions { display: flex; gap: 8px; }
+.schedule-request-notice .primary-btn, .schedule-request-notice .photo-source-btn { width: auto; min-height: 36px; padding: 6px 14px; }
 .schedule-new-session { margin-top: 18px; color: var(--accent-strong); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
 .schedule-details-form { width: min(100%, 480px); max-height: min(780px, 88vh); overflow: auto; }
 .schedule-details-header { position: sticky; top: -18px; z-index: 1; margin: -18px -18px 18px; padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--card); }

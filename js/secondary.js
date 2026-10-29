@@ -10,12 +10,90 @@
 
   const esc = auth.escapeHtml;
   const ready = (window.CareNestFamily || auth).ready;
-  ready.then((ctx) => {
+  // Loaded once before the page renders: the signed-in sitter's own profile (profile page) or
+  // the fields this family's sitters chose to share (parent schedule page).
+  let sitterProfileState = null;
+  let sharedSitter = null;
+  // The schedule page's re-sync with window.CareNestData (set by bindSchedule).
+  let syncSchedule = null;
+
+  ready.then(async (ctx) => {
     const isParent = ctx && ctx.role === "parent";
     if (isParent) ui.renderParentNav(page === "carelog" ? "care-log" : page);
     else ui.renderSitterNav(page === "carelog" ? "care-log" : page);
+    if (page === "profile" && !isParent) sitterProfileState = await loadSitterProfile(ctx);
+    if (page === "schedule" && isParent) sharedSitter = await loadSharedSitter(ctx);
     render(ctx);
+    // Live (SI-50): a parent's new session reaches the sitter, and a sitter's schedule request
+    // (or its dismissal or auto-clear) reaches every member, without a reload. Only the schedule
+    // view re-renders, keeping its selected date and view; the editors' listeners bind once.
+    if (page === "schedule" && window.CareNestFamily && window.CareNestFamily.subscribe) {
+      window.CareNestFamily.subscribe(() => { if (syncSchedule) syncSchedule(); });
+    }
   });
+
+  // The sitter profile lives in public.sitter_profiles. Parents never read that table; they get
+  // only the shared fields through household_sitter_profiles(), filtered in the database.
+  const PROFILE_COLUMNS = "display_name, bio, phone, availability, show_bio, show_phone, show_availability, wants_updates";
+  const legacyProfileKey = (userId) => `carenest:sitter-profile:${userId}`;
+  const dropLegacyProfile = (userId) => { try { localStorage.removeItem(legacyProfileKey(userId)); } catch (e) { /* nothing stored */ } };
+  const profileDefaults = () => ({
+    name: data.babysitter && data.babysitter.name || "",
+    bio: "",
+    phone: "",
+    availability: "",
+    showBio: true,
+    showPhone: false,
+    showAvailability: true,
+    updates: true,
+  });
+  const profileFromRow = (row) => ({
+    name: row.display_name, bio: row.bio, phone: row.phone, availability: row.availability,
+    showBio: row.show_bio, showPhone: row.show_phone, showAvailability: row.show_availability, updates: row.wants_updates,
+  });
+  const profileToRow = (profile) => ({
+    display_name: String(profile.name || "").slice(0, 80),
+    bio: String(profile.bio || "").slice(0, 500),
+    phone: String(profile.phone || "").slice(0, 40),
+    availability: String(profile.availability || "").slice(0, 160),
+    show_bio: Boolean(profile.showBio),
+    show_phone: Boolean(profile.showPhone),
+    show_availability: Boolean(profile.showAvailability),
+    wants_updates: Boolean(profile.updates),
+  });
+  const saveProfile = (ctx, profile) => ctx.client.from("sitter_profiles").upsert(profileToRow(profile), { onConflict: "user_id" });
+
+  async function loadSitterProfile(ctx) {
+    const defaults = profileDefaults();
+    if (!ctx || ctx.demo || !ctx.client || !ctx.user) return { profile: defaults };
+    const { data: row, error } = await ctx.client.from("sitter_profiles").select(PROFILE_COLUMNS).eq("user_id", ctx.user.id).maybeSingle();
+    if (error) return { profile: defaults, error };
+    if (row) {
+      dropLegacyProfile(ctx.user.id);
+      return { profile: profileFromRow(row) };
+    }
+    // One-time move of a profile saved on this device before profiles reached the database.
+    let legacy = null;
+    try { legacy = JSON.parse(localStorage.getItem(legacyProfileKey(ctx.user.id)) || "null"); } catch (e) { /* unreadable: start fresh */ }
+    if (!legacy || typeof legacy !== "object") return { profile: defaults };
+    const profile = { ...defaults };
+    Object.keys(defaults).forEach((name) => { if (name in legacy) profile[name] = legacy[name]; });
+    // Insert only: if another device saved a profile meanwhile, that newer row wins over this copy.
+    const moved = await ctx.client.from("sitter_profiles").upsert(profileToRow(profile), { onConflict: "user_id", ignoreDuplicates: true });
+    if (moved.error) return { profile, error: moved.error };
+    dropLegacyProfile(ctx.user.id);
+    const { data: stored, error: reread } = await ctx.client.from("sitter_profiles").select(PROFILE_COLUMNS).eq("user_id", ctx.user.id).maybeSingle();
+    if (reread || !stored) return { profile, error: reread || undefined };
+    return { profile: profileFromRow(stored) };
+  }
+
+  async function loadSharedSitter(ctx) {
+    if (!ctx || ctx.demo || !ctx.client || !ctx.household) return null;
+    const { data: rows, error } = await ctx.client.rpc("household_sitter_profiles", { target_household_id: ctx.household.id });
+    if (error || !rows || !rows.length) return null;
+    const userId = data.babysitter && data.babysitter.userId;
+    return rows.find((row) => row.user_id === userId) || rows[0];
+  }
 
   function taskRows(editable) {
     if (!data.schedule.length) return '<li class="secondary-row"><span><strong>No tasks yet</strong><small>Add the first task for this session.</small></span></li>';
@@ -58,9 +136,10 @@
     const today = dateKey(new Date());
     const people = `<div class="schedule-people"><span class="schedule-avatar">${esc(initials(data.child && data.child.name))}</span><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span></div>`;
     const current = editable
-      ? `<section class="current-shift-card current-session-card"><div class="current-session-title"><div><p class="schedule-card-title">Current Session</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span>3:00 PM – 7:00 PM</span></p></div><button type="button" class="schedule-icon-button" data-edit-schedule aria-label="Edit current session">✎</button></div><div class="current-session-people"><div><strong>Children</strong>${people}</div><div><strong>Caregiver</strong><span class="caregiver-name">${esc(data.babysitter && data.babysitter.name || "Caregiver")}</span></div></div></section>`
+      ? `<section class="current-shift-card current-session-card"><div class="current-session-title"><div><p class="schedule-card-title">Current Session</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span>3:00 PM – 7:00 PM</span></p></div><button type="button" class="schedule-icon-button" data-edit-schedule aria-label="Edit current session">✎</button></div><div class="current-session-people"><div><strong>Children</strong>${people}</div><div><strong>Caregiver</strong><span class="caregiver-name">${esc(sharedSitter && sharedSitter.display_name || data.babysitter && data.babysitter.name || "Caregiver")}</span>${caregiverDetails()}</div></div></section>`
       : `<section class="current-shift-card"><div><p class="schedule-card-title">Current Shift</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span>3:00 PM – 7:00 PM</span></p></div>${people}</section>`;
     return `<section class="schedule-page${editable ? " schedule-page--parent" : ""}" data-schedule-page data-parent="${editable}" data-today="${today}" data-appointments="${esc(JSON.stringify(appointments))}">
+      ${editable ? '<div class="schedule-request-notices" data-request-notices aria-live="polite"></div>' : ""}
       ${current}
       <div class="schedule-heading"><h1>Schedule</h1></div>
       <div class="schedule-tabs" role="tablist" aria-label="Schedule view"><button type="button" role="tab" aria-selected="true" data-view="list">List</button><button type="button" role="tab" aria-selected="false" data-view="calendar">Calendar</button></div>
@@ -70,40 +149,52 @@
     </section>`;
   }
 
-  function sitterProfile(ctx) {
-    const key = `carenest:sitter-profile:${ctx.user ? ctx.user.id : "demo"}`;
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(key) || "{}"); } catch (e) { /* start with defaults */ }
-    const defaults = {
-      name: data.babysitter && data.babysitter.name || "",
-      bio: "Friendly, dependable care for busy families.",
-      phone: "",
-      availability: "Weekday afternoons and weekends",
-      showBio: true,
-      showPhone: false,
-      showAvailability: true,
-      updates: true,
-    };
-    const profile = { ...defaults, ...saved };
-    return `<section class="profile-settings-layout"><article class="panel secondary-panel public-profile-card"><p class="page-eyebrow">VISIBLE TO PARENTS</p><h2 class="section-title">Your public profile</h2><p class="supporting-copy">Parents only see the fields you choose to share below.</p><form class="profile-settings-form" id="profile-settings-form"><label class="field-label" for="profile-name">Display name</label><input class="text-input" id="profile-name" name="name" maxlength="80" value="${esc(profile.name)}"><label class="field-label" for="profile-bio">About you</label><textarea class="text-input profile-textarea" id="profile-bio" name="bio" maxlength="500" rows="4">${esc(profile.bio)}</textarea><label class="field-label" for="profile-phone">Phone number</label><input class="text-input" id="profile-phone" name="phone" type="tel" maxlength="40" value="${esc(profile.phone)}"><label class="field-label" for="profile-availability">Availability</label><input class="text-input" id="profile-availability" name="availability" maxlength="160" value="${esc(profile.availability)}"><fieldset class="profile-visibility"><legend class="field-label">What parents can see</legend><label><input type="checkbox" name="showBio"${profile.showBio ? " checked" : ""}> About you</label><label><input type="checkbox" name="showPhone"${profile.showPhone ? " checked" : ""}> Phone number</label><label><input type="checkbox" name="showAvailability"${profile.showAvailability ? " checked" : ""}> Availability</label></fieldset><fieldset class="profile-visibility"><legend class="field-label">Your preferences</legend><label><input type="checkbox" name="updates"${profile.updates ? " checked" : ""}> Receive session update reminders</label></fieldset><div class="profile-save-row"><button class="primary-btn" type="submit">Save profile</button><p class="profile-save-status" id="profile-save-status" role="status" aria-live="polite"></p></div></form></article><aside class="panel secondary-panel profile-preview"><p class="page-eyebrow">PARENT PREVIEW</p><h2 class="section-title" id="profile-preview-name">${esc(profile.name) || "Your name"}</h2><p class="supporting-copy" id="profile-preview-bio"${profile.showBio ? "" : " hidden"}>${esc(profile.bio)}</p><p class="supporting-copy" id="profile-preview-phone"${profile.showPhone ? "" : " hidden"}>${esc(profile.phone)}</p><p class="supporting-copy" id="profile-preview-availability"${profile.showAvailability ? "" : " hidden"}>${esc(profile.availability)}</p><p class="profile-private-note">Private fields stay visible only to you.</p></aside></section>`;
+  // Shared availability and phone under the caregiver's name (parent schedule page).
+  function caregiverDetails() {
+    if (!sharedSitter || (!sharedSitter.availability && !sharedSitter.phone)) return "";
+    const href = sharedSitter.phone && window.CareNestFamily ? window.CareNestFamily.phoneHref(sharedSitter.phone) : "";
+    const phone = sharedSitter.phone ? (href ? `<a href="${esc(href)}">${esc(sharedSitter.phone)}</a>` : esc(sharedSitter.phone)) : "";
+    return `<p class="supporting-copy caregiver-details">${[sharedSitter.availability ? esc(sharedSitter.availability) : "", phone].filter(Boolean).join(" · ")}</p>`;
+  }
+
+  function sitterProfile() {
+    const profile = (sitterProfileState && sitterProfileState.profile) || profileDefaults();
+    return `<section class="profile-settings-layout"><article class="panel secondary-panel public-profile-card"><p class="page-eyebrow">VISIBLE TO PARENTS</p><h2 class="section-title">Your public profile</h2><p class="supporting-copy">Parents only see the fields you choose to share below.</p><form class="profile-settings-form" id="profile-settings-form"><label class="field-label" for="profile-name">Display name</label><input class="text-input" id="profile-name" name="name" maxlength="80" value="${esc(profile.name)}"><label class="field-label" for="profile-bio">About you</label><textarea class="text-input profile-textarea" id="profile-bio" name="bio" maxlength="500" rows="4" placeholder="Friendly, dependable care for busy families.">${esc(profile.bio)}</textarea><label class="field-label" for="profile-phone">Phone number</label><input class="text-input" id="profile-phone" name="phone" type="tel" maxlength="40" value="${esc(profile.phone)}"><label class="field-label" for="profile-availability">Availability</label><input class="text-input" id="profile-availability" name="availability" maxlength="160" placeholder="Weekday afternoons and weekends" value="${esc(profile.availability)}"><fieldset class="profile-visibility"><legend class="field-label">What parents can see</legend><label><input type="checkbox" name="showBio"${profile.showBio ? " checked" : ""}> About you</label><label><input type="checkbox" name="showPhone"${profile.showPhone ? " checked" : ""}> Phone number</label><label><input type="checkbox" name="showAvailability"${profile.showAvailability ? " checked" : ""}> Availability</label></fieldset><fieldset class="profile-visibility"><legend class="field-label">Your preferences</legend><label><input type="checkbox" name="updates"${profile.updates ? " checked" : ""}> Receive session update reminders</label></fieldset><div class="profile-save-row"><button class="primary-btn" type="submit">Save profile</button><p class="profile-save-status" id="profile-save-status" role="status" aria-live="polite"></p></div></form></article><aside class="panel secondary-panel profile-preview"><p class="page-eyebrow">PARENT PREVIEW</p><h2 class="section-title" id="profile-preview-name">${esc(profile.name) || "Your name"}</h2><p class="supporting-copy" id="profile-preview-bio"${profile.showBio && profile.bio ? "" : " hidden"}>${esc(profile.bio)}</p><p class="supporting-copy" id="profile-preview-phone"${profile.showPhone && profile.phone ? "" : " hidden"}>${esc(profile.phone)}</p><p class="supporting-copy" id="profile-preview-availability"${profile.showAvailability && profile.availability ? "" : " hidden"}>${esc(profile.availability)}</p><p class="profile-private-note">Private fields stay visible only to you.</p></aside></section>`;
   }
 
   function bindSitterProfile(ctx) {
     const form = document.getElementById("profile-settings-form");
     if (!form) return;
-    const key = `carenest:sitter-profile:${ctx.user ? ctx.user.id : "demo"}`;
-    form.addEventListener("submit", (event) => {
+    const status = document.getElementById("profile-save-status");
+    const canSave = Boolean(!ctx.demo && ctx.client && ctx.user);
+    // A failed load shows defaults; saving them would overwrite the saved profile, so Save stays
+    // off until the page is reloaded and the profile loads.
+    const loadFailed = Boolean(canSave && sitterProfileState && sitterProfileState.error);
+    if (loadFailed) {
+      form.querySelector('[type="submit"]').disabled = true;
+      status.textContent = `Your saved profile could not be loaded (${auth.friendlyError(sitterProfileState.error)}), so saving is turned off to keep it safe. Reload the page to try again.`;
+    }
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (loadFailed) return;
       const values = Object.fromEntries(new FormData(form).entries());
       ["showBio", "showPhone", "showAvailability", "updates"].forEach((name) => { values[name] = form.elements[name].checked; });
-      try { localStorage.setItem(key, JSON.stringify(values)); } catch (e) { /* the page still reflects this visit */ }
+      if (canSave) {
+        const button = form.querySelector('[type="submit"]');
+        button.disabled = true;
+        status.textContent = "Saving…";
+        const { error } = await saveProfile(ctx, values);
+        button.disabled = false;
+        if (error) { status.textContent = auth.friendlyError(error); return; }
+        dropLegacyProfile(ctx.user.id);
+      }
       document.getElementById("profile-preview-name").textContent = values.name || "Your name";
       [["bio", "showBio"], ["phone", "showPhone"], ["availability", "showAvailability"]].forEach(([field, visible]) => {
         const el = document.getElementById(`profile-preview-${field}`);
         el.textContent = values[field] || "";
         el.hidden = !values[visible] || !values[field];
       });
-      document.getElementById("profile-save-status").textContent = "Profile saved.";
+      status.textContent = canSave ? "Profile saved." : "Preview updated. Demo profiles are not saved.";
     });
   }
 
@@ -144,7 +235,7 @@
       },
       profile: {
         eyebrow: "PROFILE & SETTINGS", title: ctx && ctx.role === "parent" ? "Your CareNest settings" : "Your sitter profile", intro: ctx && ctx.role === "parent" ? "Manage your details and the family space with confidence." : "Choose what parents can see, and keep your personal preferences in one place.",
-        body: ctx && ctx.role === "parent" ? `<section class="secondary-grid"><article class="panel secondary-panel"><h2 class="section-title">My profile</h2><p class="supporting-copy">Your name and sign-in controls are available from the Account menu.</p></article><article class="panel secondary-panel"><h2 class="section-title">Manage household</h2><p class="supporting-copy">Use the Children and Schedule tabs to edit family care information directly where it is shown.</p><a class="secondary-link" href="people.html">People and invites</a></article><article class="panel secondary-panel"><h2 class="section-title">Notification preferences</h2><p class="supporting-copy">Notification controls will appear here as they become available.</p></article></section>` : sitterProfile(ctx || {}),
+        body: ctx && ctx.role === "parent" ? `<section class="secondary-grid"><article class="panel secondary-panel"><h2 class="section-title">My profile</h2><p class="supporting-copy">Your name and sign-in controls are available from the Account menu.</p></article><article class="panel secondary-panel"><h2 class="section-title">Manage household</h2><p class="supporting-copy">Use the Children and Schedule tabs to edit family care information directly where it is shown.</p><a class="secondary-link" href="people.html">People and invites</a></article><article class="panel secondary-panel"><h2 class="section-title">Notification preferences</h2><p class="supporting-copy">Notification controls will appear here as they become available.</p></article></section>` : sitterProfile(),
       },
     }[page];
     if (!views) return;
@@ -160,7 +251,13 @@
     if (!pageEl) return;
     let appointments = [];
     try { appointments = JSON.parse(pageEl.dataset.appointments || "[]"); } catch (e) { /* an empty schedule is valid */ }
+    // Open "Request Schedule" reminders (SI-50): from the database, or this tab only in demo mode.
+    const live = Boolean(ctx && !ctx.demo && ctx.client && ctx.household);
+    let requests = live ? (data.scheduleRequests || []).slice() : [];
     let selected = pageEl.dataset.today;
+    // parent.html links here with ?date=YYYY-MM-DD to open a requested day.
+    const linkedDate = new URLSearchParams(window.location.search).get("date");
+    if (linkedDate && /^\d{4}-\d{2}-\d{2}$/.test(linkedDate) && !Number.isNaN(parseDate(linkedDate).getTime())) selected = linkedDate;
     let view = "list";
     const content = pageEl.querySelector("[data-schedule-content]");
     const upcomingEl = pageEl.querySelector("[data-upcoming-shifts]");
@@ -170,17 +267,33 @@
     const currentAppointment = () => appointments.find((item) => item.date === selected);
     const taskItems = () => ((currentAppointment() && currentAppointment().activities) || []).slice().sort((a, b) => timeValue(a.time) - timeValue(b.time));
     const eventDates = () => new Set(appointments.map((item) => item.date));
+    const openRequest = (date) => requests.find((item) => item.date === date);
+    const parentFirst = () => String(data.parentName || "").trim().split(/\s+/)[0] || "";
+    const notices = pageEl.querySelector("[data-request-notices]");
+    function setStatus(text, isError) {
+      status.textContent = text;
+      status.classList.toggle("is-error", Boolean(isError));
+    }
 
     function appointmentHtml(item) {
       return `<article class="upcoming-shift"><div><p><strong>${esc(displayDate(item.date))}</strong><span>${esc(item.start_time || "")}${item.end_time ? ` – ${esc(item.end_time)}` : ""}</span></p><small>Children: ${esc(data.child && data.child.name || "Child")} · Caregiver: ${esc(data.babysitter && data.babysitter.name || "Caregiver")}</small></div><div class="schedule-people"><span class="schedule-avatar">${esc(initials(data.child && data.child.name))}</span><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span></div></article>`;
     }
     function listHtml() {
       const appointment = currentAppointment();
-      if (!appointment || !taskItems().length) return emptyHtml();
+      if (!appointment) return emptyHtml();
+      // A booked session with no activities yet is still a schedule: show its hours, not "Request".
+      if (!taskItems().length) return `<div class="schedule-empty"><p>Session ${esc(appointment.start_time || "")}${appointment.end_time ? ` – ${esc(appointment.end_time)}` : ""}</p><small>No activities added yet.</small>${editable ? '<button class="schedule-empty-button" type="button" data-edit-schedule>Edit Schedule</button>' : ""}</div>${appointment.note ? `<aside class="schedule-notes"><strong>Today’s Notes</strong><p>${esc(appointment.note)}</p></aside>` : ""}`;
       return `<ol class="schedule-activity-list">${taskItems().map((item) => `<li><time>${esc(item.time || "Any time")}</time><div><strong>${esc(item.title)}</strong>${item.detail || item.location ? `<p>${esc(item.detail || item.location)}</p>` : ""}</div></li>`).join("")}</ol>${appointment.note ? `<aside class="schedule-notes"><strong>Today’s Notes</strong><p>${esc(appointment.note)}</p></aside>` : ""}${editable ? '<button type="button" class="schedule-edit-button" data-edit-schedule>Edit Schedule</button>' : ""}`;
     }
     function emptyHtml() {
-      return `<div class="schedule-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3m10-3v3M4 9h16M6 5h12a2 2 0 0 1 2-2Z"/></svg><p>No schedule has been added${editable ? "." : " for this shift."}</p>${editable ? '<button class="schedule-empty-button" type="button" data-book-appointment>Add Schedule</button>' : '<button class="schedule-empty-button" type="button" data-request-schedule>Request Schedule</button><small>Send a reminder to the parent to add a schedule for this day.</small>'}</div>`;
+      const parent = parentFirst();
+      let action;
+      if (editable) action = '<button class="schedule-empty-button" type="button" data-book-appointment>Add Schedule</button>';
+      // Past days cannot get a schedule (booking starts today), so there is nothing to request.
+      else if (selected < today) action = "";
+      else if (openRequest(selected)) action = `<button class="schedule-empty-button" type="button" disabled>Reminder sent to ${esc(parent || "the parent")}</button><small>${esc(parent || "The parent")} will see it on their schedule.</small>`;
+      else action = '<button class="schedule-empty-button" type="button" data-request-schedule>Request Schedule</button><small>Send a reminder to the parent to add a schedule for this day.</small>';
+      return `<div class="schedule-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3m10-3v3M4 9h16M6 5h12a2 2 0 0 1 2-2Z"/></svg><p>No schedule has been added${editable ? "." : " for this shift."}</p>${action}</div>`;
     }
     function calendarHtml() {
       const selectedDate = parseDate(selected);
@@ -188,7 +301,7 @@
       const first = new Date(year, month, 1), last = new Date(year, month + 1, 0);
       const start = (first.getDay() + 6) % 7;
       const days = Array.from({ length: start + last.getDate() }, (_, index) => index < start ? "" : index - start + 1);
-      return `<div class="schedule-calendar"><div class="calendar-weekdays">${["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((day) => `<span>${day}</span>`).join("")}</div><div class="calendar-days">${days.map((day) => { if (!day) return "<span></span>"; const key = dateKey(new Date(year, month, day)); return `<button type="button" data-calendar-date="${key}" class="${key === selected ? "is-selected" : ""}${eventDates().has(key) ? " has-shift" : ""}" aria-label="${esc(displayDate(key, true))}">${day}</button>`; }).join("")}</div></div>${currentAppointment() && taskItems().length ? listHtml() : emptyHtml()}`;
+      return `<div class="schedule-calendar"><div class="calendar-weekdays">${["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((day) => `<span>${day}</span>`).join("")}</div><div class="calendar-days">${days.map((day) => { if (!day) return "<span></span>"; const key = dateKey(new Date(year, month, day)); return `<button type="button" data-calendar-date="${key}" class="${key === selected ? "is-selected" : ""}${eventDates().has(key) ? " has-shift" : ""}" aria-label="${esc(displayDate(key, true))}">${day}</button>`; }).join("")}</div></div>${listHtml()}`;
     }
     function render() {
       const isToday = selected === today;
@@ -196,6 +309,45 @@
       content.innerHTML = view === "list" ? listHtml() : calendarHtml();
       upcomingEl.innerHTML = appointments.filter((item) => item.date > today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4).map(appointmentHtml).join("") || '<p class="schedule-no-upcoming">No upcoming shifts scheduled.</p>';
       pageEl.querySelectorAll("[data-view]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.view === view)));
+      if (notices) notices.innerHTML = requests.map(noticeHtml).join("");
+    }
+    // Parent schedule page: one notice per open request.
+    function noticeHtml(request) {
+      const name = request.requesterName || "Your sitter";
+      const canAdd = request.date >= today; // booking starts today
+      return `<div class="auth-status schedule-request-notice"><p>${esc(name)} asked for a schedule for ${esc(displayDate(request.date))}.</p><div class="schedule-request-actions">${canAdd ? `<button type="button" class="primary-btn" data-request-add="${esc(request.date)}">Add schedule</button>` : ""}<button type="button" class="photo-source-btn" data-request-dismiss="${esc(request.id)}">Dismiss</button></div></div>`;
+    }
+    async function requestSchedule(button) {
+      const date = selected;
+      const parent = parentFirst();
+      if (!live) {
+        setStatus("Demo only: no reminder was sent. Sign in as a sitter to send a real one.");
+        return;
+      }
+      button.disabled = true;
+      setStatus("Sending…");
+      const { error } = await ctx.client.from("schedule_requests").insert({ household_id: ctx.household.id, request_date: date });
+      // 23505: an open request for this day already exists, so the parent already has it.
+      if (error && error.code !== "23505") {
+        button.disabled = false;
+        setStatus(auth.friendlyError(error), true);
+        return;
+      }
+      if (!openRequest(date)) requests = requests.concat({ id: `sent-${date}`, date });
+      setStatus(`Reminder sent. ${parent || "The parent"} will see it on their schedule.`);
+      render();
+    }
+    async function dismissRequest(button) {
+      button.disabled = true;
+      const { error } = await ctx.client.from("schedule_requests").update({ resolved_at: new Date().toISOString() }).eq("id", button.dataset.requestDismiss);
+      if (error) {
+        button.disabled = false;
+        setStatus(auth.friendlyError(error), true);
+        return;
+      }
+      requests = requests.filter((item) => item.id !== button.dataset.requestDismiss);
+      setStatus("Request dismissed.");
+      render();
     }
     function openBooking() {
       const existing = currentAppointment();
@@ -223,12 +375,15 @@
         try {
           if (ctx && !ctx.demo && ctx.client && data.planId) {
             const valuesToSave = { household_id: ctx.household.id, plan_id: data.planId, appointment_date: item.date, start_time: values.start, end_time: values.end, note: item.note, activities: item.activities };
-            const result = existing && existing.id ? await ctx.client.from("appointments").update(valuesToSave).eq("id", existing.id) : await ctx.client.from("appointments").insert(valuesToSave);
+            const { household_id, plan_id, ...editable } = valuesToSave; // an appointment never moves to another family space or plan
+            const result = existing && existing.id ? await ctx.client.from("appointments").update(editable).eq("id", existing.id) : await ctx.client.from("appointments").insert(valuesToSave).select("id").single();
             if (result.error) throw result.error;
+            if (!(existing && existing.id) && result.data && result.data.id) item.id = result.data.id; // so an edit before Realtime catches up targets the real row
           }
           const existingIndex = existing ? appointments.findIndex((appointment) => appointment.id === existing.id) : appointments.findIndex((appointment) => appointment.date === item.date);
           if (existingIndex >= 0) appointments.splice(existingIndex, 1, item); else appointments.push(item);
-          selected = item.date; status.textContent = existing ? "Schedule saved." : "Schedule added."; render(); dialog.remove();
+          requests = requests.filter((request) => request.date !== item.date); // the database resolves it too
+          selected = item.date; setStatus(existing ? "Schedule saved." : "Schedule added."); render(); dialog.remove();
         } catch (error) { const errorEl = dialog.querySelector(".form-error"); errorEl.textContent = auth.friendlyError(error); errorEl.hidden = false; dialog.showModal(); }
       });
       dialog.addEventListener("click", async (event) => {
@@ -264,9 +419,20 @@
       if (target.dataset.view) { view = target.dataset.view; render(); }
       if (target.dataset.date) { selected = dateKey(new Date(parseDate(selected).getTime() + (target.dataset.date === "next" ? DAY : -DAY))); render(); }
       if (target.dataset.calendarDate) { selected = target.dataset.calendarDate; render(); }
-      if (target.matches("[data-request-schedule]")) status.textContent = "Schedule request sent to the parent.";
+      if (target.matches("[data-request-schedule]")) requestSchedule(target);
+      if (target.dataset.requestAdd) { selected = target.dataset.requestAdd; view = "list"; render(); openBooking(); }
+      if (target.dataset.requestDismiss && live) dismissRequest(target);
       if (target.matches("[data-book-appointment], [data-edit-schedule]")) openBooking();
     });
+    // Re-read what js/family-data.js loaded (live changes); keeps the selected date and view.
+    syncSchedule = () => {
+      if (!live) return;
+      appointments = (data.appointments || []).slice();
+      requests = (data.scheduleRequests || []).slice();
+      // The sitter's "Reminder sent" line goes once the parent adds that day or dismisses it.
+      if (!editable && !openRequest(selected) && !status.classList.contains("is-error")) setStatus("");
+      render();
+    };
     render();
   }
 
