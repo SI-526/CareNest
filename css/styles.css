@@ -717,9 +717,9 @@ button {
 .schedule-heading h1 { font-size: var(--text-xl); font-weight: var(--weight-bold); }
 .schedule-book-btn { min-height: 38px; padding: 8px 12px; border-radius: 9px; background: var(--accent-strong); color: #fff; font-size: var(--text-sm); font-weight: var(--weight-semibold); }
 .schedule-tabs { display: flex; justify-content: center; gap: 2px; margin-top: 10px; border-bottom: 1px solid var(--line); }
-.schedule-tabs button { min-width: 80px; min-height: 30px; padding: 6px 14px; border-radius: 8px 8px 0 0; background: #e1e3ec; color: #60626a; font-size: var(--text-xs); }
+.schedule-tabs button { min-width: 80px; min-height: 44px; padding: 6px 14px; border-radius: 8px 8px 0 0; background: #e1e3ec; color: #60626a; font-size: var(--text-xs); }
 .schedule-tabs button[aria-selected="true"] { background: var(--accent-strong); color: white; font-weight: var(--weight-semibold); }
-.schedule-date-controls { display: flex; align-items: center; justify-content: space-between; min-height: 58px; padding: 0 8px; }
+.schedule-date-controls { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 8px; }
 .schedule-date-controls p { margin: 0; color: #151515; font-size: var(--text-sm); }
 .schedule-chevron { width: 36px; height: 44px; color: #68707b; font-size: 32px; line-height: 1; }
 .schedule-activity-list { margin: 0; padding: 0; list-style: none; }
@@ -764,7 +764,7 @@ button {
 .schedule-request-notice a { text-decoration: underline; text-underline-offset: 2px; font-weight: var(--weight-semibold); }
 .schedule-request-actions { display: flex; gap: 8px; }
 .schedule-request-notice .primary-btn, .schedule-request-notice .photo-source-btn { width: auto; min-height: 36px; padding: 6px 14px; }
-.schedule-new-session { margin-top: 18px; color: var(--accent-strong); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.schedule-new-session { min-height: 44px; margin-top: 3px; color: var(--accent-strong); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
 .schedule-details-form { width: min(100%, 480px); max-height: min(780px, 88vh); overflow: auto; }
 .schedule-details-header { position: sticky; top: -18px; z-index: 1; margin: -18px -18px 18px; padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--card); }
 .schedule-details-header .panel-title { font-size: var(--text-md); }
@@ -3324,6 +3324,10 @@ body.modal-open {
 .shift-avatar.contact-initials {
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+.parent-child-avatar.contact-initials {
+  background: var(--accent-soft);
 }
 
 .profile-avatar.contact-initials {

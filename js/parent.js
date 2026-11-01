@@ -38,14 +38,15 @@
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const coarsePointer = window.matchMedia("(pointer: coarse)");
 
+    let headerAvatar = ""; // skips re-creating the image on every live update
     function renderHeader() {
       document.getElementById("parent-greeting").textContent =
         `Hi ${data.viewerFirstName || parentContact().firstName || "there"}`;
-      const avatar = document.getElementById("parent-child-avatar");
-      // Only the demo family has a child photo; signed in there is none yet, so none is shown.
-      if (data.child.avatar) {
-        avatar.src = data.child.avatar;
-        avatar.hidden = false;
+      // Only the demo family has a child photo; signed in, the child's initials stand in for it.
+      const avatar = ui.avatarHtml(data.child.avatar, data.child.name, "parent-child-avatar", 48);
+      if (avatar !== headerAvatar) {
+        headerAvatar = avatar;
+        document.querySelector(".parent-child-avatar").outerHTML = avatar;
       }
       // A new family has nothing for the sitter yet: point the parent at Family info.
       const nudge = document.querySelector(".setup-nudge");

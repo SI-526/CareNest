@@ -2004,6 +2004,7 @@
     senderName,
     photoTitle,
     photoImg,
+    avatarHtml,
     renderParentNav,
     renderSitterNav,
     isDevHost,
