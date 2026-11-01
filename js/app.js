@@ -43,11 +43,13 @@
   const readySource = window.CareNestFamily || window.CareNestAuth;
   const authReady = readySource ? readySource.ready : Promise.resolve();
   authReady.then((ctx) => {
-    if ((page === "home" || page === "messages") && window.CareNestShift) {
+    if ((page === "home" || page === "messages" || page === "parent") && window.CareNestShift) {
       window.CareNestShift.ready.then((backend) => {
         shift = backend;
         if (page === "home") {
           initHome();
+          initDayNotes(ctx);
+        } else if (page === "parent") {
           initDayNotes(ctx);
         } else initMessages();
       });
@@ -207,24 +209,39 @@
     return `<span class="day-note-icon day-note-icon--${escapeHtml(category)}" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths[category] || paths.other}</svg></span>`;
   }
 
-  function dayNoteHtml(note) {
+  function dayNoteHtml(note, canEdit) {
     const category = DAY_NOTE_CATEGORIES.find((c) => c.key === note.category) || DAY_NOTE_CATEGORIES[4];
-    const updated = note.updatedAt > note.createdAt
-      ? `<span class="badge day-note-updated">Updated ${escapeHtml(clockLabel(note.updatedAt))}</span>`
+    const isUpdated = note.updatedAt > note.createdAt;
+    const titleDot = isUpdated
+      ? `<span class="day-note-dot" title="Updated ${escapeHtml(clockLabel(note.updatedAt))}"><span class="visually-hidden">Updated</span></span>`
+      : "";
+    const updatedLine = isUpdated
+      ? `<p class="day-note-updated-time">Updated ${escapeHtml(clockLabel(note.updatedAt))}</p>`
       : "";
     const head = `${dayNoteIcon(category.key)}<span class="day-note-copy">
       <span class="day-note-category">${escapeHtml(category.label)}</span>
-      <span class="day-note-title">${escapeHtml(note.title)}</span>
+      <span class="day-note-title">${escapeHtml(note.title)}${titleDot}</span>
       ${note.detail ? `<span class="day-note-preview">${escapeHtml(note.detail.split("\n")[0])}</span>` : ""}
-    </span>${updated}`;
+    </span>`;
+    const actions = canEdit
+      ? `<div class="day-note-actions">
+          <button type="button" class="text-btn" data-edit-note="${escapeHtml(note.id)}">Edit</button>
+          <button type="button" class="text-btn" data-delete-note="${escapeHtml(note.id)}">Delete</button>
+        </div>`
+      : "";
     if (!note.detail) {
-      return `<li class="day-note"><div class="day-note-summary day-note-plain">${head}</div></li>`;
+      return `<li class="day-note">
+        <div class="day-note-summary day-note-plain">${head}</div>
+        ${updatedLine}${actions}
+      </li>`;
     }
     return `<li class="day-note">
       <details class="day-note-details" data-note-id="${escapeHtml(note.id)}">
         <summary class="day-note-summary">${head}</summary>
         <p class="day-note-detail">${escapeHtml(note.detail)}</p>
+        ${updatedLine}
       </details>
+      ${actions}
     </li>`;
   }
 
@@ -235,7 +252,12 @@
     const countEl = document.getElementById("day-notes-count");
     if (!listEl || !statusEl) return;
 
-    const live = Boolean(ctx && !ctx.demo && ctx.client && ctx.household && !shift.demo);
+    const live = Boolean(ctx && !ctx.demo && ctx.client && ctx.household && shift && !shift.demo);
+    const canEdit = live && ctx.role === "parent";
+    const addBtn = document.getElementById("day-notes-add");
+    const writeErrorEl = document.getElementById("day-notes-write-error");
+    const auth = window.CareNestAuth;
+    let lastNotes = [];
     let shownIds = new Set();
     let shownDates = "";
     let reloadTimer = null;
@@ -264,6 +286,7 @@
     // notes: each with `date` (YYYY-MM-DD). One date renders a flat list; two render a sub-heading
     // per date that has notes ("Today", then the shift's start date).
     function render(notes, dates) {
+      lastNotes = notes;
       shownDates = dates.join(",");
       if (dateEl) dateEl.textContent = dateLabel(dates[0]);
       // Keep notes the sitter opened open across live refreshes.
@@ -284,12 +307,12 @@
       shownIds = new Set(groups.flatMap((g) => g.notes.map((n) => n.id)));
       listEl.innerHTML =
         dates.length === 1
-          ? groups.map((g) => g.notes.map(dayNoteHtml).join("")).join("")
+          ? groups.map((g) => g.notes.map((n) => dayNoteHtml(n, canEdit)).join("")).join("")
           : groups
               .map(
                 (g) => `<li class="day-notes-group">
       <h3 class="day-notes-group-title">${escapeHtml(g.date === dates[0] ? "Today" : dateLabel(g.date))}</h3>
-      <ul class="day-notes-list">${g.notes.map(dayNoteHtml).join("")}</ul>
+      <ul class="day-notes-list">${g.notes.map((n) => dayNoteHtml(n, canEdit)).join("")}</ul>
     </li>`
               )
               .join("");
@@ -388,6 +411,128 @@
       if (document.visibilityState === "visible") scheduleReload();
     });
     window.addEventListener("online", scheduleReload);
+
+    if (!canEdit) return;
+
+    if (addBtn) addBtn.hidden = false;
+
+    function showWriteError(text) {
+      if (!writeErrorEl) return;
+      writeErrorEl.textContent = text || "";
+      writeErrorEl.hidden = !text;
+    }
+
+    const dialog = document.getElementById("day-note-dialog");
+    const form = document.getElementById("day-note-form");
+    if (!dialog || !form) return;
+
+    let editingNote = null;
+
+    function showFormError(text) {
+      const el = document.getElementById("day-note-error");
+      if (!el) return;
+      el.textContent = text || "";
+      el.hidden = !text;
+    }
+
+    function openEditor(note) {
+      editingNote = note;
+      document.getElementById("day-note-dialog-title").textContent = note ? "Edit note" : "Add a note";
+      form.elements.category.value = note ? note.category : "routine";
+      form.elements.title.value = note ? note.title : "";
+      form.elements.detail.value = note ? note.detail : "";
+      showFormError("");
+      dialog.showModal();
+      form.elements.title.focus();
+    }
+
+    function closeEditor() {
+      dialog.close();
+    }
+
+    if (addBtn) addBtn.addEventListener("click", () => openEditor(null));
+    const cancel = document.getElementById("day-note-cancel");
+    if (cancel) cancel.addEventListener("click", closeEditor);
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const category = form.elements.category.value;
+      const title = form.elements.title.value.trim();
+      const detail = form.elements.detail.value.trim();
+      if (!title) {
+        showFormError("Please enter a title.");
+        form.elements.title.focus();
+        return;
+      }
+      const save = document.getElementById("day-note-save");
+      save.disabled = true;
+      showFormError("");
+      const wasEdit = Boolean(editingNote);
+      try {
+        if (editingNote) {
+          const result = await client
+            .from("day_notes")
+            .update({ category, title, detail })
+            .eq("id", editingNote.id)
+            .select("id");
+          if (result.error) throw result.error;
+          if (!result.data || !result.data.length) {
+            throw Object.assign(
+              new Error("This couldn't be saved. It may have been changed or removed. Reload the page and try again."),
+              { friendly: true }
+            );
+          }
+        } else {
+          const { error } = await client.from("day_notes").insert({
+            household_id: householdId,
+            note_date: localDateKey(Date.now()),
+            category,
+            title,
+            detail,
+          });
+          if (error) throw error;
+        }
+        closeEditor();
+        announce(wasEdit ? "Note saved." : "Note added.");
+        scheduleReload();
+      } catch (error) {
+        showFormError(error.friendly ? error.message : auth.friendlyError(error));
+      } finally {
+        save.disabled = false;
+      }
+    });
+
+    listEl.addEventListener("click", async (event) => {
+      const editBtn = event.target.closest("[data-edit-note]");
+      const deleteBtn = event.target.closest("[data-delete-note]");
+      if (editBtn) {
+        const note = lastNotes.find((n) => n.id === editBtn.dataset.editNote);
+        if (note) openEditor(note);
+        return;
+      }
+      if (!deleteBtn) return;
+      const note = lastNotes.find((n) => n.id === deleteBtn.dataset.deleteNote);
+      if (!note) return;
+      const ok = await auth.confirmDialog({
+        title: `Delete ${note.title}?`,
+        body: "Your sitter will no longer see this note. This cannot be undone.",
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!ok) return;
+      const result = await client.from("day_notes").delete().eq("id", note.id).select("id");
+      if (result.error || !result.data || !result.data.length) {
+        showWriteError(
+          result.error
+            ? auth.friendlyError(result.error)
+            : "This couldn't be deleted. Reload the page and try again."
+        );
+        return;
+      }
+      showWriteError("");
+      announce("Note deleted.");
+      scheduleReload();
+    });
   }
 
   function initNavigation() {
