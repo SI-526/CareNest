@@ -11,6 +11,8 @@
 //   tasks of the household's plan            -> schedule
 //   care_items                                -> Good to know categories, food page, emergency steps
 //   contacts                                  -> Your Contacts, Who to contact; role "Hospital" -> hospital card
+//   appointments                              -> schedule page sessions
+//   schedule_requests (open only)             -> a sitter's "Request Schedule" reminders (SI-50)
 //
 // Live (issue #11): after the first load, Realtime changes to those tables refetch everything and
 // call subscribe() listeners, so pages re-render a parent's edits without a reload.
@@ -120,6 +122,13 @@
     return new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   }
 
+  // The local calendar date `offsetDays` from today as YYYY-MM-DD (the schedule page's dateKey).
+  function localDateKey(offsetDays) {
+    const now = new Date();
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays);
+    return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+  }
+
   function toContact(row) {
     return {
       id: row.id,
@@ -151,6 +160,7 @@
     };
     data.babysitter = {
       name: sitter ? auth.firstName(sitter) : "your sitter",
+      userId: sitter ? sitter.user_id : null,
       avatar: null,
       address: "",
     };
@@ -163,6 +173,17 @@
       note: appointment.note || "",
       activities: Array.isArray(appointment.activities) ? appointment.activities : [],
     }));
+    // Open "Request Schedule" reminders. The requester's name comes from the household roster.
+    data.scheduleRequests = (rows.scheduleRequests || []).map((request) => {
+      const requester = members.find((m) => m.user_id === request.requested_by);
+      return {
+        id: request.id,
+        date: request.request_date,
+        requestedBy: request.requested_by,
+        requesterName: requester ? (requester.display_name || "").trim() || auth.firstName(requester) : "",
+        createdAt: request.created_at,
+      };
+    });
     // Set here too, not only by js/auth.js fillNames(): that may have run against the sample
     // object this file discarded.
     data.viewerFirstName = auth.firstName(ctx.membership);
@@ -232,7 +253,7 @@
   async function fetchRows(ctx) {
     const client = ctx.client;
     const householdId = ctx.household.id;
-    const [household, contacts, careItems, plans, appointments] = await Promise.all([
+    const [household, contacts, careItems, plans, appointments, scheduleRequests] = await Promise.all([
       // Re-read so a renamed child shows live (the auth context's copy is from sign-in).
       client.from("households").select("id, name, child_name, child_age_label").eq("id", householdId).maybeSingle(),
       client
@@ -261,15 +282,26 @@
         .eq("household_id", householdId)
         .order("appointment_date", { ascending: true })
         .order("start_time", { ascending: true }),
+      client
+        .from("schedule_requests")
+        .select("id, request_date, requested_by, created_at")
+        .eq("household_id", householdId)
+        .is("resolved_at", null)
+        .gte("request_date", localDateKey(-1))
+        .order("request_date", { ascending: true }),
     ]);
     const error = household.error || contacts.error || careItems.error || plans.error || appointments.error;
     if (error) throw error;
+    // Reminders are optional: if they cannot load (e.g. the table is not there yet), the family
+    // pages still work, just without them.
+    if (scheduleRequests.error) console.warn("Schedule requests unavailable", scheduleRequests.error);
     return {
       household: household.data,
       contacts: contacts.data || [],
       careItems: careItems.data || [],
       plan: (plans.data && plans.data[0]) || null,
       appointments: appointments.data || [],
+      scheduleRequests: (!scheduleRequests.error && scheduleRequests.data) || [],
     };
   }
 
@@ -337,6 +369,7 @@
   // deletes arrive unfiltered: refetch only when a row on screen was deleted (as day notes do).
   // Tasks get no DELETE listener: clients cannot delete a task, and a task goes only by cascade
   // from a plan or family-space delete, which the plans DELETE or households event already shows.
+  // Appointments and schedule requests likewise: clients never delete them (only cascades do).
   function watch(ctx) {
     const client = ctx.client;
     const householdId = ctx.household.id;
@@ -387,6 +420,11 @@
           .on("postgres_changes", { event: "DELETE", schema: "public", table }, onDelete);
       });
       channel.on("postgres_changes", changes("households", `id=eq.${householdId}`), scheduleReload);
+      // A parent's new or edited session reaches the sitter, and a sitter's schedule request (or
+      // its dismissal or auto-clear) reaches every member, without a reload.
+      ["appointments", "schedule_requests"].forEach((table) => {
+        channel.on("postgres_changes", changes(table, `household_id=eq.${householdId}`), scheduleReload);
+      });
       if (channelPlanId) {
         channel.on("postgres_changes", changes("tasks", `plan_id=eq.${channelPlanId}`), scheduleReload);
       }

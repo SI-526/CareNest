@@ -58,6 +58,56 @@
     }
     renderHeader();
 
+    // A sitter's "Request Schedule" reminders (SI-50; js/family-data.js loads the open ones).
+    // Compact: who asked and for which day, a link to that day's schedule, and Dismiss.
+    function renderScheduleRequests() {
+      let host = document.getElementById("schedule-request-notices");
+      const requests = data.scheduleRequests || [];
+      if (!requests.length) {
+        if (host) host.remove();
+        return;
+      }
+      if (!host) {
+        host = document.createElement("div");
+        host.id = "schedule-request-notices";
+        host.className = "schedule-request-notices";
+        host.setAttribute("aria-live", "polite");
+        document.querySelector(".parent-header").insertAdjacentElement("afterend", host);
+        host.addEventListener("click", dismissScheduleRequest);
+      }
+      const day = (key) => {
+        const [y, m, d] = key.split("-").map(Number);
+        return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      };
+      host.innerHTML = requests
+        .map(
+          (request) =>
+            `<div class="auth-status schedule-request-notice schedule-request-notice--compact"><p>${escapeHtml(request.requesterName || "Your sitter")} asked for a schedule for ${escapeHtml(day(request.date))}. <a href="schedule.html?as=parent&amp;date=${encodeURIComponent(request.date)}">Open schedule</a></p><button type="button" class="photo-source-btn" data-request-dismiss="${escapeHtml(request.id)}">Dismiss</button></div>`
+        )
+        .join("");
+    }
+
+    async function dismissScheduleRequest(event) {
+      const button = event.target.closest("[data-request-dismiss]");
+      if (!button) return;
+      const ctx = await (window.CareNestFamily || auth).ready;
+      if (!ctx || ctx.demo || !ctx.client) return;
+      button.disabled = true;
+      const { error } = await ctx.client
+        .from("schedule_requests")
+        .update({ resolved_at: new Date().toISOString() })
+        .eq("id", button.dataset.requestDismiss);
+      if (error) {
+        button.disabled = false;
+        showError(auth.friendlyError(error));
+        return;
+      }
+      showError("");
+      data.scheduleRequests = (data.scheduleRequests || []).filter((r) => r.id !== button.dataset.requestDismiss);
+      renderScheduleRequests();
+    }
+    renderScheduleRequests();
+
     function showError(text) {
       pageError.textContent = text || "";
       pageError.hidden = !text;
@@ -862,6 +912,7 @@
     if (window.CareNestFamily && window.CareNestFamily.subscribe) {
       window.CareNestFamily.subscribe(() => {
         renderHeader();
+        renderScheduleRequests();
         render();
       });
     }

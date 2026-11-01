@@ -82,7 +82,7 @@
     });
 
     async function loadPeople() {
-      const [invites, members] = await Promise.all([
+      const [invites, members, profiles] = await Promise.all([
         client
           .from("invites")
           .select("id, email, expires_at, created_at")
@@ -96,6 +96,8 @@
           .select("user_id, role, email, display_name")
           .eq("household_id", householdId)
           .order("created_at", { ascending: true }),
+        // Only the fields each sitter chose to share, filtered by the database.
+        client.rpc("household_sitter_profiles", { target_household_id: householdId }),
       ]);
       if (invites.error || members.error) {
         show(peopleError, auth.friendlyError(invites.error || members.error));
@@ -103,7 +105,9 @@
       }
       show(peopleError, "");
       renderInvites(invites.data);
-      renderMembers(members.data);
+      // A profile that fails to load only hides the extra details; the member list still works.
+      const byUser = new Map((profiles.error ? [] : profiles.data || []).map((row) => [row.user_id, row]));
+      renderMembers(members.data, byUser);
     }
 
     function renderInvites(rows) {
@@ -122,17 +126,31 @@
         .join("");
     }
 
-    function renderMembers(rows) {
+    function sitterDetails(profile) {
+      if (!profile) return "";
+      const href = profile.phone && window.CareNestFamily ? window.CareNestFamily.phoneHref(profile.phone) : "";
+      const phone = profile.phone
+        ? `<p class="people-sub">${href ? `<a href="${esc(href)}">${esc(profile.phone)}</a>` : esc(profile.phone)}</p>`
+        : "";
+      return `${profile.bio ? `<p class="people-sub">${esc(profile.bio)}</p>` : ""}${phone}${
+        profile.availability ? `<p class="people-sub">Available: ${esc(profile.availability)}</p>` : ""
+      }`;
+    }
+
+    function renderMembers(rows, profiles) {
       const list = document.getElementById("members-list");
       list.innerHTML = rows
         .map((row) => {
           const isMe = row.user_id === ctx.user.id;
           const label = row.role === "parent" ? "Parent" : "Sitter";
-          const name = row.display_name || row.email;
+          const profile = row.role === "caretaker" ? profiles.get(row.user_id) : null;
+          const shownName = (profile && profile.display_name) || row.display_name;
+          const name = shownName || row.email;
           return `<li class="people-row">
             <div class="people-meta">
               <p class="people-name">${esc(name)}${isMe ? " (you)" : ""}</p>
-              <p class="people-sub">${esc(label)}${row.display_name ? ` · ${esc(row.email)}` : ""}</p>
+              <p class="people-sub">${esc(label)}${shownName ? ` · ${esc(row.email)}` : ""}</p>
+              ${sitterDetails(profile)}
             </div>
             ${
               row.role === "caretaker"
