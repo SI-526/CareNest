@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import { createClient } from "@supabase/supabase-js";
@@ -148,6 +149,8 @@ const tables = [
   "sitter_profiles",
   // SI-50 (20261026120000_carenest_schedule_requests.sql); tested in "schedule requests: ...".
   "schedule_requests",
+  // SI-45 (20261102000000_carenest_children.sql); tested in "children: ...".
+  "children",
 ];
 
 // Internal tables: RLS on, and no anon or authenticated privilege at all (only SECURITY DEFINER
@@ -2642,6 +2645,7 @@ test("authenticated can execute only the pinned public functions; Realtime publi
       "appointments",
       "care_items",
       "care_logs",
+      "children",
       "contacts",
       "day_notes",
       "households",
@@ -2656,6 +2660,591 @@ test("authenticated can execute only the pinned public functions; Realtime publi
     "the public tables in the supabase_realtime publication changed",
   );
   assert.ok(!published.includes("sitter_profiles"), "sitter_profiles is published to Realtime");
+});
+
+// SI-45 slice A. Each test builds its own family, so these run in any order and leave the shared
+// families above alone. familyWithChild returns the parent, the household, and its first child.
+async function familyWithChild(label) {
+  const parent = await signUp(`${label}-parent-${randomUUID().slice(0, 6)}`);
+  const created = await parent.client.rpc("create_household", {
+    household_name: `Family ${label}`,
+    acknowledged: true,
+  });
+  assert.ifError(created.error);
+  createdHouseholdIds.push(created.data);
+  const children = await childrenOf(created.data);
+  assert.equal(children.length, 1, "a new family has one first child");
+  return { parent, household: created.data, firstChild: children[0] };
+}
+
+async function addSitter(household, label) {
+  const sitter = await signUp(`${label}-sitter-${randomUUID().slice(0, 6)}`);
+  const joined = await admin
+    .from("household_members")
+    .insert({ household_id: household, user_id: sitter.id, role: "caretaker", email: sitter.email });
+  assert.ifError(joined.error);
+  return sitter;
+}
+
+// Service-role reads: what is really stored, whatever a client was told.
+async function childrenOf(household) {
+  const { data, error } = await admin
+    .from("children")
+    .select("*")
+    .eq("household_id", household)
+    .order("position")
+    .order("created_at");
+  assert.ifError(error);
+  return data;
+}
+
+async function addChild(family, values) {
+  const { data, error } = await family.parent.client
+    .from("children")
+    .insert({ household_id: family.household, ...values })
+    .select()
+    .single();
+  assert.ifError(error);
+  return data;
+}
+
+async function careItem(id) {
+  const { data, error } = await admin.from("care_items").select("*").eq("id", id).single();
+  assert.ifError(error);
+  return data;
+}
+
+test("children: a new family gets one first child, and the seed's care info is on it", async () => {
+  const family = await familyWithChild("first");
+  assert.equal(family.firstChild.name, "");
+  assert.equal(family.firstChild.age_label, "");
+  assert.equal(family.firstChild.stage_label, "");
+  assert.equal(family.firstChild.pinned_note, "");
+  assert.equal(family.firstChild.position, 0);
+
+  // However a household row appears, it gets its child, with the household's own values.
+  const direct = await admin
+    .from("households")
+    .insert({
+      name: "Direct",
+      child_name: "Ada",
+      child_age_label: "Age 4",
+      risk_acknowledged_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+  assert.ifError(direct.error);
+  createdHouseholdIds.push(direct.data.id);
+  const [child, ...rest] = await childrenOf(direct.data.id);
+  assert.deepEqual([child.name, child.age_label, rest.length], ["Ada", "Age 4", 0]);
+
+  const [demo, ...others] = await childrenOf(DEMO_HOUSEHOLD_ID);
+  assert.equal(demo.name, "Jack Thomas");
+  assert.equal(others.length, 0);
+  const { data: items, error } = await admin
+    .from("care_items")
+    .select("category, child_id")
+    .eq("household_id", DEMO_HOUSEHOLD_ID);
+  assert.ifError(error);
+  assert.ok(items.length, "the demo family has care items");
+  for (const item of items) {
+    const perChild = ["food", "preferences", "instructions"].includes(item.category);
+    assert.equal(item.child_id, perChild ? demo.id : null, `demo ${item.category} item`);
+  }
+});
+
+test("children: members read; a parent adds, edits, reorders, and removes", async () => {
+  const family = await familyWithChild("rw");
+  const sitter = await addSitter(family.household, "rw");
+  const added = await addChild(family, {
+    name: "Bea",
+    age_label: "Age 2",
+    stage_label: "Preschooler",
+    pinned_note: "Currently recovering from a cold",
+    position: 1,
+  });
+
+  const read = await sitter.client.from("children").select("*").eq("household_id", family.household).order("position");
+  assert.ifError(read.error);
+  assert.deepEqual(read.data.map((c) => c.id), [family.firstChild.id, added.id]);
+  assert.equal(read.data[1].pinned_note, "Currently recovering from a cold");
+  const parentRead = await family.parent.client.from("children").select("id").eq("household_id", family.household);
+  assert.equal(parentRead.data?.length, 2, "the parent reads the family's children too");
+
+  const edited = await family.parent.client
+    .from("children")
+    .update({ name: "Beatrice", age_label: "Age 3", stage_label: "Toddler", pinned_note: "", position: 2 })
+    .eq("id", added.id)
+    .select()
+    .single();
+  assert.ifError(edited.error);
+  assert.deepEqual(
+    [edited.data.name, edited.data.age_label, edited.data.stage_label, edited.data.pinned_note, edited.data.position],
+    ["Beatrice", "Age 3", "Toddler", "", 2],
+  );
+
+  const removed = await family.parent.client.from("children").delete().eq("id", added.id).select("id");
+  assert.ifError(removed.error);
+  assert.equal(removed.data.length, 1);
+  assert.deepEqual((await childrenOf(family.household)).map((c) => c.id), [family.firstChild.id]);
+});
+
+test("children: length limits hold, and a child's household, id, and created_at are not client-writable", async () => {
+  const family = await familyWithChild("limits");
+  const other = await familyWithChild("limits-other");
+  const write = (values) =>
+    family.parent.client.from("children").update(values).eq("id", family.firstChild.id).select();
+
+  assert.equal((await write({ name: "x".repeat(81) })).error?.code, "23514", "name over 80");
+  assert.equal((await write({ age_label: "x".repeat(41) })).error?.code, "23514", "age_label over 40");
+  assert.equal((await write({ stage_label: "x".repeat(41) })).error?.code, "23514", "stage_label over 40");
+  assert.equal((await write({ pinned_note: "x".repeat(201) })).error?.code, "23514", "pinned_note over 200");
+  assert.ifError((await write({ name: "x".repeat(80), pinned_note: "x".repeat(200) })).error);
+
+  assertPermissionDenied(await write({ household_id: other.household }), "moving a child to another family");
+  assertPermissionDenied(await write({ id: randomUUID() }), "changing a child's id");
+  assertPermissionDenied(await write({ created_at: "2000-01-01T00:00:00Z" }), "backdating a child");
+  assertPermissionDenied(
+    await family.parent.client
+      .from("children")
+      .insert({ id: randomUUID(), household_id: family.household, name: "Chosen id" })
+      .select(),
+    "choosing a child's id",
+  );
+  assertPermissionDenied(
+    await family.parent.client
+      .from("children")
+      .insert({ household_id: family.household, created_at: "2000-01-01T00:00:00Z" })
+      .select(),
+    "choosing a child's created_at",
+  );
+
+  // Pinned by column: a future column starts closed, and nothing is granted table-wide but delete.
+  const [row] = localSql(`
+    select has_table_privilege('authenticated', 'public.children', 'select') as table_select,
+           has_table_privilege('authenticated', 'public.children', 'insert') as table_insert,
+           has_table_privilege('authenticated', 'public.children', 'update') as table_update,
+           has_table_privilege('authenticated', 'public.children', 'truncate') as table_truncate,
+           has_table_privilege('authenticated', 'public.children', 'delete') as table_delete,
+           has_table_privilege('authenticated', 'public.households', 'update') as households_update`);
+  assert.deepEqual(row, {
+    table_select: false,
+    table_insert: false,
+    table_update: false,
+    table_truncate: false,
+    table_delete: true,
+    households_update: false,
+  });
+});
+
+test("children: a sitter cannot write", async () => {
+  const family = await familyWithChild("sitter");
+  const sitter = await addSitter(family.household, "sitter");
+  const id = family.firstChild.id;
+
+  const inserted = await sitter.client
+    .from("children")
+    .insert({ household_id: family.household, name: "Intruder" })
+    .select();
+  assert.equal(inserted.error?.code, "42501", "a sitter cannot add a child");
+  assertDenied(await sitter.client.from("children").update({ name: "Hacked" }).eq("id", id).select());
+  assertDenied(await sitter.client.from("children").delete().eq("id", id).select());
+
+  const [child, ...rest] = await childrenOf(family.household);
+  assert.deepEqual([child.id, child.name, rest.length], [id, "", 0]);
+});
+
+test("children: a parent of another family cannot read or write them", async () => {
+  const family = await familyWithChild("mine");
+  const stranger = await familyWithChild("stranger");
+  const b = stranger.parent.client;
+  const id = family.firstChild.id;
+
+  const read = await b.from("children").select("*").eq("household_id", family.household);
+  assert.ifError(read.error);
+  assert.deepEqual(read.data, [], "another family's children are invisible");
+  assert.equal(
+    (await b.from("children").insert({ household_id: family.household, name: "Intruder" }).select()).error?.code,
+    "42501",
+    "cannot add a child to another family",
+  );
+  assertDenied(await b.from("children").update({ name: "Hacked" }).eq("id", id).select());
+  assertDenied(await b.from("children").delete().eq("id", id).select());
+
+  const [child, ...rest] = await childrenOf(family.household);
+  assert.deepEqual([child.id, child.name, rest.length], [id, "", 0]);
+});
+
+test("home address: parents write it, members read it, a removed sitter loses it at once", async () => {
+  const family = await familyWithChild("address");
+  const stranger = await familyWithChild("address-other");
+  const sitter = await addSitter(family.household, "address");
+  const outsiderUser = await signUp(`address-outsider-${randomUUID().slice(0, 6)}`);
+  const home = "12 Maple St, Ann Arbor, MI";
+  const address = (client) =>
+    client.from("households").select("home_address").eq("id", family.household);
+
+  assert.equal((await address(admin)).data[0].home_address, null, "it is optional");
+
+  const saved = await family.parent.client
+    .from("households")
+    .update({ home_address: home })
+    .eq("id", family.household)
+    .select("home_address");
+  assert.ifError(saved.error);
+  assert.equal(saved.data[0].home_address, home);
+  const tooLong = await family.parent.client
+    .from("households")
+    .update({ home_address: "x".repeat(201) })
+    .eq("id", family.household)
+    .select();
+  assert.equal(tooLong.error?.code, "23514", "address over 200 characters is rejected");
+
+  assert.equal((await address(sitter.client)).data?.[0]?.home_address, home, "a sitter of the family reads it");
+  assert.deepEqual((await address(stranger.parent.client)).data, [], "another family cannot read it");
+  assert.deepEqual((await address(outsiderUser.client)).data, [], "a non-member cannot read it");
+  assert.ok((await address(anon)).error || !(await address(anon)).data?.length, "anon cannot read it");
+
+  assertDenied(
+    await sitter.client.from("households").update({ home_address: "Hacked" }).eq("id", family.household).select(),
+  );
+  assertDenied(
+    await stranger.parent.client
+      .from("households")
+      .update({ home_address: "Hacked" })
+      .eq("id", family.household)
+      .select(),
+  );
+  assert.equal((await address(admin)).data[0].home_address, home, "only the parent changed it");
+
+  const removal = await family.parent.client
+    .from("household_members")
+    .delete()
+    .eq("household_id", family.household)
+    .eq("user_id", sitter.id)
+    .select();
+  assert.ifError(removal.error);
+  assert.equal(removal.data.length, 1, "the parent removed the sitter");
+  assert.deepEqual((await address(sitter.client)).data, [], "a removed sitter cannot read the address");
+  const children = await sitter.client.from("children").select("id").eq("household_id", family.household);
+  assert.deepEqual(children.data, [], "a removed sitter cannot read the children");
+});
+
+test("children: the migration's backfill gives each family one child and moves its per-child items", (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this test needs a direct database connection");
+    return;
+  }
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20261102000000_carenest_children.sql", import.meta.url),
+    "utf8",
+  );
+  const section = (name) => {
+    const match = migration.match(new RegExp(`-- SI-45 backfill: ${name} start\\n([\\s\\S]*?)-- SI-45 backfill: ${name} end`));
+    assert.ok(match, `the migration has its ${name} backfill markers`);
+    return match[1];
+  };
+  const named = uuid(randomUUID());
+  const blank = uuid(randomUUID());
+  // Rolled back. With the triggers off these rows look exactly like a family from before this
+  // migration: no child, and care items with no child id.
+  const result = psqlScript(`
+    begin;
+    alter table public.households disable trigger households_create_first_child;
+    alter table public.care_items disable trigger care_items_default_child;
+    insert into public.households (id, name, child_name, child_age_label, risk_acknowledged_at)
+    values ('${named}', 'Named', 'Ada', 'Age 4', now());
+    insert into public.households (id, name, risk_acknowledged_at) values ('${blank}', 'Blank', now());
+    insert into public.care_items (household_id, category, title)
+    select h, c, c
+      from unnest(array['${named}', '${blank}']::uuid[]) as h,
+           unnest(array['food', 'preferences', 'instructions', 'where', 'emergency']) as c;
+    ${section("children")}
+    ${section("children")}
+    ${section("care items")}
+    select json_build_object(
+      'children', (select json_agg(json_build_object('household', household_id, 'name', name,
+                     'age', age_label, 'position', position) order by name desc)
+                     from public.children where household_id in ('${named}', '${blank}')),
+      'items', (select json_agg(json_build_object('household', i.household_id, 'category', i.category,
+                     'child', c.household_id) order by i.household_id, i.category)
+                     from public.care_items i
+                     left join public.children c on c.id = i.child_id
+                    where i.household_id in ('${named}', '${blank}')));
+    rollback;
+  `);
+  assert.equal(result.code, 0, result.stderr);
+  const { children, items } = JSON.parse(result.stdout);
+  assert.deepEqual(
+    children,
+    [
+      { household: named, name: "Ada", age: "Age 4", position: 0 },
+      { household: blank, name: "", age: "", position: 0 },
+    ],
+    "exactly one child per family, blank ones included, from the household's columns",
+  );
+  assert.equal(items.length, 10);
+  for (const item of items) {
+    const perChild = ["food", "preferences", "instructions"].includes(item.category);
+    assert.equal(item.child, perChild ? item.household : null, `${item.category} item`);
+  }
+});
+
+test("children: old-client saves of the child's name and age reach the first child only", async () => {
+  const family = await familyWithChild("sync");
+  const client = family.parent.client;
+  const second = await addChild(family, { name: "Bea", age_label: "Age 2", position: 1 });
+  const save = async (values) => {
+    const { data, error } = await client.from("households").update(values).eq("id", family.household).select("id");
+    assert.ifError(error);
+    assert.equal(data.length, 1);
+  };
+  const names = async () => (await childrenOf(family.household)).map((c) => [c.name, c.age_label]);
+
+  await save({ child_name: "Ada", child_age_label: "Age 4" });
+  assert.deepEqual(await names(), [["Ada", "Age 4"], ["Bea", "Age 2"]]);
+  await save({ child_age_label: "Age 5" });
+  assert.deepEqual(await names(), [["Ada", "Age 5"], ["Bea", "Age 2"]], "a change to the age alone copies");
+
+  // The family space form always sends all three. An unchanged child name must not undo a direct
+  // edit of the child, and a change to the family's name alone copies nothing.
+  const direct = await client
+    .from("children")
+    .update({ name: "Ada Lovelace" })
+    .eq("id", family.firstChild.id)
+    .select("id");
+  assert.ifError(direct.error);
+  await save({ name: "Renamed", child_name: "Ada", child_age_label: "Age 5" });
+  assert.deepEqual(await names(), [["Ada Lovelace", "Age 5"], ["Bea", "Age 2"]]);
+
+  // "First" is the lowest position.
+  const reorder = await client.from("children").update({ position: -1 }).eq("id", second.id).select("id");
+  assert.ifError(reorder.error);
+  await save({ child_name: "Bea Lovelace" });
+  assert.deepEqual(await names(), [["Bea Lovelace", "Age 5"], ["Ada Lovelace", "Age 5"]]);
+
+  // Every child deleted: the next save still lands, on a new first child.
+  const cleared = await client.from("children").delete().eq("household_id", family.household).select("id");
+  assert.equal(cleared.data?.length, 2);
+  await save({ child_name: "Cleo" });
+  assert.deepEqual(await names(), [["Cleo", "Age 5"]]);
+});
+
+test("children: a care item saved with no child goes to the first child, by category", async () => {
+  const family = await familyWithChild("items");
+  const client = family.parent.client;
+  const first = family.firstChild.id;
+  const second = await addChild(family, { name: "Bea", position: 1 });
+  // The old client's exact insert: no child id.
+  const save = async (category, extra = {}) => {
+    const { data, error } = await client
+      .from("care_items")
+      .insert({ household_id: family.household, category, title: category, detail: "", position: 0, ...extra })
+      .select()
+      .single();
+    assert.ifError(error);
+    return data;
+  };
+
+  assert.equal((await save("food")).child_id, first);
+  assert.equal((await save("preferences")).child_id, first);
+  assert.equal((await save("instructions")).child_id, first);
+  const where = await save("where");
+  const emergency = await save("emergency");
+  assert.equal(where.child_id, null, "where things are is family-wide");
+  assert.equal(emergency.child_id, null, "emergency steps are family-wide");
+
+  assert.equal((await save("food", { child_id: second.id })).child_id, second.id, "a chosen child is kept");
+
+  const shared = await client
+    .from("care_items")
+    .insert({ household_id: family.household, category: "where", title: "x", child_id: first })
+    .select();
+  assert.equal(shared.error?.code, "23514", "a family-wide category cannot belong to a child");
+
+  // A change of category keeps the rule: into a per-child category finds an owner, out of one is refused.
+  const moved = await client.from("care_items").update({ category: "food" }).eq("id", where.id).select().single();
+  assert.ifError(moved.error);
+  assert.equal(moved.data.child_id, first);
+  const out = await client.from("care_items").update({ category: "emergency" }).eq("id", where.id).select();
+  assert.equal(out.error?.code, "23514");
+
+  // "First" is the lowest position, and with no child left a save creates one.
+  const reorder = await client.from("children").update({ position: -1 }).eq("id", second.id).select("id");
+  assert.ifError(reorder.error);
+  assert.equal((await save("food")).child_id, second.id);
+  const cleared = await client.from("children").delete().eq("household_id", family.household).select("id");
+  assert.equal(cleared.data?.length, 2);
+  const orphanSafe = await save("food");
+  const remaining = await childrenOf(family.household);
+  assert.equal(remaining.length, 1, "exactly one new child");
+  assert.equal(orphanSafe.child_id, remaining[0].id);
+});
+
+test("children: a care item cannot point at another family's child or leave its family", async () => {
+  const family = await familyWithChild("fk");
+  const stranger = await familyWithChild("fk-other");
+  const sitter = await addSitter(family.household, "fk");
+  const a = family.parent.client;
+  const second = await addChild(family, { name: "Bea", position: 1 });
+  const theirChild = stranger.firstChild.id;
+
+  const made = await a
+    .from("care_items")
+    .insert({ household_id: family.household, category: "food", title: "Nut-free" })
+    .select()
+    .single();
+  assert.ifError(made.error);
+  const id = made.data.id;
+
+  const inserted = await a
+    .from("care_items")
+    .insert({ household_id: family.household, category: "food", title: "x", child_id: theirChild })
+    .select();
+  assert.equal(inserted.error?.code, "23503", "a new item cannot point at another family's child");
+  const updated = await a.from("care_items").update({ child_id: theirChild }).eq("id", id).select();
+  assert.equal(updated.error?.code, "23503", "an item cannot be re-pointed at another family's child");
+
+  assertDenied(await a.from("care_items").update({ household_id: stranger.household }).eq("id", id).select());
+  assertDenied(
+    await a.from("care_items").update({ household_id: stranger.household, child_id: theirChild }).eq("id", id).select(),
+  );
+  assertDenied(
+    await a
+      .from("care_items")
+      .insert({ household_id: stranger.household, category: "food", title: "x", child_id: theirChild })
+      .select(),
+  );
+  assertDenied(await stranger.parent.client.from("care_items").update({ child_id: theirChild }).eq("id", id).select());
+  assertDenied(await sitter.client.from("care_items").update({ child_id: second.id }).eq("id", id).select());
+  assertDenied(
+    await sitter.client
+      .from("care_items")
+      .insert({ household_id: family.household, category: "food", title: "x" })
+      .select(),
+  );
+
+  const stored = await careItem(id);
+  assert.deepEqual([stored.household_id, stored.child_id], [family.household, family.firstChild.id]);
+  assert.equal((await childrenOf(family.household)).length, 2);
+
+  const moved = await a.from("care_items").update({ child_id: second.id }).eq("id", id).select().single();
+  assert.ifError(moved.error);
+  assert.equal(moved.data.child_id, second.id, "moving between the family's own children is allowed");
+});
+
+test("children: deleting a child removes only that child's items; deleting a family removes its children", async () => {
+  const family = await familyWithChild("delete");
+  const a = family.parent.client;
+  const second = await addChild(family, { name: "Bea", position: 1 });
+  const insert = await a
+    .from("care_items")
+    .insert([
+      { household_id: family.household, category: "food", title: "Hers", child_id: second.id },
+      { household_id: family.household, category: "food", title: "First's" },
+      { household_id: family.household, category: "where", title: "Family's" },
+    ])
+    .select();
+  assert.ifError(insert.error);
+
+  const removed = await a.from("children").delete().eq("id", second.id).select("id");
+  assert.equal(removed.data?.length, 1);
+  const { data: left } = await admin.from("care_items").select("title").eq("household_id", family.household).order("title");
+  assert.deepEqual(left.map((i) => i.title), ["Family's", "First's"]);
+
+  const gone = await admin.from("households").delete().eq("id", family.household).select("id");
+  assert.ifError(gone.error);
+  assert.equal(gone.data.length, 1);
+  assert.deepEqual(await childrenOf(family.household), []);
+});
+
+test("contacts: one primary per family, and only parents set it", async () => {
+  const family = await familyWithChild("primary");
+  const stranger = await familyWithChild("primary-other");
+  const sitter = await addSitter(family.household, "primary");
+  const a = family.parent.client;
+  const contact = async (client, household, name, extra = {}) =>
+    client.from("contacts").insert({ household_id: household, name, ...extra }).select().single();
+
+  const plain = await contact(a, family.household, "Grandma");
+  assert.ifError(plain.error);
+  assert.equal(plain.data.is_primary, false, "off by default, so the old client's inserts are unchanged");
+  assert.ifError((await contact(a, family.household, "Grandpa")).error);
+
+  const first = await contact(a, family.household, "Mom", { is_primary: true });
+  assert.ifError(first.error);
+  assert.equal((await contact(a, family.household, "Dad", { is_primary: true })).error?.code, "23505");
+  const promote = await a.from("contacts").update({ is_primary: true }).eq("id", plain.data.id).select();
+  assert.equal(promote.error?.code, "23505", "a second primary is refused on update too");
+  assert.ifError((await contact(stranger.parent.client, stranger.household, "Mom", { is_primary: true })).error);
+
+  // Handing primary over: clear, then set.
+  assert.ifError((await a.from("contacts").update({ is_primary: false }).eq("id", first.data.id).select()).error);
+  const swapped = await a.from("contacts").update({ is_primary: true }).eq("id", plain.data.id).select().single();
+  assert.ifError(swapped.error);
+  assert.equal(swapped.data.is_primary, true);
+
+  assertDenied(await sitter.client.from("contacts").update({ is_primary: false }).eq("id", plain.data.id).select());
+  assertDenied(
+    await stranger.parent.client.from("contacts").update({ is_primary: false }).eq("id", plain.data.id).select(),
+  );
+  const stored = await admin.from("contacts").select("is_primary").eq("id", plain.data.id).single();
+  assert.equal(stored.data.is_primary, true, "neither a sitter nor another family changed it");
+});
+
+test("children: Realtime delivers a change to the family's members and nobody else", async () => {
+  const family = await familyWithChild("realtime");
+  const stranger = await familyWithChild("realtime-other");
+  const sitter = await addSitter(family.household, "realtime");
+  const listen = (client, name, seen) =>
+    new Promise((resolve, reject) => {
+      const channel = client
+        .channel(`${name}-${randomUUID().slice(0, 8)}`)
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "children" }, (payload) => seen.push(payload))
+        .subscribe((state, err) => {
+          if (state === "SUBSCRIBED") resolve(channel);
+          if (state === "CHANNEL_ERROR" || state === "TIMED_OUT") reject(err ?? new Error(state));
+        });
+    });
+
+  const sitterSeen = [];
+  const strangerSeen = [];
+  const sitterChannel = await listen(sitter.client, "sitter", sitterSeen);
+  const strangerChannel = await listen(stranger.parent.client, "stranger", strangerSeen);
+  try {
+    // The change listener attaches just after SUBSCRIBED, so keep writing until one arrives.
+    for (let i = 0; i < 40 && !sitterSeen.length; i += 1) {
+      const write = await family.parent.client
+        .from("children")
+        .update({ pinned_note: `tick ${i}` })
+        .eq("id", family.firstChild.id)
+        .select("id");
+      assert.ifError(write.error);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    assert.ok(sitterSeen.length, "the sitter received the child's update");
+    assert.match(sitterSeen[0].new.pinned_note, /^tick /, "every granted column is in the event");
+    assert.equal(sitterSeen[0].new.household_id, family.household);
+    // A stranger's silence proves nothing unless their listener works, so make it hear its own family.
+    for (let i = 0; i < 40 && !strangerSeen.length; i += 1) {
+      const write = await stranger.parent.client
+        .from("children")
+        .update({ pinned_note: `tick ${i}` })
+        .eq("id", stranger.firstChild.id)
+        .select("id");
+      assert.ifError(write.error);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    assert.ok(strangerSeen.length, "the other family's parent hears their own child");
+    assert.deepEqual(
+      [...new Set(strangerSeen.map((event) => event.new.household_id))],
+      [stranger.household],
+      "another family received nothing of this one",
+    );
+  } finally {
+    await sitter.client.removeChannel(sitterChannel);
+    await stranger.parent.client.removeChannel(strangerChannel);
+  }
 });
 
 // Only ever interpolate ids this run created.
