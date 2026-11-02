@@ -2714,6 +2714,25 @@ async function careItem(id) {
   return data;
 }
 
+// Collects UPDATE events on one table into `seen`, as this client's own user.
+function listenForUpdates(client, name, table, seen) {
+  return new Promise((resolve, reject) => {
+    const channel = client
+      .channel(`${name}-${randomUUID().slice(0, 8)}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table }, (payload) => seen.push(payload))
+      .subscribe((state, err) => {
+        if (state === "SUBSCRIBED") resolve(channel);
+        if (state === "CHANNEL_ERROR" || state === "TIMED_OUT") reject(err ?? new Error(state));
+      });
+  });
+}
+
+// One Realtime poll goes out to every subscriber together, so once one listener has heard a write,
+// this short wait is enough for anything sent to another listener to have arrived too.
+function realtimeSettled() {
+  return new Promise((resolve) => setTimeout(resolve, 500));
+}
+
 test("children: a new family gets one first child, and the seed's care info is on it", async () => {
   const family = await familyWithChild("first");
   assert.equal(family.firstChild.name, "");
@@ -2994,6 +3013,59 @@ test("home address: parents write it, members read it, a removed sitter loses it
   assert.deepEqual(children.data, [], "a removed sitter cannot read the children");
 });
 
+test("home address: a removed sitter's open Realtime subscription stops delivering it", async () => {
+  const family = await familyWithChild("address-live");
+  const sitter = await addSitter(family.household, "address-live");
+  const parent = family.parent.client;
+  const setAddress = async (home) => {
+    const { data, error } = await parent
+      .from("households")
+      .update({ home_address: home })
+      .eq("id", family.household)
+      .select("id");
+    assert.ifError(error);
+    assert.equal(data.length, 1);
+  };
+  const sitterSeen = [];
+  const parentSeen = [];
+  const sitterChannel = await listenForUpdates(sitter.client, "sitter", "households", sitterSeen);
+  const parentChannel = await listenForUpdates(parent, "parent", "households", parentSeen);
+  try {
+    // The sitter's silence below only counts if this listener worked while they were a member.
+    for (let i = 0; i < 40 && !(sitterSeen.length && parentSeen.length); i += 1) {
+      await setAddress(`tick ${i}`);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    assert.ok(parentSeen.length, "the parent's listener works");
+    assert.ok(sitterSeen.length, "a current sitter hears the household");
+    assert.match(sitterSeen[0].new.home_address, /^tick /, "the event carries the address");
+
+    const removal = await parent
+      .from("household_members")
+      .delete()
+      .eq("household_id", family.household)
+      .eq("user_id", sitter.id)
+      .select();
+    assert.ifError(removal.error);
+    assert.equal(removal.data.length, 1, "the parent removed the sitter");
+
+    // The subscription stays open. The parent hearing this exact write proves Realtime sent it.
+    const home = `after removal ${randomUUID().slice(0, 8)}`;
+    await setAddress(home);
+    await waitFor(() => parentSeen.some((event) => event.new.home_address === home), 10000);
+    await realtimeSettled();
+    assert.ok(
+      !sitterSeen.some((event) => JSON.stringify(event).includes(home)),
+      "the removed sitter's open subscription did not deliver the new address",
+    );
+  } finally {
+    await sitter.client.removeChannel(sitterChannel);
+    await parent.removeChannel(parentChannel);
+    sitter.client.realtime.disconnect();
+    parent.realtime.disconnect();
+  }
+});
+
 test("children: the migration's backfill gives each family one child and moves its per-child items", (t) => {
   if (!psqlAvailable()) {
     t.skip("psql is not on PATH; this test needs a direct database connection");
@@ -3073,28 +3145,117 @@ test("children: old-client saves of the child's name and age reach the first chi
   await save({ child_age_label: "Age 5" });
   assert.deepEqual(await names(), [["Ada", "Age 5"], ["Bea", "Age 2"]], "a change to the age alone copies");
 
-  // The family space form always sends all three. An unchanged child name must not undo a direct
-  // edit of the child, and a change to the family's name alone copies nothing.
+  // The old client sends both child columns on every save and never the family's name, so a form
+  // resubmitted unchanged must not undo a direct edit of the child. Nor must a change to the
+  // family's name alone, which no client sends today.
   const direct = await client
     .from("children")
     .update({ name: "Ada Lovelace" })
     .eq("id", family.firstChild.id)
     .select("id");
   assert.ifError(direct.error);
-  await save({ name: "Renamed", child_name: "Ada", child_age_label: "Age 5" });
+  await save({ child_name: "Ada", child_age_label: "Age 5" });
+  await save({ name: "Renamed" });
   assert.deepEqual(await names(), [["Ada Lovelace", "Age 5"], ["Bea", "Age 2"]]);
 
   // "First" is the lowest position.
   const reorder = await client.from("children").update({ position: -1 }).eq("id", second.id).select("id");
   assert.ifError(reorder.error);
   await save({ child_name: "Bea Lovelace" });
-  assert.deepEqual(await names(), [["Bea Lovelace", "Age 5"], ["Ada Lovelace", "Age 5"]]);
+  assert.deepEqual(await names(), [["Bea Lovelace", "Age 2"], ["Ada Lovelace", "Age 5"]]);
 
-  // Every child deleted: the next save still lands, on a new first child.
+  // Every child deleted: a save that changes nothing makes no child, and the next real change
+  // lands on a new first child.
   const cleared = await client.from("children").delete().eq("household_id", family.household).select("id");
   assert.equal(cleared.data?.length, 2);
+  await save({ child_name: "Bea Lovelace", child_age_label: "Age 5" });
+  assert.deepEqual(await names(), [], "a resubmitted form does not bring a child back");
   await save({ child_name: "Cleo" });
   assert.deepEqual(await names(), [["Cleo", "Age 5"]]);
+});
+
+test("children: an old tab's save changes only the column it changed, not a direct edit of the other", async () => {
+  const family = await familyWithChild("clobber");
+  const client = family.parent.client;
+  // The old client's exact update, whichever field the parent touched.
+  const oldTabSave = async (childName, childAge) => {
+    const { data, error } = await client
+      .from("households")
+      .update({ child_name: childName, child_age_label: childAge })
+      .eq("id", family.household)
+      .select("id");
+    assert.ifError(error);
+    assert.equal(data.length, 1);
+  };
+  const editChild = async (values) => {
+    const { data, error } = await client.from("children").update(values).eq("id", family.firstChild.id).select("id");
+    assert.ifError(error);
+    assert.equal(data.length, 1);
+  };
+  const stored = async () => (await childrenOf(family.household)).map((c) => [c.name, c.age_label]);
+
+  await oldTabSave("Ada", "Age 4");
+  await editChild({ name: "Ada Lovelace" });
+  await oldTabSave("Ada", "Age 5");
+  assert.deepEqual(await stored(), [["Ada Lovelace", "Age 5"]], "a new age keeps the directly edited name");
+
+  await editChild({ age_label: "Five" });
+  await oldTabSave("Ada L", "Age 5");
+  assert.deepEqual(await stored(), [["Ada L", "Five"]], "a new name keeps the directly edited age");
+});
+
+test("children: two old-client saves at once in a family with no children make one child", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this two-session test needs a direct database connection");
+    return;
+  }
+  const family = await familyWithChild("race");
+  const cleared = await admin.from("children").delete().eq("household_id", family.household).select("id");
+  assert.equal(cleared.data?.length, 1);
+
+  // Session 1 saves a care item, which creates the child, and holds the transaction open.
+  const marker = `first-child-${randomUUID()}`;
+  const insert = (title, comment = "") =>
+    `insert into public.care_items (household_id, category, title)
+     values ('${uuid(family.household)}', 'food', '${title}') ${comment};`;
+  const first = spawnPsql(`
+    begin;
+    ${insert("Tab one")}
+    select pg_sleep(3) /* ${marker} */;
+    commit;`);
+  await waitFor(() =>
+    psqlQuery(`select count(*) from pg_stat_activity where state = 'active' and query like '%${marker}%' and query not like '%pg_stat_activity%'`) === "1",
+  );
+  assert.deepEqual(await childrenOf(family.household), [], "session 2 cannot see session 1's child yet");
+
+  // Session 2 saves its own item while that child is still invisible to it: it must wait on the
+  // household's lock, then find session 1's child instead of creating another.
+  const secondMarker = `second-${marker}`;
+  let secondDone = false;
+  const second = spawnPsql(insert("Tab two", `/* ${secondMarker} */`), { captureStderr: true }).finally(() => {
+    secondDone = true;
+  });
+  let waited = false;
+  await waitFor(() => {
+    waited =
+      psqlQuery(`select count(*) from pg_stat_activity where wait_event_type = 'Lock' and query like '%${secondMarker}%' and query not like '%pg_stat_activity%'`) === "1";
+    return waited || secondDone;
+  }, 5000);
+
+  assert.equal(await first, 0, "session 1 committed");
+  const secondResult = await second;
+  assert.equal(secondResult.code, 0, secondResult.stderr);
+
+  const children = await childrenOf(family.household);
+  assert.equal(children.length, 1, "exactly one child, not one per session");
+  const { data: items, error } = await admin.from("care_items").select("title, child_id").eq("household_id", family.household);
+  assert.ifError(error);
+  assert.deepEqual(
+    items.filter((item) => item.title.startsWith("Tab ")).map((item) => item.child_id),
+    [children[0].id, children[0].id],
+    "both items belong to that child",
+  );
+  assert.ok(waited, "session 2 waited for session 1");
 });
 
 test("children: a care item saved with no child goes to the first child, by category", async () => {
@@ -3135,6 +3296,13 @@ test("children: a care item saved with no child goes to the first child, by cate
   assert.equal(moved.data.child_id, first);
   const out = await client.from("care_items").update({ category: "emergency" }).eq("id", where.id).select();
   assert.equal(out.error?.code, "23514");
+
+  // Clearing the child keeps the rule too: the item returns to the first child, not to nobody.
+  const hers = await save("food", { child_id: second.id });
+  const unset = await client.from("care_items").update({ child_id: null }).eq("id", hers.id).select().single();
+  assert.ifError(unset.error);
+  assert.equal(unset.data.child_id, first, "a food item cannot be left with no child");
+  assert.equal((await careItem(hers.id)).child_id, first);
 
   // "First" is the lowest position, and with no child left a save creates one.
   const reorder = await client.from("children").update({ position: -1 }).eq("id", second.id).select("id");
@@ -3267,21 +3435,10 @@ test("children: Realtime delivers a change to the family's members and nobody el
   const family = await familyWithChild("realtime");
   const stranger = await familyWithChild("realtime-other");
   const sitter = await addSitter(family.household, "realtime");
-  const listen = (client, name, seen) =>
-    new Promise((resolve, reject) => {
-      const channel = client
-        .channel(`${name}-${randomUUID().slice(0, 8)}`)
-        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "children" }, (payload) => seen.push(payload))
-        .subscribe((state, err) => {
-          if (state === "SUBSCRIBED") resolve(channel);
-          if (state === "CHANNEL_ERROR" || state === "TIMED_OUT") reject(err ?? new Error(state));
-        });
-    });
-
   const sitterSeen = [];
   const strangerSeen = [];
-  const sitterChannel = await listen(sitter.client, "sitter", sitterSeen);
-  const strangerChannel = await listen(stranger.parent.client, "stranger", strangerSeen);
+  const sitterChannel = await listenForUpdates(sitter.client, "sitter", "children", sitterSeen);
+  const strangerChannel = await listenForUpdates(stranger.parent.client, "stranger", "children", strangerSeen);
   try {
     // The change listener attaches just after SUBSCRIBED, so keep writing until one arrives.
     for (let i = 0; i < 40 && !sitterSeen.length; i += 1) {
@@ -3296,7 +3453,8 @@ test("children: Realtime delivers a change to the family's members and nobody el
     assert.ok(sitterSeen.length, "the sitter received the child's update");
     assert.match(sitterSeen[0].new.pinned_note, /^tick /, "every granted column is in the event");
     assert.equal(sitterSeen[0].new.household_id, family.household);
-    // A stranger's silence proves nothing unless their listener works, so make it hear its own family.
+    // A stranger's silence proves nothing unless their listener works, so make it hear its own
+    // family first. The family's writes above may have stopped before it was live.
     for (let i = 0; i < 40 && !strangerSeen.length; i += 1) {
       const write = await stranger.parent.client
         .from("children")
@@ -3307,6 +3465,16 @@ test("children: Realtime delivers a change to the family's members and nobody el
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     assert.ok(strangerSeen.length, "the other family's parent hears their own child");
+    // Now both listeners are live: one more family write, heard by the sitter, not by the stranger.
+    const last = `last ${randomUUID().slice(0, 8)}`;
+    const write = await family.parent.client
+      .from("children")
+      .update({ pinned_note: last })
+      .eq("id", family.firstChild.id)
+      .select("id");
+    assert.ifError(write.error);
+    await waitFor(() => sitterSeen.some((event) => event.new.pinned_note === last), 10000);
+    await realtimeSettled();
     assert.deepEqual(
       [...new Set(strangerSeen.map((event) => event.new.household_id))],
       [stranger.household],
