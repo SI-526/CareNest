@@ -2826,7 +2826,12 @@ test("children: length limits hold, and a child's household, id, and created_at 
            has_table_privilege('authenticated', 'public.children', 'update') as table_update,
            has_table_privilege('authenticated', 'public.children', 'truncate') as table_truncate,
            has_table_privilege('authenticated', 'public.children', 'delete') as table_delete,
-           has_table_privilege('authenticated', 'public.households', 'update') as households_update`);
+           has_table_privilege('authenticated', 'public.households', 'update') as households_update,
+           has_column_privilege('authenticated', 'public.children', 'household_id', 'update') as household_update,
+           has_column_privilege('authenticated', 'public.children', 'id', 'update') as id_update,
+           has_column_privilege('authenticated', 'public.children', 'created_at', 'update') as created_update,
+           has_column_privilege('authenticated', 'public.children', 'id', 'insert') as id_insert,
+           has_column_privilege('authenticated', 'public.children', 'created_at', 'insert') as created_insert`);
   assert.deepEqual(row, {
     table_select: false,
     table_insert: false,
@@ -2834,6 +2839,11 @@ test("children: length limits hold, and a child's household, id, and created_at 
     table_truncate: false,
     table_delete: true,
     households_update: false,
+    household_update: false,
+    id_update: false,
+    created_update: false,
+    id_insert: false,
+    created_insert: false,
   });
 });
 
@@ -2863,8 +2873,9 @@ test("children: a parent of another family cannot read or write them", async () 
   const read = await b.from("children").select("*").eq("household_id", family.household);
   assert.ifError(read.error);
   assert.deepEqual(read.data, [], "another family's children are invisible");
+  // No .select(): RETURNING would apply the read policy and hide a too-wide insert policy.
   assert.equal(
-    (await b.from("children").insert({ household_id: family.household, name: "Intruder" }).select()).error?.code,
+    (await b.from("children").insert({ household_id: family.household, name: "Intruder" })).error?.code,
     "42501",
     "cannot add a child to another family",
   );
@@ -2873,6 +2884,59 @@ test("children: a parent of another family cannot read or write them", async () 
 
   const [child, ...rest] = await childrenOf(family.household);
   assert.deepEqual([child.id, child.name, rest.length], [id, "", 0]);
+});
+
+test("children: with no filter at all, another family's update and delete touch only their own", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this test needs a direct database connection");
+    return;
+  }
+  const family = await familyWithChild("nofilter");
+  const stranger = await familyWithChild("nofilter-other");
+  // Any filter, and PostgREST insists on one, also applies the read policy. Raw SQL with no WHERE
+  // reaches the update and delete policies alone. Rolled back.
+  const result = psqlScript(`
+    begin;
+    select set_config('request.jwt.claims', '{"sub":"${uuid(stranger.parent.id)}","role":"authenticated"}', true);
+    set local role authenticated;
+    update public.children set pinned_note = 'Hacked';
+    delete from public.children;
+    reset role;
+    select count(*) from public.children where id = '${uuid(family.firstChild.id)}' and pinned_note = '';
+    select count(*) from public.children where id = '${uuid(stranger.firstChild.id)}';
+    rollback;
+  `);
+  assert.equal(result.code, 0, result.stderr);
+  const [theirs, own] = result.stdout.split("\n").slice(-2);
+  assert.equal(theirs, "1", "the other family's child is untouched");
+  assert.equal(own, "0", "the statements ran: the caller's own child went");
+});
+
+test("care items: the update policy alone refuses moving an item to another family", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this test needs a direct database connection");
+    return;
+  }
+  const family = await familyWithChild("move");
+  const stranger = await familyWithChild("move-other");
+  // A family-wide item has no child, so the foreign key is not involved, and with no WHERE the read
+  // policy does not run either: only the update policy's with check stands in the way.
+  const made = await family.parent.client
+    .from("care_items")
+    .insert({ household_id: family.household, category: "where", title: "Spare key" })
+    .select("id")
+    .single();
+  assert.ifError(made.error);
+  const result = psqlScript(`
+    begin;
+    select set_config('request.jwt.claims', '{"sub":"${uuid(family.parent.id)}","role":"authenticated"}', true);
+    set local role authenticated;
+    update public.care_items set household_id = '${uuid(stranger.household)}';
+    rollback;
+  `);
+  assert.notEqual(result.code, 0, "the move was refused");
+  assert.match(result.stderr, /row-level security/);
+  assert.equal((await careItem(made.data.id)).household_id, family.household);
 });
 
 test("home address: parents write it, members read it, a removed sitter loses it at once", async () => {
@@ -2946,6 +3010,8 @@ test("children: the migration's backfill gives each family one child and moves i
   };
   const named = uuid(randomUUID());
   const blank = uuid(randomUUID());
+  // No care items: nothing but the children backfill can give this family its child.
+  const empty = uuid(randomUUID());
   // Rolled back. With the triggers off these rows look exactly like a family from before this
   // migration: no child, and care items with no child id.
   const result = psqlScript(`
@@ -2954,7 +3020,8 @@ test("children: the migration's backfill gives each family one child and moves i
     alter table public.care_items disable trigger care_items_default_child;
     insert into public.households (id, name, child_name, child_age_label, risk_acknowledged_at)
     values ('${named}', 'Named', 'Ada', 'Age 4', now());
-    insert into public.households (id, name, risk_acknowledged_at) values ('${blank}', 'Blank', now());
+    insert into public.households (id, name, risk_acknowledged_at)
+    values ('${blank}', 'Blank', now()), ('${empty}', 'Empty', now());
     insert into public.care_items (household_id, category, title)
     select h, c, c
       from unnest(array['${named}', '${blank}']::uuid[]) as h,
@@ -2964,8 +3031,8 @@ test("children: the migration's backfill gives each family one child and moves i
     ${section("care items")}
     select json_build_object(
       'children', (select json_agg(json_build_object('household', household_id, 'name', name,
-                     'age', age_label, 'position', position) order by name desc)
-                     from public.children where household_id in ('${named}', '${blank}')),
+                     'age', age_label, 'position', position) order by name desc, household_id)
+                     from public.children where household_id in ('${named}', '${blank}', '${empty}')),
       'items', (select json_agg(json_build_object('household', i.household_id, 'category', i.category,
                      'child', c.household_id) order by i.household_id, i.category)
                      from public.care_items i
@@ -2979,7 +3046,7 @@ test("children: the migration's backfill gives each family one child and moves i
     children,
     [
       { household: named, name: "Ada", age: "Age 4", position: 0 },
-      { household: blank, name: "", age: "", position: 0 },
+      ...[blank, empty].sort().map((household) => ({ household, name: "", age: "", position: 0 })),
     ],
     "exactly one child per family, blank ones included, from the household's columns",
   );
@@ -3105,10 +3172,14 @@ test("children: a care item cannot point at another family's child or leave its 
   const updated = await a.from("care_items").update({ child_id: theirChild }).eq("id", id).select();
   assert.equal(updated.error?.code, "23503", "an item cannot be re-pointed at another family's child");
 
-  assertDenied(await a.from("care_items").update({ household_id: stranger.household }).eq("id", id).select());
-  assertDenied(
-    await a.from("care_items").update({ household_id: stranger.household, child_id: theirChild }).eq("id", id).select(),
-  );
+  // No .select(): RETURNING would apply the read policy and hide a too-wide with check.
+  const left = await a.from("care_items").update({ household_id: stranger.household }).eq("id", id);
+  assert.equal(left.error?.code, "42501", "an item cannot move to another family");
+  const leftWithChild = await a
+    .from("care_items")
+    .update({ household_id: stranger.household, child_id: theirChild })
+    .eq("id", id);
+  assert.equal(leftWithChild.error?.code, "42501", "an item cannot move to another family's child");
   assertDenied(
     await a
       .from("care_items")
@@ -3244,6 +3315,9 @@ test("children: Realtime delivers a change to the family's members and nobody el
   } finally {
     await sitter.client.removeChannel(sitterChannel);
     await stranger.parent.client.removeChannel(strangerChannel);
+    // An open socket keeps this test file's process alive for another minute.
+    sitter.client.realtime.disconnect();
+    stranger.parent.client.realtime.disconnect();
   }
 });
 
