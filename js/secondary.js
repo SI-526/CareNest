@@ -100,15 +100,7 @@
     return data.schedule.map((item) => `<li class="secondary-row"><span class="secondary-time">${esc(item.time || "Any time")}</span><span><strong>${esc(item.title)}</strong><small>${esc(item.detail || item.location || "Details available in the session")}</small></span>${editable ? `<button class="photo-source-btn secondary-row-action" type="button" data-edit="task" data-id="${esc(item.id)}">Edit</button>` : ""}</li>`).join("");
   }
 
-  const DAY = 86400000;
-  const dateKey = (date) => {
-    const local = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    return `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`;
-  };
-  const parseDate = (key) => {
-    const [year, month, day] = String(key).split("-").map(Number);
-    return new Date(year, month - 1, day);
-  };
+  const { dateKey, parseDate, addDays } = window.CareNestDates;
   const timeValue = (value) => {
     const match = /^(\d{1,2}):(\d{2})\s*(am|pm)?$/i.exec(value || "");
     if (!match) return Number.MAX_SAFE_INTEGER;
@@ -119,6 +111,7 @@
   };
   const displayDate = (key, includeYear) => parseDate(key).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", ...(includeYear ? { year: "numeric" } : {}) });
   const displayMonth = (key) => parseDate(key).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const sessionHours = (item) => `${item.start_time || ""}${item.end_time ? ` – ${item.end_time}` : ""}`;
   const initials = (name) => String(name || "CareNest").split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
 
   function demoAppointments() {
@@ -126,8 +119,8 @@
     const start = dateKey(today);
     return [
       { id: "today", date: start, start_time: "3:00 PM", end_time: "7:00 PM", note: "", activities: data.schedule.slice() },
-      { id: "upcoming-one", date: dateKey(new Date(today.getTime() + 3 * DAY)), start_time: "6:00 PM", end_time: "10:00 PM", note: "", activities: [] },
-      { id: "upcoming-two", date: dateKey(new Date(today.getTime() + 5 * DAY)), start_time: "11:00 AM", end_time: "5:00 PM", note: "", activities: [] },
+      { id: "upcoming-one", date: addDays(start, 3), start_time: "6:00 PM", end_time: "10:00 PM", note: "", activities: [] },
+      { id: "upcoming-two", date: addDays(start, 5), start_time: "11:00 AM", end_time: "5:00 PM", note: "", activities: [] },
     ];
   }
 
@@ -136,8 +129,8 @@
     const today = dateKey(new Date());
     const people = `<div class="schedule-people"><span class="schedule-avatar">${esc(initials(data.child && data.child.name))}</span><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span></div>`;
     const current = editable
-      ? `<section class="current-shift-card current-session-card"><div class="current-session-title"><div><p class="schedule-card-title">Current Session</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span>3:00 PM – 7:00 PM</span></p></div><button type="button" class="schedule-icon-button" data-edit-schedule aria-label="Edit current session">✎</button></div><div class="current-session-people"><div><strong>Children</strong>${people}</div><div><strong>Caregiver</strong><span class="caregiver-name">${esc(sharedSitter && sharedSitter.display_name || data.babysitter && data.babysitter.name || "Caregiver")}</span>${caregiverDetails()}</div></div></section>`
-      : `<section class="current-shift-card"><div><p class="schedule-card-title">Current Shift</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span>3:00 PM – 7:00 PM</span></p></div>${people}</section>`;
+      ? `<section class="current-shift-card current-session-card"><div class="current-session-title"><div><p class="schedule-card-title">Current Session</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span data-current-session-time></span></p></div><button type="button" class="schedule-icon-button" data-edit-schedule aria-label="Edit current session">✎</button></div><div class="current-session-people"><div><strong>Children</strong>${people}</div><div><strong>Caregiver</strong><span class="caregiver-name">${esc(sharedSitter && sharedSitter.display_name || data.babysitter && data.babysitter.name || "Caregiver")}</span>${caregiverDetails()}</div></div></section>`
+      : `<section class="current-shift-card"><div><p class="schedule-card-title">Current Shift</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span data-current-session-time></span></p></div>${people}</section>`;
     return `<section class="schedule-page${editable ? " schedule-page--parent" : ""}" data-schedule-page data-parent="${editable}" data-today="${today}" data-appointments="${esc(JSON.stringify(appointments))}">
       ${editable ? '<div class="schedule-request-notices" data-request-notices aria-live="polite"></div>' : ""}
       ${current}
@@ -276,13 +269,13 @@
     }
 
     function appointmentHtml(item) {
-      return `<article class="upcoming-shift"><div><p><strong>${esc(displayDate(item.date))}</strong><span>${esc(item.start_time || "")}${item.end_time ? ` – ${esc(item.end_time)}` : ""}</span></p><small>Children: ${esc(data.child && data.child.name || "Child")} · Caregiver: ${esc(data.babysitter && data.babysitter.name || "Caregiver")}</small></div><div class="schedule-people"><span class="schedule-avatar">${esc(initials(data.child && data.child.name))}</span><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span></div></article>`;
+      return `<article class="upcoming-shift"><div><p><strong>${esc(displayDate(item.date))}</strong><span>${esc(sessionHours(item))}</span></p><small>Children: ${esc(data.child && data.child.name || "Child")} · Caregiver: ${esc(data.babysitter && data.babysitter.name || "Caregiver")}</small></div><div class="schedule-people"><span class="schedule-avatar">${esc(initials(data.child && data.child.name))}</span><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span></div></article>`;
     }
     function listHtml() {
       const appointment = currentAppointment();
       if (!appointment) return emptyHtml();
       // A booked session with no activities yet is still a schedule: show its hours, not "Request".
-      if (!taskItems().length) return `<div class="schedule-empty"><p>Session ${esc(appointment.start_time || "")}${appointment.end_time ? ` – ${esc(appointment.end_time)}` : ""}</p><small>No activities added yet.</small>${editable ? '<button class="schedule-empty-button" type="button" data-edit-schedule>Edit Schedule</button>' : ""}</div>${appointment.note ? `<aside class="schedule-notes"><strong>Today’s Notes</strong><p>${esc(appointment.note)}</p></aside>` : ""}`;
+      if (!taskItems().length) return `<div class="schedule-empty"><p>Session ${esc(sessionHours(appointment))}</p><small>No activities added yet.</small>${editable ? '<button class="schedule-empty-button" type="button" data-edit-schedule>Edit Schedule</button>' : ""}</div>${appointment.note ? `<aside class="schedule-notes"><strong>Today’s Notes</strong><p>${esc(appointment.note)}</p></aside>` : ""}`;
       return `<ol class="schedule-activity-list">${taskItems().map((item) => `<li><time>${esc(item.time || "Any time")}</time><div><strong>${esc(item.title)}</strong>${item.detail || item.location ? `<p>${esc(item.detail || item.location)}</p>` : ""}</div></li>`).join("")}</ol>${appointment.note ? `<aside class="schedule-notes"><strong>Today’s Notes</strong><p>${esc(appointment.note)}</p></aside>` : ""}${editable ? '<button type="button" class="schedule-edit-button" data-edit-schedule>Edit Schedule</button>' : ""}`;
     }
     function emptyHtml() {
@@ -305,6 +298,9 @@
     }
     function render() {
       const isToday = selected === today;
+      // The current card follows today's real booking, whichever day the list has selected.
+      const booked = appointments.find((item) => item.date === today);
+      pageEl.querySelector("[data-current-session-time]").textContent = booked ? sessionHours(booked) : "No session today";
       label.textContent = view === "calendar" ? displayMonth(selected) : `${displayDate(selected)}${isToday ? " (Today)" : ""}`;
       content.innerHTML = view === "list" ? listHtml() : calendarHtml();
       upcomingEl.innerHTML = appointments.filter((item) => item.date > today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4).map(appointmentHtml).join("") || '<p class="schedule-no-upcoming">No upcoming shifts scheduled.</p>';
@@ -417,7 +413,7 @@
     pageEl.addEventListener("click", (event) => {
       const target = event.target.closest("button"); if (!target) return;
       if (target.dataset.view) { view = target.dataset.view; render(); }
-      if (target.dataset.date) { selected = dateKey(new Date(parseDate(selected).getTime() + (target.dataset.date === "next" ? DAY : -DAY))); render(); }
+      if (target.dataset.date) { selected = addDays(selected, target.dataset.date === "next" ? 1 : -1); render(); }
       if (target.dataset.calendarDate) { selected = target.dataset.calendarDate; render(); }
       if (target.matches("[data-request-schedule]")) requestSchedule(target);
       if (target.dataset.requestAdd) { selected = target.dataset.requestAdd; view = "list"; render(); openBooking(); }
