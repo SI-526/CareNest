@@ -23,8 +23,10 @@
 --   * public.households.home_address: optional, parents write it (a column grant under the
 --     existing update policy), and only current members read it (the existing select policy,
 --     so a removed sitter loses access as soon as their membership row is gone).
---   * public.contacts.is_primary: at most one primary contact per household (partial unique
---     index). The existing table grant and parent-only policies already cover the new column.
+--   * public.contacts.is_primary: at most one primary contact per household. An exclusion
+--     constraint rather than a unique index because it can be deferrable: checked at the end of
+--     each statement, so one update can hand primary from one contact to another. The existing
+--     table grant and parent-only policies already cover the new column.
 --
 -- TRANSITIONAL (slice C removes these three triggers and public.ensure_first_child): the old
 -- client has no idea children exist, so
@@ -34,15 +36,19 @@
 --   * a food, preferences, or instructions item saved with no child goes to the first child
 --     (care_items_default_child).
 -- If a parent has deleted every child, the next such write creates a new first child. In a race
--- with the delete of the last child, an old tab's care item save gets a visible error and a retry
--- works; a name or age save stays on the household's columns, which seed the next first child.
+-- with the delete of the first child, an old tab's care item save gets a visible error and a
+-- retry works; a name or age save stays on the household's columns, which seed the next first
+-- child.
 --
 -- Order matters on a live database. `db push` sends the file as one implicit transaction, and the
--- first statement sets a 5 second lock timeout and locks care_items, contacts, and households, in
+-- first statement sets a 2 second lock timeout and locks care_items, contacts, and households, in
 -- that order. It is a DO block because that kind of transaction refuses a top-level LOCK TABLE
 -- (25P01). The locks still last until commit. Child tables come first because a client write holds
 -- its own table and then waits on households for the foreign key check, so taking households first
--- deadlocks with that write. If a lock is not free in 5 seconds the push fails cleanly (55P03) with
+-- deadlocks with that write. The timeout applies to each table's lock separately, so the push waits
+-- at most about 6 seconds for its locks, and a client query queued behind it waits that long plus
+-- the migration's own run time, which keeps it under the client role's 8 second statement timeout
+-- unless the run itself is slow. If a lock is not free in time the push fails cleanly (55P03) with
 -- nothing changed, and it can be rerun. Once held, these locks block reads and writes on all three
 -- tables until commit, and so also the foreign key check of a write to any table that references
 -- households. The triggers exist before the backfill, so no write can land between them.
@@ -52,7 +58,7 @@
 
 do $$
 begin
-  set local lock_timeout = '5s';
+  set local lock_timeout = '2s';
   lock table public.care_items, public.contacts, public.households in access exclusive mode;
 end;
 $$;
@@ -62,16 +68,17 @@ $$;
 -- ---------------------------------------------------------------------------
 
 alter table public.households
-  add column home_address text check (char_length(home_address) <= 200);
+  add column home_address text not null default '' check (char_length(home_address) <= 200);
 
 grant update (home_address) on public.households to authenticated;
 
 alter table public.contacts
   add column is_primary boolean not null default false;
 
-create unique index contacts_one_primary_per_household
-  on public.contacts (household_id)
-  where is_primary;
+alter table public.contacts
+  add constraint contacts_one_primary_per_household
+  exclude using btree (household_id with =) where (is_primary)
+  deferrable initially immediate;
 
 -- ---------------------------------------------------------------------------
 -- Children

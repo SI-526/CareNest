@@ -98,7 +98,7 @@ builder made. Each one is reversible with a new forward migration unless it says
 
 ## D7. Trigger first, backfill second, inside the migration's locks
 - **Decision:** ordering on a live database.
-- **Choice:** the file opens with a DO block that runs `set local lock_timeout = '5s'` and
+- **Choice:** the file opens with a DO block that runs `set local lock_timeout = '2s'` and
   `lock table public.care_items, public.contacts, public.households in access exclusive mode`,
   child tables first. Then triggers before the backfill, `alter table care_items` before its
   backfill, and `where not exists` on the children backfill.
@@ -114,8 +114,11 @@ builder made. Each one is reversible with a new forward migration unless it says
   child), and `households` first: a client write holds its own table and then waits on
   `households` for the foreign key check, so that order deadlocks with it.
 - **What breaks next quarter if wrong:** a family created during the deploy has no child and its
-  next food item has nowhere to go. The trigger fallback (D4) is the second line of defence. If a
-  lock is not free in 5 seconds the push fails with 55P03, nothing changed, and it can be rerun.
+  next food item has nowhere to go. The trigger fallback (D4) is the second line of defence. The
+  timeout applies to each table's lock separately, so the three locks can take about 6 seconds in
+  all; 2 seconds (first version: 5) keeps a client query queued behind them under the
+  `authenticated` role's 8 second statement timeout. If a lock is not free in time the push fails
+  with 55P03, nothing changed, and it can be rerun.
 - **Reverse:** not needed, this is ordering only. Once held, the locks block reads and writes on
   all three tables until commit, and so also the foreign key check of a write to any table that
   references `households`. Its duration against the hosted row counts was not measured.
@@ -160,14 +163,29 @@ builder made. Each one is reversible with a new forward migration unless it says
 
 ## D11. is_primary and the label columns are NOT NULL
 - **Decision:** nullable or not, where the brief says only `default`.
-- **Choice:** `is_primary boolean not null default false`; `age_label`, `stage_label`, and
-  `pinned_note` are `text not null default ''`.
+- **Choice:** `is_primary boolean not null default false`; `age_label`, `stage_label`,
+  `pinned_note`, and `households.home_address` are `text not null default ''`. (The first version
+  left `home_address` nullable, which gave slice C two "no address" states, null and empty.)
 - **Standard:** two-valued booleans, and the repo's empty-string convention on `households`.
 - **Rejected:** nullable: three states for a yes/no, and the partial index would treat null and
   false the same while the client would not.
 - **What breaks next quarter if wrong:** nothing expected; the old client omits the column and
   gets the default.
 - **Reverse:** `alter column ... drop not null`.
+
+## D14. One primary contact: a deferrable exclusion constraint, not a unique index
+- **Decision:** how the database keeps at most one primary contact per family.
+- **Choice:** `exclude using btree (household_id with =) where (is_primary) deferrable initially
+  immediate` on `contacts`.
+- **Standard:** PostgreSQL's documented way to get a partial uniqueness rule that is deferrable;
+  a unique index cannot be deferred, and only constraints can.
+- **Rejected:** `create unique index ... where is_primary` (first version). It is checked row by
+  row, so a single `update ... set is_primary = (id = X)` fails with 23505 or not depending on
+  physical row order, and the two-request alternative leaves a moment with no primary and races
+  when two parents change it at once.
+- **What breaks next quarter if wrong:** slice C's "make this the primary contact" control fails
+  at random for some families. A violation now reports 23P01 instead of 23505.
+- **Reverse:** drop the constraint, create the index. No data change.
 
 ## D12. "First child" tie-break: position, created_at, id
 - **Decision:** which child is first when positions tie.
@@ -202,3 +220,53 @@ Two survived the first pass and exposed weak tests, both fixed before the final 
 - B1 (children backfill skips blank families): the care item backfill created the child anyway because the blank test family had items. The test now has a blank family with no items.
 
 The harness also found that the Realtime test left a socket open, adding about a minute to every `test:rls`. Fixed.
+
+## Review round 1
+
+An independent review of c1964b1 returned APPROVE WITH FIXES, no P0 or P1. Commit 31c2143 applied
+the fixes; they were verified on 2026-11-05 on Kelvin's Mac (local stack, CLI 2.118.0):
+
+- F1 `sync_first_child` copies only the changed column and reads `old` only when `tg_op = 'UPDATE'`.
+  The reorder test expects "Age 2". Passes.
+- F2 lock order and timeout. `db reset --version 20261026120000`, a family with a food and a where
+  item inserted, then `supabase migration up --local`: exit 0, the family got one child "Old Kid,
+  Age 3", the food item moved to it, the where item stayed family-wide, no household left without a
+  child. With another session holding a read on a locked table, `migration up` exits 1 with 55P03
+  (after about 3 seconds with the final 2 second timeout) and the rerun exits 0. The 55P03 run fails
+  at the first statement, so it does not prove the file is one transaction; see Review round 2.
+- F3 trigger fires on `update of category, child_id`; the "care item saved with no child" test sets
+  `child_id = null` on a food item and asserts it returns to the first child. Passes.
+- F5 Realtime isolation test makes the stranger hear its own family first, then waits for the
+  sitter to hear one last family write before asserting the stranger saw none. Passes.
+- F6 the two-saves race test holds session 1 open with `pg_sleep` and asserts session 2 waited on a
+  lock. Mutations T20 (no household lock) and T21 (no re-read) are each caught by that test.
+- F7 comments match the code; the client lines cited are `js/manage.js:372-373`,
+  `js/secondary.js:484`, `js/onboarding.js:70`.
+- F9 the removed sitter's Realtime test passed in the full `test:rls` run and in two further
+  isolated runs, so it stays.
+
+Gates on that tree: `npm ci`, `db:reset`, `db:lint` (no schema errors), `test:unit` (21/21),
+`test:rls` (98/98, 0 skipped), all exit 0.
+
+## Review round 2
+
+A second independent review (fresh context, given the diff and this record) returned APPROVE WITH
+FIXES, no P0 or P1, five P2s. All five were fixed:
+
+1. Lock wait: `lock_timeout` applies per lock, so 5 seconds could hold a client query about 15
+   seconds, past the 8 second statement timeout. Now 2 seconds; D7 and the header say so.
+2. D3 had no test: added "a sitter or outsider saving a care item into a family with no children
+   makes no child" (42501 and zero children for both).
+3. One-transaction proof: after `db reset --version 20261026120000`, `select 1/0;` was appended to
+   the migration and `migration up --local` run: exit 1 with 22012, and afterwards no `children`
+   table, no `home_address` column, no `ensure_first_child`, and no row in
+   `supabase_migrations.schema_migrations`. The file was restored byte for byte (`cmp`) and the
+   clean rerun exited 0.
+4. `home_address` is now `not null default ''` (D11).
+5. Primary contact is a deferrable exclusion constraint (D14). The new swap test fails against the
+   old unique index and passes against the constraint.
+
+Also: the race comment now says "the first child", not "the last".
+
+Gates on the final tree: `npm ci`, `db:reset`, `db:lint` (no schema errors), `test:unit` (21/21),
+`test:rls` (100/100, 0 skipped), all exit 0.

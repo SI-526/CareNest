@@ -35,7 +35,7 @@ FK = """alter table public.care_items add constraint care_items_child_fkey forei
   references public.children (id, household_id) on delete cascade;"""
 CHECK = """alter table public.care_items add constraint care_items_family_wide_categories check (
   child_id is null or category in ('food', 'preferences', 'instructions'));"""
-PRIMARY = "create unique index contacts_one_primary_per_household on public.contacts (household_id) where is_primary;"
+PRIMARY = "alter table public.contacts add constraint contacts_one_primary_per_household exclude using btree (household_id with =) where (is_primary) deferrable initially immediate;"
 
 migration_sql = open(MIGRATION).read()
 
@@ -180,7 +180,7 @@ MUTATIONS = [
      "alter table public.care_items drop constraint care_items_child_fkey; alter table public.care_items add constraint care_items_child_fkey foreign key (child_id, household_id) references public.children (id, household_id) deferrable initially immediate;",
      "alter table public.care_items drop constraint care_items_child_fkey;" + FK),
     ("C4", "drop family-wide check", "alter table public.care_items drop constraint care_items_family_wide_categories;", CHECK),
-    ("C5", "drop one-primary index", "drop index public.contacts_one_primary_per_household;", PRIMARY),
+    ("C5", "drop one-primary constraint", "alter table public.contacts drop constraint contacts_one_primary_per_household;", PRIMARY),
     ("C7", "drop home_address length check", "alter table public.households drop constraint households_home_address_check;",
      "alter table public.households add constraint households_home_address_check check (char_length(home_address) <= 200);"),
     ("C8", "drop children name length check", "alter table public.children drop constraint children_name_check;",

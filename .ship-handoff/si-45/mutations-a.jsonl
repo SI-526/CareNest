@@ -68,3 +68,7 @@
 {"id": "P5e", "what": "care_items update with check dropped (an item can leave its family)", "result": "caught", "failed": ["care items: the update policy alone refuses moving an item to another family"], "env": false}
 {"id": "B1", "what": "children backfill skips blank households", "result": "caught", "failed": ["children: the migration's backfill gives each family one child and moves its per-child items"], "env": false}
 {"id": "BASE-end", "what": "no mutation, everything restored", "result": "clean", "failed": [], "env": false}
+{"id": "BASE-start", "what": "no mutation", "result": "clean", "failed": [], "env": false}
+{"id": "T20", "what": "ensure_first_child takes no lock on the household", "result": "caught", "failed": ["children: two old-client saves at once in a family with no children make one child"], "env": false}
+{"id": "T21", "what": "ensure_first_child does not re-read after the lock", "result": "caught", "failed": ["children: two old-client saves at once in a family with no children make one child"], "env": false}
+{"id": "BASE-end", "what": "no mutation, everything restored", "result": "clean", "failed": [], "env": false}

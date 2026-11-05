@@ -2967,7 +2967,7 @@ test("home address: parents write it, members read it, a removed sitter loses it
   const address = (client) =>
     client.from("households").select("home_address").eq("id", family.household);
 
-  assert.equal((await address(admin)).data[0].home_address, null, "it is optional");
+  assert.equal((await address(admin)).data[0].home_address, "", "it is optional, and empty until set");
 
   const saved = await family.parent.client
     .from("households")
@@ -3372,6 +3372,21 @@ test("children: a care item cannot point at another family's child or leave its 
   assert.equal(moved.data.child_id, second.id, "moving between the family's own children is allowed");
 });
 
+test("children: a sitter or outsider saving a care item into a family with no children makes no child", async () => {
+  // The default-child trigger runs as definer before the insert policy, so it creates the child
+  // first. The policy's refusal must roll that child back with the statement.
+  const family = await familyWithChild("childless-refused");
+  const stranger = await familyWithChild("childless-stranger");
+  const sitter = await addSitter(family.household, "childless-refused");
+  const cleared = await admin.from("children").delete().eq("household_id", family.household).select("id");
+  assert.equal(cleared.data?.length, 1);
+  for (const [who, client] of [["sitter", sitter.client], ["another family's parent", stranger.parent.client]]) {
+    const saved = await client.from("care_items").insert({ household_id: family.household, category: "food", title: "x" });
+    assert.equal(saved.error?.code, "42501", `${who} is refused`);
+    assert.deepEqual(await childrenOf(family.household), [], `${who}'s refused save left no child behind`);
+  }
+});
+
 test("children: deleting a child removes only that child's items; deleting a family removes its children", async () => {
   const family = await familyWithChild("delete");
   const a = family.parent.client;
@@ -3412,9 +3427,9 @@ test("contacts: one primary per family, and only parents set it", async () => {
 
   const first = await contact(a, family.household, "Mom", { is_primary: true });
   assert.ifError(first.error);
-  assert.equal((await contact(a, family.household, "Dad", { is_primary: true })).error?.code, "23505");
+  assert.equal((await contact(a, family.household, "Dad", { is_primary: true })).error?.code, "23P01");
   const promote = await a.from("contacts").update({ is_primary: true }).eq("id", plain.data.id).select();
-  assert.equal(promote.error?.code, "23505", "a second primary is refused on update too");
+  assert.equal(promote.error?.code, "23P01", "a second primary is refused on update too");
   assert.ifError((await contact(stranger.parent.client, stranger.household, "Mom", { is_primary: true })).error);
 
   // Handing primary over: clear, then set.
@@ -3429,6 +3444,30 @@ test("contacts: one primary per family, and only parents set it", async () => {
   );
   const stored = await admin.from("contacts").select("is_primary").eq("id", plain.data.id).single();
   assert.equal(stored.data.is_primary, true, "neither a sitter nor another family changed it");
+});
+
+test("contacts: one update can hand primary to another contact, whichever row comes first", async (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this test runs one multi-row update directly");
+    return;
+  }
+  const family = await familyWithChild("primary-swap");
+  const a = family.parent.client;
+  const add = async (name, is_primary) => {
+    const { data, error } = await a.from("contacts").insert({ household_id: family.household, name, is_primary }).select().single();
+    assert.ifError(error);
+    return data.id;
+  };
+  const mom = await add("Mom", true);
+  const dad = await add("Dad", false);
+  const primary = () =>
+    psqlQuery(`select string_agg(id::text, ',') from public.contacts where household_id = '${uuid(family.household)}' and is_primary`);
+  // A unique index checks row by row, so this fails or not depending on which row Postgres
+  // visits first. Both directions must work.
+  for (const target of [dad, mom, dad]) {
+    psqlQuery(`update public.contacts set is_primary = (id = '${uuid(target)}') where household_id = '${uuid(family.household)}'`);
+    assert.equal(primary(), target);
+  }
 });
 
 test("children: Realtime delivers a change to the family's members and nobody else", async () => {
