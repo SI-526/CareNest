@@ -3902,3 +3902,27 @@ body:not([data-role="parent"]) .gallery-list {
 .gallery-preview-frame .photo-preview {
   object-fit: contain;
 }
+
+/* SI-45: which family space is showing, for someone in more than one (js/auth.js). */
+.family-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 16px;
+  background: var(--surface);
+  font-size: var(--text-sm);
+}
+
+.family-bar-label {
+  color: var(--grey);
+}
+
+.family-bar-select {
+  max-width: 100%;
+  min-height: 36px;
+  padding: 4px 8px;
+  font: inherit;
+}

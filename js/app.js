@@ -389,7 +389,8 @@
     }
 
     load();
-    // RLS limits the stream to this household. Realtime cannot filter DELETE events by column,
+    // Filtered to the active family (RLS alone would pass every family the caller is in).
+    // Realtime cannot filter DELETE events by column,
     // so deletes arrive unfiltered: reload only when a note on screen was deleted.
     client
       .channel(`carenest-day-notes-${householdId}`)

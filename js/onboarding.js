@@ -15,6 +15,8 @@
     errorEl.hidden = !text;
   }
 
+  let userId = null;
+
   (async () => {
     let ctx;
     try {
@@ -26,7 +28,9 @@
       return;
     }
     if (!ctx) return auth.go("signin.html");
+    // Already in a family space (as a parent or as a sitter): create_household would refuse.
     if (ctx.role) return auth.go(auth.homeFor(ctx));
+    userId = ctx.user.id;
     document.getElementById("onboarding-email").textContent = ctx.email;
     auth.reveal();
   })();
@@ -64,6 +68,7 @@
       submit.textContent = "Create family space";
       return;
     }
+    if (userId) window.CareNestFamilies.remember(userId, householdId);
     if (childName || childAge) {
       const { error: childError } = await auth.client
         .from("households")

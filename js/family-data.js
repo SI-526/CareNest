@@ -6,7 +6,8 @@
 // CareNestFamily.ready instead of CareNestAuth.ready. In ?demo=1 mode nothing is fetched and the
 // bundled sample data in js/data.js is used as is.
 //
-// What reads what (RLS narrows every query to the caller's own household):
+// What reads what (every query filters on the active family's id, ctx.household.id; RLS alone
+// would return every family the caller belongs to):
 //   households (child_name, child_age_label) -> child name and age (already on the auth context)
 //   tasks of the household's plan            -> schedule
 //   care_items                                -> Good to know categories, food page, emergency steps
@@ -365,7 +366,8 @@
     return () => listeners.delete(fn);
   }
 
-  // RLS limits the stream to this household. Realtime cannot filter DELETE events by column, so
+  // Each stream is filtered to the active family (RLS alone would also pass the caller's other
+  // families). Realtime cannot filter DELETE events by column, so
   // deletes arrive unfiltered: refetch only when a row on screen was deleted (as day notes do).
   // Tasks get no DELETE listener: clients cannot delete a task, and a task goes only by cascade
   // from a plan or family-space delete, which the plans DELETE or households event already shows.

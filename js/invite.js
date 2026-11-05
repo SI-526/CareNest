@@ -62,7 +62,7 @@
       accept.disabled = true;
       accept.textContent = "Joining…";
       errorEl.hidden = true;
-      const { error } = await auth.client.rpc("accept_invite", { invite_token: token });
+      const { data: householdId, error } = await auth.client.rpc("accept_invite", { invite_token: token });
       if (error) {
         errorEl.textContent = auth.friendlyError(error);
         errorEl.hidden = false;
@@ -81,6 +81,8 @@
       } catch (e) {
         /* storage unavailable */
       }
+      // Someone already in another family lands on the one they just joined.
+      if (householdId) window.CareNestFamilies.remember(ctx.user.id, householdId);
       auth.go("index.html");
     });
     card.querySelector("[data-switch]").addEventListener("click", async () => {
