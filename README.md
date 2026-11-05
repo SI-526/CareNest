@@ -148,11 +148,12 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 
 | Table | Holds | Who can write |
 | --- | --- | --- |
-| `households` | Family space name, child's name and age label | Created by `create_household`; parents edit name/child fields |
+| `households` | Family space name, the first child's name and age label (transitional: the live client still writes these), optional home address | Created by `create_household`; parents edit name/child fields and the home address. Only current members read the address |
+| `children` | One row per child: name, age label, stage label, pinned note, order | Members read; parents add, edit, and delete. Reads, adds, and edits use column grants (delete is table-level): a child's household, id, and creation time are fixed, so a child never moves to another family space |
 | `household_members` | Parent and caretaker roles (one household per user) | Added only by RPCs; parents remove caretakers |
 | `invites` | Email-bound invites (token hash, 7-day expiry) | Created by `create_invite`; parents revoke |
-| `care_items` | Preferences, where things are, instructions, emergency steps, food/allergies (with severity) | Parents |
-| `contacts` | People and places to call (including the hospital, with address) | Parents |
+| `care_items` | Preferences, where things are, instructions, emergency steps, food/allergies (with severity). Food, preferences, and instructions belong to one child (`child_id`); where things are and emergency steps are family-wide (`child_id` is null, enforced by a check) | Parents. A composite foreign key means an item can only point at a child of its own family space. Deleting a child deletes that child's items |
+| `contacts` | People and places to call (including the hospital, with address), shared by the family space; at most one primary contact per family space (`is_primary`, a deferrable exclusion constraint, so one update can move primary to another contact) | Parents |
 | `day_notes` | "Important today": notes for one calendar date (category, title, detail); who wrote and last edited each, and when | Parents add, edit, delete; members read. Authorship and edit times are set by the database (a trigger), so "Updated" cannot be forged; a note never moves to another family space |
 | `plans`, `tasks` | The child's day (one plan per family space): ordered tasks with time, detail, location, care note, usual hours | Parents; clients update only a plan's `schedule` (its household and title are fixed); archived tasks are frozen |
 | `appointments` | Care booked ahead on the plan: date, start and end time, note, activities | Parents book and edit the date, times, note, and activities; members read. Household and plan are fixed (an appointment never moves to another family space or plan); nobody deletes |
@@ -197,6 +198,20 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   server-side, so hidden fields and the private reminders preference never reach a parent's
   browser. A profile saved on a device before this change is moved to the database once and
   the device copy is deleted.
+- **Children (SI-45, transition).** `20261102000000_carenest_children.sql` gave every household
+  exactly one `children` row (blank ones included) and moved its food, preferences, and
+  instructions to that child. The live client does not know about children yet and still writes
+  `households.child_name`, `child_age_label`, and `care_items` with no child id, so three
+  transitional triggers keep those writes correct: a new household gets a first child, a change
+  to one of the household's child columns copies that column to the first child (lowest
+  position), and a per-child care item saved with no child goes to the first child. If every
+  child was deleted, the next such write creates a new first child. The copy runs one way only:
+  a direct edit of a child does not change the household's columns. A later migration removes
+  the triggers, `ensure_first_child`, and the household columns once no client uses them.
+- **Home address.** `households.home_address` is optional (empty when not set) and only parents write it. It is
+  protected by the household's select policy, so only current members read it and a removed
+  sitter loses access as soon as their membership row is gone, including on a Realtime
+  subscription. A copy already on a sitter's screen or in their browser cannot be recalled.
 - Households, memberships, and invites are created only through `SECURITY DEFINER` functions with
   a fixed empty `search_path`. Creating a family space requires an explicit risk acknowledgement,
   stored as `households.risk_acknowledged_at`.
@@ -358,7 +373,7 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   `shift_events` rows removed when a family space or plan is deleted (one random UUID each), and
   to `messages` and `care_logs` (one random UUID each; clients never delete messages or care
   logs, so only cascades emit them), to `day_notes` (one random UUID per deleted note), and to
-  `contacts`, `care_items`, `plans`, `tasks`, `households`, `appointments`, and
+  `contacts`, `care_items`, `plans`, `tasks`, `households`, `children`, `appointments`, and
   `schedule_requests` (one random UUID per deleted row; clients never delete appointments or
   schedule requests, so only cascades emit them;
   with RLS on, a DELETE event carries only the primary key whatever the replica identity, so no
