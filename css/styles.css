@@ -727,6 +727,9 @@ button {
 .schedule-activity-list time { color: #034064; font-size: var(--text-sm); font-weight: var(--weight-bold); }
 .schedule-activity-list strong { display: block; color: #151515; font-size: var(--text-sm); }
 .schedule-activity-list p { margin: 4px 0 0; color: #6d6d72; font-size: var(--text-xs); }
+.schedule-session + .schedule-session { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.schedule-session-heading { margin: 0 0 6px; padding: 0 12px; color: var(--blue); font-size: var(--text-base); font-weight: var(--weight-bold); }
+.schedule-session-empty { margin: 0; padding: 13px 12px; color: #6d6d72; font-size: var(--text-sm); }
 .schedule-notes { margin-top: 10px; padding: 16px; border-radius: var(--radius-sm); background: #f7f7f7; color: #1a1a1a; font-size: var(--text-sm); }
 .schedule-notes strong { color: var(--accent-strong); }
 .schedule-notes p { margin-top: 8px; }
