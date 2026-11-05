@@ -10,6 +10,7 @@
 // decides what each signed-in person can read and change.
 (function () {
   const client = window.CareNestSupabase;
+  const families = window.CareNestFamilies; // js/active-family.js, loaded before this file
   const page = document.body.dataset.page;
 
   // Which roles may open which app page. Pages not listed here are not guarded.
@@ -33,8 +34,9 @@
     not_authenticated: "Please sign in again.",
     risk_not_acknowledged:
       "Please read the notice and tick the box before creating your family space.",
-    already_member:
-      "This account already belongs to a family space. CareNest supports one family space per account for now.",
+    // create_household: any membership blocks it. create_invite and accept_invite: that
+    // person is already in this family.
+    already_member: "Already a member of this family space.",
     not_parent: "Only a parent can do that.",
     photos_remaining: "A photo was added while your account was being deleted. Please try again.",
     invalid_email: "Please enter a valid email address.",
@@ -81,7 +83,8 @@
     return `${USER_STORE_PREFIX}${userId}`;
   }
 
-  // No session in this browser: every account's device data left behind is an orphan.
+  // No session in this browser: every account's device data left behind is an orphan, and so is
+  // every remembered family choice.
   function clearOrphanedUserData() {
     try {
       Object.keys(localStorage)
@@ -90,6 +93,7 @@
     } catch (e) {
       /* storage unavailable: nothing to clear */
     }
+    families.forgetAll();
   }
 
   function clearUserData(userId) {
@@ -99,6 +103,7 @@
     } catch (e) {
       /* storage unavailable: nothing to clear */
     }
+    families.forgetAll();
   }
 
   // The pre-accounts key "carenest:v1" was shared by everyone on this device and can't be
@@ -164,9 +169,15 @@
       .replace(/'/g, "&#39;");
   }
 
-  // Loads who is signed in and their family space. Returns null when signed out.
-  // getUser() asks the auth server (so a deleted or revoked account counts as signed out);
+  // Loads who is signed in and the family space they are looking at. Returns null when signed
+  // out. getUser() asks the auth server (so a deleted or revoked account counts as signed out);
   // the roster query runs alongside it so the check costs one round trip, not two.
+  //
+  // An account can be in several families (a parent in at most one, a sitter in any number), so
+  // the roster holds every member of every one of them. js/active-family.js picks the active
+  // family; household, role, membership, and members all describe that family only, and every
+  // page reads and writes through ctx.household.id. memberships lists all of them for the
+  // switcher.
   async function loadContext() {
     if (!client) throw new Error("sign-in unavailable");
     const { data: sessionData } = await client.auth.getSession();
@@ -177,7 +188,7 @@
 
     const [userResult, rosterResult] = await Promise.all([
       client.auth.getUser(),
-      // RLS returns only the caller's own family space (one per account).
+      // RLS returns the rosters of every family space the caller belongs to.
       client
         .from("household_members")
         .select("household_id, user_id, role, email, display_name, households(id, name, child_name, child_age_label)")
@@ -196,17 +207,39 @@
     if (rosterResult.error) throw rosterResult.error;
 
     const user = userResult.data.user;
-    const members = rosterResult.data || [];
-    const me = members.find((m) => m.user_id === user.id) || null;
+    const { memberships, membership, members } = families.splitRoster(
+      rosterResult.data || [],
+      user.id,
+      families.remembered(user.id)
+    );
+    // Pin this tab to the family it shows, so its next page stays on the same family even if
+    // another tab switches. The device's choice changes only on an explicit switch.
+    if (membership) families.pinTab(user.id, membership.household_id);
     return {
       client,
       user,
       email: user.email || "",
-      membership: me,
-      role: me ? me.role : null,
-      household: me ? me.households : null,
+      membership,
+      role: membership ? membership.role : null,
+      household: membership ? membership.households : null,
       members,
+      memberships,
     };
+  }
+
+  // Shows another of the caller's families: remembered for this tab and device, then that
+  // family's home page for the caller's role there. Never resolves (the page navigates away).
+  function switchFamily(ctx, householdId) {
+    const target = (ctx.memberships || []).find((m) => m.household_id === householdId);
+    if (!target) return Promise.resolve();
+    families.remember(ctx.user.id, householdId);
+    return go(HOME[target.role]);
+  }
+
+  // "Smith family (Sitter)" for the switcher.
+  function familyLabel(membership) {
+    const name = (membership.households && membership.households.name) || "Family space";
+    return `${name} (${membership.role === "parent" ? "Parent" : "Sitter"})`;
   }
 
   // Where a signed-in person belongs: their role's home, or onboarding with no family space.
@@ -286,6 +319,7 @@
 
     fillNames(ctx);
     mountChrome(ctx);
+    mountFamilyBar(ctx);
     reveal();
     return ctx;
   }
@@ -350,6 +384,30 @@
     }
   }
 
+  // With more than one family, a bar at the top of every app page says which one is showing and
+  // switches to another. With one family nothing changes.
+  function mountFamilyBar(ctx) {
+    const others = (ctx.memberships || []).filter((m) => m.household_id !== ctx.household.id);
+    if (!others.length || document.querySelector(".family-bar")) return;
+    const bar = document.createElement("div");
+    bar.className = "family-bar";
+    bar.innerHTML = `
+      <label class="family-bar-label" for="family-bar-select">Family space</label>
+      <select id="family-bar-select" class="family-bar-select">
+        ${ctx.memberships
+          .map(
+            (m) =>
+              `<option value="${escapeHtml(m.household_id)}"${m.household_id === ctx.household.id ? " selected" : ""}>${escapeHtml(familyLabel(m))}</option>`
+          )
+          .join("")}
+      </select>`;
+    bar.querySelector("select").addEventListener("change", (e) => {
+      e.currentTarget.disabled = true;
+      switchFamily(ctx, e.currentTarget.value);
+    });
+    document.body.prepend(bar);
+  }
+
   function legalFooterHtml() {
     return `<footer class="legal-footer">
       <a href="privacy.html">Privacy</a><span aria-hidden="true">·</span><a href="terms.html">Terms</a>
@@ -365,12 +423,22 @@
       accountDialog.setAttribute("aria-labelledby", "account-title");
       const roleLabel = ctx.role === "parent" ? "Parent" : "Sitter";
       const familyName = ctx.household ? ctx.household.name : "";
+      const others = (ctx.memberships || []).filter((m) => m.household_id !== (ctx.household && ctx.household.id));
+      const switcher = others.length
+        ? `<p class="account-meta">Switch to</p>${others
+            .map(
+              (m) =>
+                `<button type="button" class="photo-source-btn" data-switch-family="${escapeHtml(m.household_id)}">${escapeHtml(familyLabel(m))}</button>`
+            )
+            .join("")}`
+        : "";
       accountDialog.innerHTML = `
         <div class="confirm-dialog-body">
           <h2 class="panel-title" id="account-title">Your account</h2>
           <p class="account-who">Signed in as <strong>${escapeHtml(ctx.email)}</strong></p>
           <p class="account-meta">${escapeHtml(roleLabel)}${familyName ? ` in ${escapeHtml(familyName)}` : ""}</p>
           ${ctx.role === "parent" ? '<a class="photo-source-btn" href="people.html">People and invites</a>' : ""}
+          ${switcher}
           <button type="button" class="photo-source-btn" data-sign-out>Sign out</button>
           <button type="button" class="danger-btn" data-delete-account>Delete my account and data</button>
           <p class="form-error" role="alert" hidden data-account-error></p>
@@ -394,6 +462,12 @@
           errorEl.hidden = false;
           button.disabled = false;
         }
+      });
+      accountDialog.querySelectorAll("[data-switch-family]").forEach((button) => {
+        button.addEventListener("click", () => {
+          button.disabled = true;
+          switchFamily(ctx, button.dataset.switchFamily);
+        });
       });
       accountDialog
         .querySelector("[data-delete-account]")
@@ -436,12 +510,8 @@
   }
 
   async function deleteAccount(ctx) {
-    const consequence =
-      ctx.role === "parent"
-        ? "If you are the only parent, every photo of your family space is deleted from storage, then the family space and everything in it (care info, schedule, shifts, task checks, notes, messages, and invites) is permanently deleted, and your sitters lose access."
-        : ctx.role === "caretaker"
-          ? "You leave the family space. Task checks, notes, photos, and messages you sent stay in the family's history without your name."
-          : "Your account is permanently deleted.";
+    const memberships = ctx.memberships || [];
+    const consequence = families.deleteConsequence(memberships);
     const ok = await confirmDialog({
       title: "Delete your account and data?",
       body: `${consequence} Your sign-in account is deleted too. This cannot be undone.`,
@@ -468,8 +538,9 @@
       // (messages read "Photo removed by ...") and returns every object path, which are deleted
       // through the Storage API before the account. Any failure stops here with the account
       // kept, and a retry repeats both steps. For a caretaker, or a parent with a co-parent, the
-      // list is empty.
-      let error = ctx.role === "parent" ? await removeAllPhotos() : null;
+      // list is empty. It runs whichever family is showing: a parent viewing a family where they
+      // sit still owns their own family's photos.
+      let error = families.isParentAnywhere(memberships) ? await removeAllPhotos() : null;
       if (!error) ({ error } = await client.rpc("delete_my_account"));
       if (error) {
         if (errorEl) {
@@ -591,6 +662,7 @@
     },
     loadContext,
     homeFor,
+    switchFamily,
     friendlyError,
     confirmDialog,
     riskNoticeHtml,

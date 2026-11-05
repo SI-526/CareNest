@@ -150,7 +150,7 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 | --- | --- | --- |
 | `households` | Family space name, the first child's name and age label (transitional: the live client still writes these), optional home address | Created by `create_household`; parents edit name/child fields and the home address. Only current members read the address |
 | `children` | One row per child: name, age label, stage label, pinned note, order | Members read; parents add, edit, and delete. Reads, adds, and edits use column grants (delete is table-level): a child's household, id, and creation time are fixed, so a child never moves to another family space |
-| `household_members` | Parent and caretaker roles (one household per user) | Added only by RPCs; parents remove caretakers |
+| `household_members` | Parent and caretaker roles. An account is a parent of at most one family space (a partial unique index) and a sitter in any number, including while a parent elsewhere | Added only by RPCs; parents remove caretakers |
 | `invites` | Email-bound invites (token hash, 7-day expiry) | Created by `create_invite`; parents revoke |
 | `care_items` | Preferences, where things are, instructions, emergency steps, food/allergies (with severity). Food, preferences, and instructions belong to one child (`child_id`); where things are and emergency steps are family-wide (`child_id` is null, enforced by a check) | Parents. A composite foreign key means an item can only point at a child of its own family space. Deleting a child deletes that child's items |
 | `contacts` | People and places to call (including the hospital, with address), shared by the family space; at most one primary contact per family space (`is_primary`, a deferrable exclusion constraint, so one update can move primary to another contact) | Parents |
@@ -208,6 +208,16 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   child was deleted, the next such write creates a new first child. The copy runs one way only:
   a direct edit of a child does not change the household's columns. A later migration removes
   the triggers, `ensure_first_child`, and the household columns once no client uses them.
+- **Several families (SI-45).** `20261105000000_carenest_several_families.sql` lets a sitter
+  join more than one family space by invite; `create_household` still refuses anyone already in a
+  family space. RLS was already per family, so someone in two families reads both. The app shows
+  one at a time: `js/active-family.js` picks it (this tab's choice, then the last family chosen
+  on this device, then the family where they are a parent, then the first joined). Every query
+  filters on that family's id. Realtime subscriptions do too, except the `task_checks` and
+  `shift_events` listeners (no household column), which can only cause an extra reload of the
+  shown family. A family switcher appears at the top of each page and in the Account menu once
+  there is more than one. Deleting an account leaves every family it is in and deletes only
+  a family where it was the sole parent.
 - **Home address.** `households.home_address` is optional (empty when not set) and only parents write it. It is
   protected by the household's select policy, so only current members read it and a removed
   sitter loses access as soon as their membership row is gone, including on a Realtime

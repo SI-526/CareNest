@@ -3537,3 +3537,450 @@ function uuid(value) {
 function sha256(text) {
   return createHash("sha256").update(text).digest("hex");
 }
+
+// ---------------------------------------------------------------------------------------------
+// SI-45 slice B (20261105000000_carenest_several_families.sql): an account is a parent in at most
+// one family and a sitter in any number. Each test builds its own families.
+// ---------------------------------------------------------------------------------------------
+
+// `user` accepts a fresh invite into `householdId`, sent by `parent`. Returns the RPC result.
+async function joinByInvite(parent, householdId, user) {
+  const token = await parent.client.rpc("create_invite", {
+    target_household_id: householdId,
+    invite_email: user.email,
+  });
+  assert.ifError(token.error);
+  return user.client.rpc("accept_invite", { invite_token: token.data });
+}
+
+async function membershipsOf(userId) {
+  const { data, error } = await admin
+    .from("household_members")
+    .select("household_id, role")
+    .eq("user_id", userId)
+    .order("created_at");
+  assert.ifError(error);
+  return data;
+}
+
+// Two families, and family one's sitter also sits for family two.
+async function sharedSitter(label) {
+  const one = await newFamily(`${label}-1`, 1);
+  const two = await newFamily(`${label}-2`, 1);
+  const joined = await joinByInvite(two.parent, two.householdId, one.sitter);
+  assert.ifError(joined.error);
+  assert.equal(joined.data, two.householdId);
+  return { one, two, sitter: one.sitter };
+}
+
+test("several families: a sitter joins a second family by invite and reads both, and only both", async () => {
+  const { one, two, sitter } = await sharedSitter("multi-read");
+  const third = await newFamily("multi-read-3", 0);
+  assert.deepEqual(
+    (await membershipsOf(sitter.id)).map((m) => [m.household_id, m.role]),
+    [
+      [one.householdId, "caretaker"],
+      [two.householdId, "caretaker"],
+    ],
+  );
+  for (const household of [one.householdId, two.householdId]) {
+    const member = await sitter.client.rpc("is_member", { target_household_id: household });
+    assert.equal(member.data, true);
+    const parent = await sitter.client.rpc("is_parent", { target_household_id: household });
+    assert.equal(parent.data, false);
+  }
+  const { data: households } = await sitter.client.from("households").select("id");
+  assert.deepEqual(
+    households.map((h) => h.id).sort(),
+    [one.householdId, two.householdId].sort(),
+    "the sitter reads both families and no third",
+  );
+  const { data: roster } = await sitter.client.from("household_members").select("household_id, user_id");
+  assert.ok(roster.every((r) => [one.householdId, two.householdId].includes(r.household_id)));
+  assert.ok(!roster.some((r) => r.household_id === third.householdId));
+  const { data: plans } = await sitter.client.from("plans").select("household_id");
+  assert.deepEqual(new Set(plans.map((p) => p.household_id)), new Set([one.householdId, two.householdId]));
+
+  // Each family's parent still sees only their own family, not the other one the sitter is in.
+  for (const [family, other] of [
+    [one, two],
+    [two, one],
+  ]) {
+    const { data: theirs } = await family.parent.client.from("household_members").select("household_id");
+    assert.ok(theirs.every((r) => r.household_id === family.householdId), "a parent sees only their roster");
+    const { data: otherPlans } = await family.parent.client.from("plans").select("id").eq("household_id", other.householdId);
+    assert.deepEqual(otherPlans, []);
+    // household_sitter_profiles: the shared sitter shows to both parents, the other family's own
+    // sitter to neither of the wrong parents.
+    const profile = await sitter.client
+      .from("sitter_profiles")
+      .upsert({ display_name: "Shared Sitter" }, { onConflict: "user_id" });
+    assert.ifError(profile.error);
+    const profiles = await family.parent.client.rpc("household_sitter_profiles", {
+      target_household_id: family.householdId,
+    });
+    assert.ifError(profiles.error);
+    assert.ok(profiles.data.some((p) => p.user_id === sitter.id), "the shared sitter is listed");
+    const cross = await family.parent.client.rpc("household_sitter_profiles", {
+      target_household_id: other.householdId,
+    });
+    assert.deepEqual(cross.data ?? [], [], "no profiles of another family's sitters");
+  }
+});
+
+test("several families: messages and care logs stamp the role of the family they are written in", async () => {
+  const parentAlso = await newFamily("dual-role", 0);
+  const sits = await newFamily("dual-role-sits", 0);
+  // parentAlso.parent is a parent of their own family and now a sitter for `sits`.
+  assert.ifError((await joinByInvite(sits.parent, sits.householdId, parentAlso.parent)).error);
+  assert.deepEqual(
+    (await membershipsOf(parentAlso.parent.id)).map((m) => [m.household_id, m.role]),
+    [
+      [parentAlso.householdId, "parent"],
+      [sits.householdId, "caretaker"],
+    ],
+  );
+  const c = parentAlso.parent.client;
+  const own = await c.from("messages").insert({ household_id: parentAlso.householdId, kind: "chat", body: "Home" }).select("sender_role").single();
+  assert.ifError(own.error);
+  assert.equal(own.data.sender_role, "parent");
+  const away = await c.from("messages").insert({ household_id: sits.householdId, kind: "chat", body: "Sitting" }).select("sender_role").single();
+  assert.ifError(away.error);
+  assert.equal(away.data.sender_role, "caretaker");
+
+  // Parent rights stay in their own family: as a sitter elsewhere they cannot act as a parent.
+  assert.equal((await c.rpc("is_parent", { target_household_id: parentAlso.householdId })).data, true);
+  assert.equal((await c.rpc("is_parent", { target_household_id: sits.householdId })).data, false);
+  assertRpcError(
+    await c.rpc("create_invite", { target_household_id: sits.householdId, invite_email: "x@example.test" }),
+    "not_parent",
+  );
+  assertDenied(await c.from("households").update({ name: "Taken over" }).eq("id", sits.householdId).select());
+  assertDenied(await c.from("care_items").insert({ household_id: sits.householdId, category: "where", title: "x" }).select());
+  assertDenied(
+    await c.from("household_members").delete().eq("household_id", sits.householdId).eq("user_id", sits.sitter.id).select(),
+  );
+});
+
+test("several families: accept_invite refuses only a second membership in the same family", async () => {
+  const family = await newFamily("dup-join", 0);
+  const parent = family.parent;
+  const user = await signUp(`dup-join-user-${randomUUID().slice(0, 6)}`);
+
+  // Already a member (added directly), then an invite for them is accepted: refused, unused.
+  const token = await parent.client.rpc("create_invite", {
+    target_household_id: family.householdId,
+    invite_email: user.email,
+  });
+  assert.ifError(token.error);
+  const added = await admin
+    .from("household_members")
+    .insert({ household_id: family.householdId, user_id: user.id, role: "caretaker", email: user.email });
+  assert.ifError(added.error);
+  assertRpcError(await user.client.rpc("accept_invite", { invite_token: token.data }), "already_member");
+  const { data: invite } = await admin
+    .from("invites")
+    .select("accepted_at, accepted_by")
+    .eq("token_hash", sha256(token.data))
+    .single();
+  assert.deepEqual(invite, { accepted_at: null, accepted_by: null }, "the refused invite stays unused");
+
+  // The family's parent accepting an invite into their own family: also already_member.
+  const self = `${randomUUID()}${randomUUID()}`.replace(/-/g, "").slice(0, 64);
+  assert.ifError(
+    (
+      await admin.from("invites").insert({
+        household_id: family.householdId,
+        email: parent.email,
+        token_hash: sha256(self),
+      })
+    ).error,
+  );
+  assertRpcError(await parent.client.rpc("accept_invite", { invite_token: self }), "already_member");
+  assert.deepEqual(
+    (await membershipsOf(parent.id)).map((m) => m.role),
+    ["parent"],
+    "a parent never gains a sitter row in their own family",
+  );
+});
+
+test("several families: two invites to one family accepted at once make one membership", async (t) => {
+  if (!psqlAvailable()) return t.skip("psql is not installed");
+  const family = await newFamily("race-join", 0);
+  const user = await signUp(`race-join-user-${randomUUID().slice(0, 6)}`);
+  // create_invite keeps one live invite per address, so the second is inserted directly (as two
+  // create_invite calls at the same moment could leave).
+  const first = await family.parent.client.rpc("create_invite", {
+    target_household_id: family.householdId,
+    invite_email: user.email,
+  });
+  assert.ifError(first.error);
+  const second = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
+  assert.ifError(
+    (await admin.from("invites").insert({ household_id: family.householdId, email: user.email, token_hash: sha256(second) }))
+      .error,
+  );
+  // Real overlap: a session holds SHARE on household_members (reads go on, inserts wait) until
+  // both acceptances have passed every check and are waiting to insert. A check-then-insert
+  // version would let both through its check here and end with a raw 23505.
+  const holder = spawnPsql(
+    "begin; lock table public.household_members in share mode; select pg_sleep(6); commit;",
+  );
+  await waitFor(
+    () =>
+      psqlQuery(`select count(*) from pg_locks l join pg_class c on c.oid = l.relation
+                  where c.relname = 'household_members' and l.mode = 'ShareLock' and l.granted`) === "1",
+    5000,
+  );
+  const results = Promise.all(
+    [first.data, second].map((token) => user.client.rpc("accept_invite", { invite_token: token })),
+  );
+  await waitFor(
+    () =>
+      psqlQuery(`select count(*) from pg_stat_activity
+                  where query ilike '%accept_invite%' and wait_event_type = 'Lock'
+                    and pid <> pg_backend_pid()`) === "2",
+    5000,
+  );
+  assert.equal(await holder, 0);
+  const settled = await results;
+  const ok = settled.filter((r) => !r.error);
+  const refused = settled.filter((r) => r.error);
+  assert.equal(ok.length, 1, "exactly one acceptance succeeds");
+  assert.equal(refused.length, 1);
+  assert.match(refused[0].error.message, /already_member/, "the other gets already_member, not a raw 23505");
+  assert.equal((await membershipsOf(user.id)).length, 1);
+});
+
+test("several families: create_household still refuses any member, and an account is a parent of one family at most", async () => {
+  const { one, two, sitter } = await sharedSitter("create-block");
+  assertRpcError(
+    await sitter.client.rpc("create_household", { household_name: "Mine", acknowledged: true }),
+    "already_member",
+  );
+  assertRpcError(
+    await one.parent.client.rpc("create_household", { household_name: "Second", acknowledged: true }),
+    "already_member",
+  );
+  // A parent who sits elsewhere is refused too.
+  assert.ifError((await joinByInvite(two.parent, two.householdId, one.parent)).error);
+  assertRpcError(
+    await one.parent.client.rpc("create_household", { household_name: "Third", acknowledged: true }),
+    "already_member",
+  );
+
+  // The database rule, whatever path writes it: a second parent row is refused (23505), a
+  // second sitter row is not.
+  const asParent = await admin
+    .from("household_members")
+    .insert({ household_id: two.householdId, user_id: two.parent.id, role: "parent", email: "dup@example.test" });
+  assert.ok(asParent.error, "same family twice is refused by the primary key");
+  const newcomer = await newFamily("create-block-3", 0);
+  const secondParent = await admin
+    .from("household_members")
+    .insert({ household_id: newcomer.householdId, user_id: one.parent.id, role: "parent", email: one.parent.email });
+  assert.equal(secondParent.error?.code, "23505", "a parent of two families is refused");
+  const asSitter = await admin
+    .from("household_members")
+    .insert({ household_id: newcomer.householdId, user_id: two.parent.id, role: "caretaker", email: two.parent.email });
+  assert.ifError(asSitter.error);
+  // A co-parent (a second parent in the same family) is still allowed: the rule is per account.
+  const coParent = await signUp(`create-block-co-${randomUUID().slice(0, 6)}`);
+  assert.ifError(
+    (
+      await admin
+        .from("household_members")
+        .insert({ household_id: newcomer.householdId, user_id: coParent.id, role: "parent", email: coParent.email })
+    ).error,
+  );
+});
+
+test("several families: the parent-only unique index replaced the one-family index", () => {
+  const indexes = localSql(`
+    select indexname, indexdef
+      from pg_indexes
+     where schemaname = 'public' and tablename = 'household_members'
+     order by indexname`);
+  const names = indexes.map((i) => i.indexname);
+  assert.ok(!names.includes("household_members_one_household_per_user"), "the old index is gone");
+  const parentOnly = indexes.find((i) => i.indexname === "household_members_one_parent_household_per_user");
+  assert.ok(parentOnly, "the parent-only index exists");
+  assert.match(parentOnly.indexdef, /CREATE UNIQUE INDEX .* \(user_id\) WHERE \(role = 'parent'::text\)/);
+});
+
+test("several families: photos follow each family's membership, never the other family's", async () => {
+  const { one, two, sitter } = await sharedSitter("multi-photo");
+  const visitOne = await sitter.client.from("visits").insert({ plan_id: one.planId }).select("id").single();
+  const visitTwo = await sitter.client.from("visits").insert({ plan_id: two.planId }).select("id").single();
+  assert.ifError(visitOne.error);
+  assert.ifError(visitTwo.error);
+  const upload = (householdId, visit) =>
+    sitter.client.storage
+      .from("photos")
+      .upload(`${householdId}/${visit}/${randomUUID()}.jpg`, TINY_JPEG, { contentType: "image/jpeg" });
+
+  const inOne = await upload(one.householdId, visitOne.data.id);
+  const inTwo = await upload(two.householdId, visitTwo.data.id);
+  assert.ifError(inOne.error);
+  assert.ifError(inTwo.error);
+  // A path that mixes one family's folder with the other family's shift is refused.
+  assert.ok((await upload(one.householdId, visitTwo.data.id)).error, "family one folder, family two shift");
+  assert.ok((await upload(two.householdId, visitOne.data.id)).error, "family two folder, family one shift");
+
+  const pathOne = inOne.data.path;
+  const pathTwo = inTwo.data.path;
+  assert.ifError((await sitter.client.storage.from("photos").download(pathOne)).error);
+  assert.ifError((await sitter.client.storage.from("photos").download(pathTwo)).error);
+  // Each parent reads only their own family's photo.
+  assert.ifError((await one.parent.client.storage.from("photos").download(pathOne)).error);
+  assert.ok((await one.parent.client.storage.from("photos").download(pathTwo)).error);
+  assert.ok((await two.parent.client.storage.from("photos").download(pathOne)).error);
+
+  // Family one removes the sitter: family one's photos close to them at once, family two's stay.
+  const removed = await one.parent.client
+    .from("household_members")
+    .delete()
+    .eq("household_id", one.householdId)
+    .eq("user_id", sitter.id)
+    .select("user_id");
+  assert.equal(removed.data?.length, 1);
+  assert.deepEqual(
+    (await membershipsOf(sitter.id)).map((m) => m.household_id),
+    [two.householdId],
+    "removal from one family leaves the other membership",
+  );
+  assert.ok((await sitter.client.storage.from("photos").download(pathOne)).error, "removed: no read");
+  assert.ok((await upload(one.householdId, visitOne.data.id)).error, "removed: no upload");
+  const notDeleted = await sitter.client.storage.from("photos").remove([pathOne]);
+  assert.deepEqual(notDeleted.data ?? [], [], "removed: cannot delete their own upload there");
+  assert.ifError((await sitter.client.storage.from("photos").download(pathTwo)).error, "still reads family two");
+  const deleted = await sitter.client.storage.from("photos").remove([pathTwo]);
+  assert.ifError(deleted.error);
+  assert.equal(deleted.data?.length, 1, "still deletes their own unused upload in family two");
+});
+
+test("several families: a sitter in two families deletes their account; both families keep going", async () => {
+  const { one, two, sitter } = await sharedSitter("multi-delete");
+  const msg = await sitter.client.from("messages").insert({ household_id: two.householdId, kind: "chat", body: "Bye" }).select("id").single();
+  assert.ifError(msg.error);
+  // A sitter is the only parent of nothing, so there are no photos to remove first.
+  const photos = await sitter.client.rpc("remove_all_photos");
+  assert.ifError(photos.error);
+  assert.deepEqual(photos.data, []);
+  assert.ifError((await sitter.client.rpc("delete_my_account")).error);
+  assert.deepEqual(await membershipsOf(sitter.id), []);
+  for (const family of [one, two]) {
+    const { count } = await admin.from("households").select("*", { count: "exact", head: true }).eq("id", family.householdId);
+    assert.equal(count, 1, "the family survives");
+  }
+  const { data: kept } = await admin.from("messages").select("sender_id, body").eq("id", msg.data.id).single();
+  assert.deepEqual(kept, { sender_id: null, body: "Bye" }, "the message stays without their name");
+});
+
+test("several families: a parent who sits elsewhere deletes their account; only their own family goes", async () => {
+  const own = await newFamily("dual-delete-own", 1);
+  const sits = await newFamily("dual-delete-sits", 1);
+  const parent = own.parent;
+  assert.ifError((await joinByInvite(sits.parent, sits.householdId, parent)).error);
+
+  // A photo in each family, both uploaded by this parent (in `sits`, as its sitter).
+  const visitOwn = await parent.client.from("visits").insert({ plan_id: own.planId }).select("id").single();
+  const visitSits = await parent.client.from("visits").insert({ plan_id: sits.planId }).select("id").single();
+  assert.ifError(visitOwn.error);
+  assert.ifError(visitSits.error);
+  assert.ifError((await completeTask(parent, own.householdId, visitOwn.data.id, own.taskIds[0])).error);
+  assert.ifError((await completeTask(parent, sits.householdId, visitSits.data.id, sits.taskIds[0])).error);
+
+  // The app's flow: remove_all_photos covers only the family where they are the only parent.
+  assertRpcError(await parent.client.rpc("delete_my_account"), "photos_remaining");
+  const photos = await parent.client.rpc("remove_all_photos");
+  assert.ifError(photos.error);
+  assert.ok(photos.data.length > 0);
+  assert.ok(
+    photos.data.every((path) => path.startsWith(`${own.householdId}/`)),
+    "no photo of the family they sit for is touched",
+  );
+  assert.ifError((await parent.client.storage.from("photos").remove(photos.data)).error);
+  assert.ifError((await parent.client.rpc("delete_my_account")).error);
+
+  const count = async (table, column, value) =>
+    (await admin.from(table).select("*", { count: "exact", head: true }).eq(column, value)).count;
+  assert.equal(await count("households", "id", own.householdId), 0, "their own family is deleted");
+  assert.equal(await count("households", "id", sits.householdId), 1, "the family they sat for stays");
+  assert.equal(await count("visits", "id", visitSits.data.id), 1, "with the shift they worked");
+  assert.equal(
+    await count("messages", "visit_id", visitSits.data.id),
+    1,
+    "and their photo message, kept in that family's history",
+  );
+  const { data: sitsMembers } = await admin.from("household_members").select("user_id").eq("household_id", sits.householdId);
+  assert.ok(!sitsMembers.some((m) => m.user_id === parent.id));
+});
+
+test("several families: Realtime passes every family the caller is in, so the client filters to one", async () => {
+  const { one, two, sitter } = await sharedSitter("multi-realtime");
+  const outsiderFamily = await newFamily("multi-realtime-3", 0);
+  const seen = [];
+  const channel = await listenForUpdates(sitter.client, "multi", "households", seen);
+  try {
+    const touch = (family, i) =>
+      family.parent.client.from("households").update({ child_age_label: `tick ${i}` }).eq("id", family.householdId).select("id");
+    for (let i = 0; i < 40 && !seen.some((e) => e.new.id === one.householdId); i += 1) {
+      assert.ifError((await touch(one, i)).error);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    const marker = `last ${randomUUID().slice(0, 8)}`;
+    assert.ifError((await outsiderFamily.parent.client.from("households").update({ child_age_label: marker }).eq("id", outsiderFamily.householdId)).error);
+    assert.ifError((await two.parent.client.from("households").update({ child_age_label: marker }).eq("id", two.householdId)).error);
+    await waitFor(() => seen.some((e) => e.new.id === two.householdId && e.new.child_age_label === marker), 10000);
+    await realtimeSettled();
+    assert.deepEqual(
+      [...new Set(seen.map((e) => e.new.id))].sort(),
+      [one.householdId, two.householdId].sort(),
+      "both of the sitter's families, and not a third",
+    );
+  } finally {
+    await sitter.client.removeChannel(channel);
+    sitter.client.realtime.disconnect();
+  }
+});
+
+test("several families: the app's narrowed saves and flags queries return only the shown family", async () => {
+  // js/shift-data.js filters photo_saves and concept_flags through an inner join on the message.
+  const own = await newFamily("narrow-own", 1);
+  const sits = await newFamily("narrow-sits", 1);
+  const parent = own.parent;
+  assert.ifError((await joinByInvite(sits.parent, sits.householdId, parent)).error);
+  const visit = await own.sitter.client.from("visits").insert({ plan_id: own.planId }).select("id").single();
+  assert.ifError(visit.error);
+  assert.ifError((await completeTask(own.sitter, own.householdId, visit.data.id, own.taskIds[0])).error);
+  const { data: proof } = await admin.from("messages").select("id").eq("visit_id", visit.data.id).single();
+  assert.ifError((await parent.client.from("photo_saves").insert({ message_id: proof.id })).error);
+  assert.ifError((await parent.client.from("concept_flags").insert({ message_id: proof.id, text: "Concept" })).error);
+  // A flag in the family they sit for, set by that family's parent, readable to them as a member.
+  const sitsVisit = await sits.sitter.client.from("visits").insert({ plan_id: sits.planId }).select("id").single();
+  assert.ifError(sitsVisit.error);
+  assert.ifError((await completeTask(sits.sitter, sits.householdId, sitsVisit.data.id, sits.taskIds[0])).error);
+  const { data: sitsProof } = await admin.from("messages").select("id").eq("visit_id", sitsVisit.data.id).single();
+  assert.ifError((await sits.parent.client.from("concept_flags").insert({ message_id: sitsProof.id, text: "Other" })).error);
+
+  const allFlags = await parent.client.from("concept_flags").select("message_id");
+  assert.equal(allFlags.data.length, 2, "unfiltered, RLS returns both families' flags");
+  for (const [householdId, expected] of [
+    [own.householdId, [proof.id]],
+    [sits.householdId, [sitsProof.id]],
+  ]) {
+    const flags = await parent.client
+      .from("concept_flags")
+      .select("message_id, text, message:messages!inner(household_id)")
+      .eq("message.household_id", householdId);
+    assert.ifError(flags.error);
+    assert.deepEqual(flags.data.map((f) => f.message_id), expected);
+  }
+  const saves = await parent.client
+    .from("photo_saves")
+    .select("message_id, saved_at, message:messages!inner(id, household_id)")
+    .eq("message.household_id", sits.householdId);
+  assert.ifError(saves.error);
+  assert.deepEqual(saves.data, [], "no save of their own family shows in the other one");
+});

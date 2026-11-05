@@ -315,15 +315,22 @@
               .order("created_at", { ascending: false })
               .limit(THREAD_LIMIT)
           : { data: [] },
-        // RLS: each person reads only their own saves; flags of their household.
+        // RLS: each person reads only their own saves, and flags of every family they belong
+        // to, so both are narrowed to this family's messages (an inner join on the message).
         wantParent
           ? client
               .from("photo_saves")
-              .select(`message_id, saved_at, message:messages(${msgCols})`)
+              .select(`message_id, saved_at, message:messages!inner(${msgCols})`)
+              .eq("message.household_id", householdId)
               .order("saved_at", { ascending: false })
               .limit(THREAD_LIMIT)
           : none,
-        wantParent ? client.from("concept_flags").select("message_id, text") : none,
+        wantParent
+          ? client
+              .from("concept_flags")
+              .select("message_id, text, message:messages!inner(household_id)")
+              .eq("message.household_id", householdId)
+          : none,
         visit && (page === "home" || page === "parent")
           ? client
               .from("care_logs")
@@ -463,10 +470,12 @@
       const fresh = Array.from(unknownIds).filter((id) => !refetchedFor.has(id));
       if (fresh.length) {
         fresh.forEach((id) => refetchedFor.add(id));
-        // Same query as auth.js loadContext(); RLS scopes it to this family space.
+        // auth.js loadContext()'s roster, narrowed to this family space (RLS returns every
+        // family the caller belongs to).
         client
           .from("household_members")
           .select("household_id, user_id, role, email, display_name, households(id, name, child_name, child_age_label)")
+          .eq("household_id", householdId)
           .order("created_at", { ascending: true })
           .then((roster) => {
             if (roster.error) throw roster.error;
@@ -502,8 +511,11 @@
       if (shown) scheduleReload();
     }
 
-    // RLS limits every INSERT/UPDATE stream to this household, so the table-wide subscriptions
-    // are safe; DELETEs go through onChange's on-screen check.
+    // RLS limits every INSERT/UPDATE stream to the caller's families. messages, visits, and
+    // care_logs are filtered to this family; task_checks and shift_events have no household
+    // column, so someone in several families also hears the others' and reloads this one for
+    // nothing (the reload reads only this family's shift). DELETEs go through onChange's
+    // on-screen check.
     function subscribeRealtime() {
       const visitsFilter = data.planId ? { filter: `plan_id=eq.${data.planId}` } : {};
       client
