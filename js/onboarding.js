@@ -1,6 +1,7 @@
 // onboarding.html: a signed-in person with no family space creates one and becomes its parent.
 // create_household requires the at-your-own-risk acknowledgement (stored as
-// households.risk_acknowledged_at); the child's name and age are then saved on the new row.
+// households.risk_acknowledged_at) and makes the family's first child; its name and age are then saved
+// on that child row. More children are added in Family info.
 (function () {
   const auth = window.CareNestAuth;
   // Creating a family space is real-account work, so it ends this tab's ?demo=1 mode.
@@ -70,10 +71,17 @@
     }
     if (userId) window.CareNestFamilies.remember(userId, householdId);
     if (childName || childAge) {
-      const { error: childError } = await auth.client
-        .from("households")
-        .update({ child_name: childName, child_age_label: childAge })
-        .eq("id", householdId);
+      // create_household made the family's first child (SI-45); name it. A call already under way
+      // while the slice C migration deployed can have run the old body, which made no child: then
+      // add it, so the name typed here is never silently dropped.
+      const values = { name: childName, age_label: childAge };
+      const named = await auth.client.from("children").update(values).eq("household_id", householdId).select("id");
+      let childError = named.error;
+      if (!childError && !(named.data && named.data.length)) {
+        ({ error: childError } = await auth.client
+          .from("children")
+          .insert(Object.assign({ household_id: householdId, position: 0 }, values)));
+      }
       if (childError) {
         // The family space exists; only the child's details didn't save. Don't strand them here.
         showError(

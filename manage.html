@@ -43,13 +43,25 @@
             <button type="button" class="primary-btn" data-add="day-notes">Add a note</button>
           </section>
 
-          <section class="card auth-card" aria-labelledby="child-heading">
-            <h2 class="panel-title" id="child-heading">Your child</h2>
-            <form class="invite-form" id="child-form" novalidate>
-              <label class="field-label" for="child-name">Name</label>
-              <input class="text-input" id="child-name" name="child_name" type="text" maxlength="80" autocomplete="off" />
-              <label class="field-label" for="child-age">Age <span class="field-optional">(for example "Age 3")</span></label>
-              <input class="text-input" id="child-age" name="child_age_label" type="text" maxlength="40" autocomplete="off" />
+          <section class="card auth-card" aria-labelledby="children-heading">
+            <h2 class="panel-title" id="children-heading">Children</h2>
+            <p class="signin-note">
+              Each child has their own food and allergies, preferences, and instructions. Where
+              things are, emergency steps, contacts, and the schedule are shared by the family.
+            </p>
+            <ul class="people-list" id="list-children"></ul>
+            <button type="button" class="primary-btn" data-add="children">Add a child</button>
+          </section>
+
+          <section class="card auth-card" aria-labelledby="family-heading">
+            <h2 class="panel-title" id="family-heading">Family details</h2>
+            <form class="invite-form" id="family-form" novalidate>
+              <label class="field-label" for="home-address">Home address <span class="field-optional">(optional)</span></label>
+              <input class="text-input" id="home-address" name="home_address" type="text" maxlength="200" autocomplete="off" />
+              <p class="signin-note">Only people in this family space can see it. Your sitter loses it as soon as you remove them.</p>
+              <label class="field-label" for="primary-contact">Primary contact</label>
+              <select class="text-input" id="primary-contact" name="primary_contact"></select>
+              <p class="signin-note">Shown first on the Children page. Add people under Contacts below.</p>
               <button type="submit" class="primary-btn">Save</button>
               <p class="form-error" role="alert" hidden data-form-error></p>
             </form>
@@ -65,6 +77,12 @@
             </form>
             <ul class="people-list" id="list-tasks"></ul>
             <button type="button" class="primary-btn" data-add="tasks">Add a task</button>
+          </section>
+
+          <section class="card auth-card manage-child-picker" id="care-child-picker" aria-labelledby="care-child-label">
+            <label class="field-label" id="care-child-label" for="care-child">Food, preferences, and instructions for</label>
+            <select class="text-input" id="care-child"></select>
+            <p class="signin-note" id="care-child-empty" hidden>Add a child above first.</p>
           </section>
 
           <div id="care-sections"></div>
@@ -115,7 +133,7 @@
     <script src="js/supabase.js"></script>
     <script src="js/active-family.js"></script>
     <script src="js/auth.js"></script>
-    <script src="js/data.js"></script>
+    <script src="js/children.js"></script><script src="js/data.js"></script>
     <script src="js/family-data.js"></script>
     <script src="js/app.js"></script>
     <script src="js/manage.js"></script>

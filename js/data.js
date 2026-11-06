@@ -2,10 +2,14 @@
 // js/family-data.js replaces window.CareNestData with the real family before anything renders.
 //
 // The babysitter demo (Bethany) sits for two families and switches between them with the
-// "Family space" bar, one child per family, as the real app works today:
-//   thomas  Jack Thomas, age 3 (parent: Mary Ann Thomas)
+// "Family space" bar:
+//   thomas  Jack Thomas, age 3, and Kylie Thomas, age 6 (parent: Mary Ann Thomas)
 //   rivera  Sofia Rivera, age 6 (parent: Ana Rivera)
-// The parent demo is Mary Ann Thomas, so both sides tell the same story about Jack.
+// The parent demo is Mary Ann Thomas, so both sides tell the same story about Jack and Kylie.
+// Kylie has no food info on purpose, so the demo shows "No information provided" (SI-49).
+//
+// Food, preferences, and instructions live on each child (`children`); js/children.js flatten()
+// rebuilds the family-wide lists the older pages read.
 //
 // Everything a tester changes (care info, contacts, sessions, check-offs, care logs, messages,
 // the sitter profile) is kept in sessionStorage, so it lasts while the tab is open and is gone
@@ -89,7 +93,56 @@
       familyName: "Thomas family",
       parentName: "Mary Ann Thomas",
       babysitter: { name: "Bethany", avatar: "assets/bethany.png", address: "51900 Beck St., Grand Rapids, MI, 48091" },
-      child: { name: "Jack Thomas", age: "Age 3", avatar: "assets/avatar.png", dateLabel: todayLabel(), shiftTime: "3:00pm - 7:00pm" },
+      child: { name: "Jack Thomas", age: "Age 3", avatar: null, dateLabel: todayLabel(), shiftTime: "3:00pm - 7:00pm" },
+      homeAddress: "213 Maple Lane, Ann Arbor, MI 48104",
+      primaryContactId: "mary",
+      children: [
+        {
+          id: "jack",
+          name: "Jack Thomas",
+          age: "Age 3",
+          stage: "Preschooler",
+          pinnedNote: "",
+          position: 0,
+          careNote: "Epinephrine auto-injector (EpiPen) available in bathroom cabinet for use in the event of a severe allergic reaction.",
+          food: [
+            allergy("food-gluten", "Gluten-free", "Severe", "Avoid wheat, barley, and rye. Use separate utensils; check food labels.", "assets/gluten.png"),
+            allergy("food-dairy", "Dairy-free", "Mild", "Avoid milk, cheese, and butter. Serve dairy-free alternatives.", "assets/dairy.png"),
+            allergy("food-nuts", "Nut-free", "Severe", "Avoid nuts and nut traces. Follow the child’s allergy care plan.", "assets/nuts.png"),
+          ],
+          preferences: [
+            { id: "pref-comfort", title: "Comfort item", detail: "Jack calms down with his blue stuffed elephant, Ellie. She usually lives on his bed." },
+            { id: "pref-activities", title: "Favorite activities", detail: "Building with Duplo blocks, dinosaur books, and playing tag outside." },
+            { id: "pref-foods", title: "Favorite foods", detail: "Apples, rice crackers, and pasta. Not a fan of broccoli, so offer peas instead." },
+            { id: "pref-screens", title: "Screen time", detail: "Up to 30 minutes of PBS Kids on the living room TV. No tablets or phones." },
+            { id: "pref-upset", title: "When he is upset", detail: "Offer a hug and count to five together. A quiet book on the couch usually helps." },
+          ],
+          instructions: [
+            { id: "ins-labels", title: "Check every label", detail: "Only serve food that is gluten-, dairy-, and nut-free. When in doubt, don’t serve it." },
+            { id: "ins-hands", title: "Handwashing", detail: "Wash hands before every meal and snack, and after the playground." },
+            { id: "ins-outside", title: "Outside the house", detail: "Hold hands in parking lots and near the road. Put on sunscreen before the playground." },
+            { id: "ins-bath", title: "Bath time", detail: "Keep the water lukewarm and never leave Jack alone in the tub, even for a moment." },
+            { id: "ins-bed", title: "Bedtime", detail: "Pajamas, brush teeth, then two books. Lights out by 7:30pm with Ellie and the night light on." },
+            { id: "ins-updates", title: "Updates for Mary", detail: "Send Mary a quick text after the playground and after dinner." },
+          ],
+        },
+        {
+          id: "kylie",
+          name: "Kylie Thomas",
+          age: "Age 6",
+          stage: "1st Grader",
+          pinnedNote: "Currently recovering from a cold",
+          position: 1,
+          careNote: "",
+          food: [],
+          preferences: [
+            { id: "kylie-pref-reading", title: "Reading", detail: "Loves chapter books. She will read to you if you ask." },
+          ],
+          instructions: [
+            { id: "kylie-ins-rest", title: "Rest", detail: "She is getting over a cold: quiet play inside, and plenty of water." },
+          ],
+        },
+      ],
       dayNotes: [
         {
           id: "demo-pickup",
@@ -125,16 +178,7 @@
       ],
       knowTiles: KNOW_TILES,
       categories: {
-        preferences: {
-          title: "Preferences",
-          items: [
-            { id: "pref-comfort", title: "Comfort item", detail: "Jack calms down with his blue stuffed elephant, Ellie. She usually lives on his bed." },
-            { id: "pref-activities", title: "Favorite activities", detail: "Building with Duplo blocks, dinosaur books, and playing tag outside." },
-            { id: "pref-foods", title: "Favorite foods", detail: "Apples, rice crackers, and pasta. Not a fan of broccoli, so offer peas instead." },
-            { id: "pref-screens", title: "Screen time", detail: "Up to 30 minutes of PBS Kids on the living room TV. No tablets or phones." },
-            { id: "pref-upset", title: "When he is upset", detail: "Offer a hug and count to five together. A quiet book on the couch usually helps." },
-          ],
-        },
+        preferences: { title: "Preferences", items: [] },
         where: {
           title: "Where things are",
           items: [
@@ -146,21 +190,11 @@
             { id: "where-stroller", title: "Stroller", detail: "Garage, just left of the door into the house." },
           ],
         },
-        instructions: {
-          title: "Instructions",
-          items: [
-            { id: "ins-labels", title: "Check every label", detail: "Only serve food that is gluten-, dairy-, and nut-free. When in doubt, don’t serve it." },
-            { id: "ins-hands", title: "Handwashing", detail: "Wash hands before every meal and snack, and after the playground." },
-            { id: "ins-outside", title: "Outside the house", detail: "Hold hands in parking lots and near the road. Put on sunscreen before the playground." },
-            { id: "ins-bath", title: "Bath time", detail: "Keep the water lukewarm and never leave Jack alone in the tub, even for a moment." },
-            { id: "ins-bed", title: "Bedtime", detail: "Pajamas, brush teeth, then two books. Lights out by 7:30pm with Ellie and the night light on." },
-            { id: "ins-updates", title: "Updates for Mary", detail: "Send Mary a quick text after the playground and after dinner." },
-          ],
-        },
+        instructions: { title: "Instructions", items: [] },
         emergency: {
           title: "If something goes wrong",
           summary: "Emergency steps, hospital, and who to call",
-          callout: { text: "If Jack is in danger, not breathing, or having a severe allergic reaction, call 911 first.", label: "Call 911", href: "tel:911" },
+          callout: { text: "If Jack or Kylie is in danger, not breathing, or having a severe allergic reaction, call 911 first.", label: "Call 911", href: "tel:911" },
           steps: [
             { id: "step-calm", title: "Stay calm.", detail: "Move Jack away from anything that could hurt him." },
             { id: "step-911", title: "Call 911 right away", detail: "if he is not breathing, will not wake up, is badly hurt, or is having a severe allergic reaction." },
@@ -183,12 +217,8 @@
       allergies: {
         title: "Food & allergies",
         sectionTitle: "Dietary restrictions",
-        careNote: "Epinephrine auto-injector (EpiPen) available in bathroom cabinet for use in the event of a severe allergic reaction.",
-        items: [
-          allergy("food-gluten", "Gluten-free", "Severe", "Avoid wheat, barley, and rye. Use separate utensils; check food labels.", "assets/gluten.png"),
-          allergy("food-dairy", "Dairy-free", "Mild", "Avoid milk, cheese, and butter. Serve dairy-free alternatives.", "assets/dairy.png"),
-          allergy("food-nuts", "Nut-free", "Severe", "Avoid nuts and nut traces. Follow the child’s allergy care plan.", "assets/nuts.png"),
-        ],
+        careNote: null,
+        items: [],
       },
       // Today's shift as the tester finds it: the first two tasks done, with care logs.
       shiftSeed: {
@@ -235,6 +265,36 @@
       parentName: "Ana Rivera",
       babysitter: { name: "Bethany", avatar: "assets/bethany.png", address: "2214 Packard St, Ann Arbor, MI 48104" },
       child: { name: "Sofia Rivera", age: "Age 6", avatar: null, dateLabel: todayLabel(), shiftTime: "3:15pm - 8:00pm" },
+      homeAddress: "1802 Granger Ave, Ann Arbor, MI 48104",
+      primaryContactId: "ana",
+      children: [
+        {
+          id: "sofia",
+          name: "Sofia Rivera",
+          age: "Age 6",
+          stage: "Kindergartner",
+          pinnedNote: "",
+          position: 0,
+          careNote: "Children's Benadryl is in the kitchen cabinet above the microwave. Sofia's allergy is not severe enough for an EpiPen.",
+          food: [
+            allergy("rivera-food-egg", "Egg-free", "Moderate", "No eggs or foods made with egg, including most baked goods and fresh pasta."),
+            allergy("rivera-food-sugar", "Limit sweets", "Mild", "One small treat after dinner at most."),
+          ],
+          preferences: [
+            { id: "rivera-pref-comfort", title: "Comfort item", detail: "A purple blanket called Moo. It lives on her bed and comes to the couch for reading." },
+            { id: "rivera-pref-activities", title: "Favorite activities", detail: "Drawing, LEGO Friends, and dancing to the Encanto soundtrack." },
+            { id: "rivera-pref-foods", title: "Favorite foods", detail: "Clementines, quesadillas, and rice. She'll try new vegetables if she can dip them." },
+            { id: "rivera-pref-screens", title: "Screen time", detail: "One show after homework is finished. No screens after dinner." },
+            { id: "rivera-pref-upset", title: "When she is upset", detail: "Give her a few minutes with Moo, then ask her to draw what happened. She opens up while drawing." },
+          ],
+          instructions: [
+            { id: "rivera-ins-eggs", title: "No eggs", detail: "Check labels for egg, including baked goods and pasta. Her egg-free snacks have a green sticker." },
+            { id: "rivera-ins-homework", title: "Homework", detail: "Reading first, then the worksheet. Help only if she asks; she likes to try first." },
+            { id: "rivera-ins-outside", title: "Outside", detail: "She can ride her scooter on the sidewalk with a helmet. Not past the corner." },
+            { id: "rivera-ins-bed", title: "Bedtime", detail: "Lights out at 8:00pm (7:45pm tonight). She sleeps with the hall light on." },
+          ],
+        },
+      ],
       dayNotes: [
         {
           id: "rivera-library",
@@ -262,16 +322,7 @@
       ],
       knowTiles: KNOW_TILES,
       categories: {
-        preferences: {
-          title: "Preferences",
-          items: [
-            { id: "rivera-pref-comfort", title: "Comfort item", detail: "A purple blanket called Moo. It lives on her bed and comes to the couch for reading." },
-            { id: "rivera-pref-activities", title: "Favorite activities", detail: "Drawing, LEGO Friends, and dancing to the Encanto soundtrack." },
-            { id: "rivera-pref-foods", title: "Favorite foods", detail: "Clementines, quesadillas, and rice. She'll try new vegetables if she can dip them." },
-            { id: "rivera-pref-screens", title: "Screen time", detail: "One show after homework is finished. No screens after dinner." },
-            { id: "rivera-pref-upset", title: "When she is upset", detail: "Give her a few minutes with Moo, then ask her to draw what happened. She opens up while drawing." },
-          ],
-        },
+        preferences: { title: "Preferences", items: [] },
         where: {
           title: "Where things are",
           items: [
@@ -282,15 +333,7 @@
             { id: "rivera-where-pajamas", title: "Pajamas", detail: "Top drawer of her dresser." },
           ],
         },
-        instructions: {
-          title: "Instructions",
-          items: [
-            { id: "rivera-ins-eggs", title: "No eggs", detail: "Check labels for egg, including baked goods and pasta. Her egg-free snacks have a green sticker." },
-            { id: "rivera-ins-homework", title: "Homework", detail: "Reading first, then the worksheet. Help only if she asks; she likes to try first." },
-            { id: "rivera-ins-outside", title: "Outside", detail: "She can ride her scooter on the sidewalk with a helmet. Not past the corner." },
-            { id: "rivera-ins-bed", title: "Bedtime", detail: "Lights out at 8:00pm (7:45pm tonight). She sleeps with the hall light on." },
-          ],
-        },
+        instructions: { title: "Instructions", items: [] },
         emergency: {
           title: "If something goes wrong",
           summary: "Emergency steps, hospital, and who to call",
@@ -316,11 +359,8 @@
       allergies: {
         title: "Food & allergies",
         sectionTitle: "Dietary restrictions",
-        careNote: "Children's Benadryl is in the kitchen cabinet above the microwave. Sofia's allergy is not severe enough for an EpiPen.",
-        items: [
-          allergy("rivera-food-egg", "Egg-free", "Moderate", "No eggs or foods made with egg, including most baked goods and fresh pasta."),
-          allergy("rivera-food-sugar", "Limit sweets", "Mild", "One small treat after dinner at most."),
-        ],
+        careNote: null,
+        items: [],
       },
       shiftSeed: {
         startedMinutesAgo: 70,
@@ -362,20 +402,30 @@
 
   const familyId = isParentView() ? "thomas" : chosenFamily();
 
+  // What the pages read but the family does not store twice: each child's items as family-wide
+  // lists (js/children.js), and the primary contact.
+  function derive(data) {
+    if (window.CareNestChildren) window.CareNestChildren.flatten(data);
+    data.primaryContact = data.contacts.find((c) => c.id === data.primaryContactId) || null;
+    data.categories.emergency.contacts = data.contacts; // one list, as when signed in
+    nameChildren(data);
+    return data;
+  }
+
   function load(id) {
     if (inDemo()) {
       try {
         const saved = JSON.parse(sessionStorage.getItem(dataKey(id)) || "null");
-        if (saved && typeof saved === "object") {
+        // A tab saved before children existed has no `children`: start that family afresh.
+        if (saved && typeof saved === "object" && Array.isArray(saved.children)) {
           saved.child.dateLabel = todayLabel();
-          saved.categories.emergency.contacts = saved.contacts; // one list, as when signed in
-          return saved;
+          return derive(saved);
         }
       } catch (e) {
         /* unreadable: start from the sample */
       }
     }
-    return FAMILIES[id]();
+    return derive(FAMILIES[id]());
   }
 
   window.CareNestData = load(familyId);
@@ -403,16 +453,48 @@
     return `${hours % 12 === 0 ? 12 : hours % 12}:${match[2]}${hours >= 12 ? "pm" : "am"}`;
   }
 
-  // The rows the parent editors (js/secondary.js) write, applied to this tab's demo family.
-  // Returns an error, or null when saved.
-  function applyWrite(table, action, values, id) {
+  const PER_CHILD = ["food", "preferences", "instructions"];
+
+  function childById(id) {
+    return window.CareNestData.children.find((child) => child.id === id) || null;
+  }
+
+  // The Call 911 callout names the children, as js/family-data.js does when signed in.
+  function nameChildren(data) {
+    if (window.CareNestChildren) data.categories.emergency.callout.text = window.CareNestChildren.emergencyText(data.children);
+  }
+
+  // The rows the parent editors (js/children-page.js, js/secondary.js) write, applied to this tab's demo
+  // family. `scope` is { id } or { household_id } from .eq(). Returns { error, id }.
+  function applyWrite(table, action, values, scope) {
     const data = window.CareNestData;
     values = values || {};
+    const id = scope.id;
+    let createdId = null;
     if (table === "households" && action === "update") {
-      if ("child_name" in values) data.child.name = values.child_name || "Child";
-      if ("child_age_label" in values) data.child.age = values.child_age_label || "";
-      const first = data.child.name.split(/\s+/)[0];
-      data.categories.emergency.callout.text = `If ${first} is in danger, not breathing, or having a severe allergic reaction, call 911 first.`;
+      // An old-style save of the first child's name or age, as the database's sync trigger does.
+      const first = data.children[0];
+      if (first && "child_name" in values) first.name = values.child_name || "";
+      if (first && "child_age_label" in values) first.age = values.child_age_label || "";
+      if ("home_address" in values) data.homeAddress = values.home_address || "";
+    } else if (table === "children") {
+      const fields = {};
+      if ("name" in values) fields.name = values.name || "";
+      if ("age_label" in values) fields.age = values.age_label || "";
+      if ("stage_label" in values) fields.stage = values.stage_label || "";
+      if ("pinned_note" in values) fields.pinnedNote = values.pinned_note || "";
+      if ("position" in values) fields.position = Number(values.position) || 0;
+      if (action === "insert") {
+        createdId = newId("child");
+        data.children.push(Object.assign({ id: createdId, name: "", age: "", stage: "", pinnedNote: "", position: 0, careNote: "", food: [], preferences: [], instructions: [] }, fields));
+      } else if (action === "delete") {
+        // As the database cascades: the child's own items go with it.
+        data.children = data.children.filter((child) => child.id !== id);
+      } else {
+        const child = childById(id);
+        if (!child) return { error: new Error("That child is no longer here. Reload the page.") };
+        Object.assign(child, fields);
+      }
     } else if (table === "plans" && action === "update") {
       if ("schedule" in values) data.child.shiftTime = values.schedule || "";
     } else if (table === "tasks") {
@@ -426,67 +508,95 @@
       else if (values.archived_at) data.schedule = data.schedule.filter((t) => t.id !== id);
       else Object.assign(data.schedule.find((t) => t.id === id) || {}, fields);
     } else if (table === "contacts") {
-      if (action === "delete") data.contacts = data.contacts.filter((c) => c.id !== id);
-      else {
-        const row = contact(action === "insert" ? newId("contact") : id, values.name || "Contact", values.role || "", values.phone || "");
+      if ("is_primary" in values) {
+        // One primary contact per family, as the database's unique index allows.
+        if (values.is_primary) data.primaryContactId = id;
+        else if (!id || data.primaryContactId === id) data.primaryContactId = null;
+      }
+      const fields = ["name", "role", "phone", "address"].filter((key) => key in values);
+      if (action === "delete") {
+        data.contacts = data.contacts.filter((c) => c.id !== id);
+        if (data.primaryContactId === id) data.primaryContactId = null;
+      } else if (action === "insert") {
+        createdId = newId("contact");
+        const row = contact(createdId, values.name || "Contact", values.role || "", values.phone || "");
         row.address = values.address || "";
-        if (action === "insert") data.contacts.push(row);
-        else {
-          const existing = data.contacts.find((c) => c.id === id);
-          if (existing) Object.assign(existing, row, { avatar: existing.avatar });
+        data.contacts.push(row);
+        if (values.is_primary) data.primaryContactId = createdId;
+      } else if (fields.length) {
+        const existing = data.contacts.find((c) => c.id === id);
+        if (existing) {
+          const merged = Object.assign({ name: existing.name, role: existing.role, phone: existing.phone, address: existing.address }, values);
+          Object.assign(existing, contact(id, merged.name || "Contact", merged.role || "", merged.phone || "", existing.avatar), { address: merged.address || "" });
         }
       }
-      data.categories.emergency.contacts = data.contacts;
     } else if (table === "care_items") {
-      const category = action === "insert" ? values.category : findCategory(id);
-      if (!category) return new Error("That item is no longer here. Reload the page.");
-      const list = category === "food" ? data.allergies.items : category === "emergency" ? data.categories.emergency.steps : data.categories[category].items;
+      const found = action === "insert" ? null : findItem(id);
+      const category = action === "insert" ? values.category : found && found.category;
+      if (!category) return { error: new Error("That item is no longer here. Reload the page.") };
+      let list;
+      if (PER_CHILD.includes(category)) {
+        // A save with no child goes to the first child, as the database's default-child trigger does.
+        const owner = found ? found.child : childById(values.child_id) || data.children[0];
+        if (!owner) return { error: new Error("Add a child first.") };
+        list = owner[category];
+      } else {
+        list = category === "emergency" ? data.categories.emergency.steps : data.categories[category].items;
+      }
       const index = list.findIndex((item) => item.id === id);
       if (action === "delete") {
         if (index >= 0) list.splice(index, 1);
       } else {
+        const itemId = index >= 0 ? id : (createdId = newId(category));
         const item =
           category === "food"
-            ? allergy(index >= 0 ? id : newId("food"), values.title, values.severity || "", values.detail || "", index >= 0 ? list[index].image : null)
-            : { id: index >= 0 ? id : newId(category), title: values.title, detail: values.detail || "" };
+            ? allergy(itemId, values.title, values.severity || "", values.detail || "", index >= 0 ? list[index].image : null)
+            : { id: itemId, title: values.title, detail: values.detail || "" };
         if (index >= 0) list.splice(index, 1, item);
         else list.push(item);
       }
     } else {
-      return new Error("This can't be changed in the demo.");
+      return { error: new Error("This can't be changed in the demo.") };
     }
-    return save();
+    derive(data);
+    return { error: save(), id: createdId || id };
   }
 
-  function findCategory(id) {
+  // Which list holds a care item: a child's own, or a family-wide category.
+  function findItem(id) {
     const data = window.CareNestData;
-    if (data.allergies.items.some((item) => item.id === id)) return "food";
-    if (data.categories.emergency.steps.some((step) => step.id === id)) return "emergency";
-    return ["preferences", "where", "instructions"].find((key) => data.categories[key].items.some((item) => item.id === id)) || null;
+    for (const child of data.children) {
+      const category = PER_CHILD.find((key) => child[key].some((item) => item.id === id));
+      if (category) return { category, child };
+    }
+    if (data.categories.emergency.steps.some((step) => step.id === id)) return { category: "emergency" };
+    if (data.categories.where.items.some((item) => item.id === id)) return { category: "where" };
+    return null;
   }
 
   // Just enough of the Supabase client's query builder for the parent editors:
-  // from(table).insert(values) / .update(values).eq("id", id) / .delete().eq("id", id).
+  // from(table).insert(values) / .update(values).eq(column, value) / .delete().eq("id", id).
   const client = {
     from(table) {
       let action = null;
       let values = null;
-      let id = null;
+      const scope = {};
       const builder = {
         insert(v) { action = "insert"; values = v; return builder; },
         update(v) { action = "update"; values = v; return builder; },
         delete() { action = "delete"; return builder; },
-        eq(column, value) { if (column === "id") id = value; return builder; },
+        eq(column, value) { scope[column] = value; return builder; },
         select() { return builder; },
         single() { return builder; },
         then(resolve, reject) {
-          let error = null;
+          let result;
           try {
-            error = applyWrite(table, action, values, id);
+            result = applyWrite(table, action, values, scope);
           } catch (e) {
-            error = e;
+            result = { error: e };
           }
-          return Promise.resolve({ data: error ? null : [{ id }], error }).then(resolve, reject);
+          const row = { id: result.id };
+          return Promise.resolve({ data: result.error ? null : Object.assign([row], row), error: result.error || null }).then(resolve, reject);
         },
       };
       return builder;

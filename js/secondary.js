@@ -1,4 +1,4 @@
-// Schedule, care log, child profile, and profile/settings pages. Parents see the same
+// Schedule, care log, and profile/settings pages (children.html is js/children-page.js). Parents see the same
 // information as sitters and can edit family-owned information in place.
 (function () {
   const data = window.CareNestData;
@@ -222,21 +222,6 @@
     });
   }
 
-  function careSection(key, label, items, editable) {
-    const rows = items.length
-      ? items.map((item) => `<li class="secondary-row"><span><strong>${esc(item.title || item.name)}</strong><small>${esc(item.detail || item.description || item.severity || "")}</small></span>${editable && item.id ? `<button class="photo-source-btn secondary-row-action" type="button" data-edit="care" data-category="${key}" data-id="${esc(item.id)}">Edit</button>` : ""}</li>`).join("")
-      : '<li class="secondary-row"><span><small>No information added yet.</small></span></li>';
-    return `<section class="panel secondary-panel"><div class="secondary-panel-heading"><h2 class="section-title">${label}</h2>${editable ? `<button class="photo-source-btn secondary-add" type="button" data-add="care" data-category="${key}">Add</button>` : ""}</div><ul class="secondary-list">${rows}</ul></section>`;
-  }
-
-  function contactsSection(editable) {
-    const contacts = data.contacts || [];
-    const rows = contacts.length
-      ? contacts.map((contact) => `<li class="secondary-row"><span><strong>${esc(contact.name)}</strong><small>${esc([contact.role, contact.phone].filter(Boolean).join(" · "))}</small></span>${editable && contact.id ? `<button class="photo-source-btn secondary-row-action" type="button" data-edit="contact" data-id="${esc(contact.id)}">Edit</button>` : ""}</li>`).join("")
-      : '<li class="secondary-row"><span><small>No contacts added yet.</small></span></li>';
-    return `<section class="panel secondary-panel"><div class="secondary-panel-heading"><h2 class="section-title">Care team</h2>${editable ? '<button class="photo-source-btn secondary-add" type="button" data-add="contact">Add</button>' : ""}</div><ul class="secondary-list">${rows}</ul></section>`;
-  }
-
   function render(ctx) {
     // Household members can view this information, but only the parent can change it.
     // Keeping this check tied to the membership role prevents a sitter opened on a
@@ -244,7 +229,6 @@
     const isParent = Boolean(ctx && ctx.role === "parent");
     // Demo parents edit too; their changes stay in this browser tab (js/data.js).
     const editable = Boolean(isParent && (ctx.demo ? demo : ctx.client && ctx.household));
-    const child = data.child || {};
     const views = {
       schedule: {
         eyebrow: "", title: "Schedule", intro: "",
@@ -255,13 +239,9 @@
         // Both roles land here, so each link goes to that role's side of the page.
         body: `<section class="secondary-grid"><article class="panel secondary-panel"><h2 class="section-title">Current session log</h2><p class="supporting-copy">Completed activities and care updates appear here during the session.</p><a class="secondary-link" href="${isParent ? "parent.html#today" : "index.html#log"}">Open today’s activity</a></article><article class="panel secondary-panel"><h2 class="section-title">Messages</h2><p class="supporting-copy">${isParent ? "Your conversation with your sitter, including photo messages." : "Your conversation with the family, including photo messages."}</p><a class="secondary-link" href="${isParent ? "messages.html?as=parent" : "messages.html"}">Open messages</a></article><article class="panel secondary-panel"><h2 class="section-title">Photo updates</h2><p class="supporting-copy">Photos and moments shared with the care team.</p><a class="secondary-link" href="${isParent ? "gallery.html?as=parent" : "gallery.html"}">Open photo updates</a></article><article class="panel secondary-panel"><h2 class="section-title">Past sessions</h2><p class="supporting-copy">Review prior care sessions and their shared updates.</p></article></section>`,
       },
-      children: {
-        eyebrow: "CHILD PROFILE", title: child.name || "Child profile", intro: "The permanent information that supports every care session.",
-        body: `<section class="panel secondary-panel child-profile-card"><div class="secondary-panel-heading"><h2 class="section-title">Child profile</h2>${editable ? '<button class="photo-source-btn secondary-add" type="button" data-edit="child">Edit</button>' : ""}</div><p class="supporting-copy">${esc(child.name || "Child")}${child.age ? ` · ${esc(child.age)}` : ""}</p></section><div class="secondary-grid">${careSection("food", "Food & allergies", data.allergies.items || [], editable)}${careSection("preferences", "Routine & preferences", data.categories.preferences.items || [], editable)}${careSection("where", "Where things are", data.categories.where.items || [], editable)}${careSection("instructions", "Instructions", data.categories.instructions.items || [], editable)}${careSection("emergency", "Emergency steps", data.categories.emergency.steps || [], editable)}${contactsSection(editable)}</div>`,
-      },
       profile: {
         eyebrow: "PROFILE & SETTINGS", title: ctx && ctx.role === "parent" ? "Your CareNest settings" : "Your sitter profile", intro: ctx && ctx.role === "parent" ? "Manage your details and the family space with confidence." : "Choose what parents can see, and keep your personal preferences in one place.",
-        body: ctx && ctx.role === "parent" ? `<section class="secondary-grid"><div class="account-slot" data-account-panel></div><article class="panel secondary-panel"><h2 class="section-title">Manage household</h2><p class="supporting-copy">Use the Children and Schedule tabs to edit family care information directly where it is shown.</p></article><article class="panel secondary-panel"><h2 class="section-title">Notification preferences</h2><p class="supporting-copy">Notification controls will appear here as they become available.</p></article></section>` : `${sitterProfile()}<div class="account-slot account-slot-wide" data-account-panel></div>`,
+        body: ctx && ctx.role === "parent" ? `<section class="secondary-grid"><div class="account-slot" data-account-panel></div><article class="panel secondary-panel"><h2 class="section-title">Manage household</h2><p class="supporting-copy">Edit each child on the Children tab, sessions on the Schedule tab, and everything else in <a href="manage.html">Family info</a>.</p></article><article class="panel secondary-panel"><h2 class="section-title">Notification preferences</h2><p class="supporting-copy">Notification controls will appear here as they become available.</p></article></section>` : `${sitterProfile()}<div class="account-slot account-slot-wide" data-account-panel></div>`,
       },
     }[page];
     if (!views) return;
@@ -556,7 +536,6 @@
       if (!button) return;
       const kind = button.dataset.edit || button.dataset.add;
       const id = button.dataset.id;
-      if (kind === "child") return openDialog("Edit child profile", [{ name: "child_name", label: "Name" }, { name: "child_age_label", label: "Age" }], { child_name: ctx.household.child_name || data.child.name, child_age_label: ctx.household.child_age_label || data.child.age }, (values) => client.from("households").update(values).eq("id", householdId));
       if (kind === "hours") return openDialog("Edit shift hours", [{ name: "schedule", label: "Usual shift hours" }], { schedule: data.child.shiftTime || "" }, async (values) => client.from("plans").update(values).eq("id", await planId()));
       if (kind === "task") {
         const row = data.schedule.find((item) => item.id === id) || {};
@@ -565,22 +544,6 @@
           values.time_of_day = toDatabaseTime(values.time_of_day);
           return row.id ? client.from("tasks").update(values).eq("id", row.id) : client.from("tasks").insert(Object.assign(values, { plan_id: await planId(), position: data.schedule.length }));
         }, row.id ? { name: row.title, run: () => client.from("tasks").update({ archived_at: new Date().toISOString() }).eq("id", row.id) } : null);
-      }
-      if (kind === "contact") {
-        const row = (data.contacts || []).find((item) => item.id === id) || {};
-        const fields = [{ name: "name", label: "Name" }, { name: "role", label: "Role" }, { name: "phone", label: "Phone" }, { name: "address", label: "Address" }];
-        return openDialog(row.id ? "Edit contact" : "Add contact", fields, row, (values) => row.id ? client.from("contacts").update(values).eq("id", row.id) : client.from("contacts").insert(Object.assign(values, { household_id: householdId, position: data.contacts.length })), row.id ? { name: row.name, run: () => client.from("contacts").delete().eq("id", row.id) } : null);
-      }
-      if (kind === "care") {
-        const category = button.dataset.category;
-        const source = category === "food" ? data.allergies.items : data.categories[category].items;
-        const row = source.find((item) => item.id === id) || {};
-        const fields = [{ name: "title", label: category === "food" ? "Food or allergy" : "Title", required: true }, { name: "detail", label: "Details", type: "textarea", required: false }].concat(category === "food" ? [{ name: "severity", label: "Severity", type: "select", options: ["Mild", "Moderate", "Severe"], required: false }] : []);
-        const values = category === "food" ? { title: row.name, detail: row.description, severity: row.severity } : row;
-        return openDialog(row.id ? `Edit ${category}` : `Add ${category}`, fields, values, (saved) => {
-          if (category === "food" && !saved.severity) saved.severity = null;
-          return row.id ? client.from("care_items").update(saved).eq("id", row.id) : client.from("care_items").insert(Object.assign(saved, { household_id: householdId, category, position: source.length }));
-        }, row.id ? { name: row.title || row.name, run: () => client.from("care_items").delete().eq("id", row.id) } : null);
       }
     });
   }

@@ -2733,7 +2733,7 @@ function realtimeSettled() {
   return new Promise((resolve) => setTimeout(resolve, 500));
 }
 
-test("children: a new family gets one first child, and the seed's care info is on it", async () => {
+test("children: create_household makes one blank first child, and the seed's care info is on its children", async () => {
   const family = await familyWithChild("first");
   assert.equal(family.firstChild.name, "");
   assert.equal(family.firstChild.age_label, "");
@@ -2741,7 +2741,8 @@ test("children: a new family gets one first child, and the seed's care info is o
   assert.equal(family.firstChild.pinned_note, "");
   assert.equal(family.firstChild.position, 0);
 
-  // However a household row appears, it gets its child, with the household's own values.
+  // Slice C: create_household makes the child, not a trigger, so a household inserted directly
+  // (only the service role can) starts with none.
   const direct = await admin
     .from("households")
     .insert({
@@ -2754,21 +2755,26 @@ test("children: a new family gets one first child, and the seed's care info is o
     .single();
   assert.ifError(direct.error);
   createdHouseholdIds.push(direct.data.id);
-  const [child, ...rest] = await childrenOf(direct.data.id);
-  assert.deepEqual([child.name, child.age_label, rest.length], ["Ada", "Age 4", 0]);
+  assert.deepEqual(await childrenOf(direct.data.id), [], "no trigger creates a child any more");
+  const [trigger] = localSql("select count(*) as n from pg_trigger where tgname = 'households_create_first_child'");
+  assert.equal(Number(trigger.n), 0, "households_create_first_child is gone");
 
-  const [demo, ...others] = await childrenOf(DEMO_HOUSEHOLD_ID);
-  assert.equal(demo.name, "Jack Thomas");
+  // The seed names its children itself: Jack first, Kylie second.
+  const [demo, kylie, ...others] = await childrenOf(DEMO_HOUSEHOLD_ID);
+  assert.deepEqual([demo.name, demo.stage_label], ["Jack Thomas", "Preschooler"]);
+  assert.deepEqual([kylie.name, kylie.pinned_note], ["Kylie Thomas", "Currently recovering from a cold"]);
   assert.equal(others.length, 0);
   const { data: items, error } = await admin
     .from("care_items")
-    .select("category, child_id")
+    .select("category, child_id, title")
     .eq("household_id", DEMO_HOUSEHOLD_ID);
   assert.ifError(error);
   assert.ok(items.length, "the demo family has care items");
+  const kylieTitles = ["Reading", "Rest"];
   for (const item of items) {
     const perChild = ["food", "preferences", "instructions"].includes(item.category);
-    assert.equal(item.child_id, perChild ? demo.id : null, `demo ${item.category} item`);
+    const owner = kylieTitles.includes(item.title) ? kylie.id : demo.id;
+    assert.equal(item.child_id, perChild ? owner : null, `demo ${item.category} item ${item.title}`);
   }
 });
 
@@ -3088,8 +3094,9 @@ test("children: the migration's backfill gives each family one child and moves i
   // migration: no child, and care items with no child id.
   const result = psqlScript(`
     begin;
-    alter table public.households disable trigger households_create_first_child;
     alter table public.care_items disable trigger care_items_default_child;
+    -- Slice C's check postdates these rows too, so it is off for this rolled-back look back.
+    alter table public.care_items drop constraint care_items_per_child_has_child;
     insert into public.households (id, name, child_name, child_age_label, risk_acknowledged_at)
     values ('${named}', 'Named', 'Ada', 'Age 4', now());
     insert into public.households (id, name, risk_acknowledged_at)
@@ -3370,6 +3377,66 @@ test("children: a care item cannot point at another family's child or leave its 
   const moved = await a.from("care_items").update({ child_id: second.id }).eq("id", id).select().single();
   assert.ifError(moved.error);
   assert.equal(moved.data.child_id, second.id, "moving between the family's own children is allowed");
+});
+
+test("children (slice C): the per-child check exists and the second migration validated it", () => {
+  const [check] = localSql(
+    "select convalidated as valid, pg_get_constraintdef(oid) as def from pg_constraint where conname = 'care_items_per_child_has_child'",
+  );
+  assert.ok(check, "care_items_per_child_has_child exists");
+  assert.equal(check.valid, true, "the second migration validated it");
+  assert.match(check.def, /child_id IS NOT NULL/);
+});
+
+test("children (slice C): food, preferences, and instructions must name a child", (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this test needs a direct database connection");
+    return;
+  }
+  // With the old client's default-child trigger off (rolled back), nothing fills child_id, so the
+  // check alone decides. A family-wide category with no child is still fine.
+  const household = uuid(randomUUID());
+  const run = (category) =>
+    psqlScript(`
+      begin;
+      alter table public.care_items disable trigger care_items_default_child;
+      insert into public.households (id, name, risk_acknowledged_at) values ('${household}', 'Check', now());
+      insert into public.care_items (household_id, category, title) values ('${household}', '${category}', 'x');
+      rollback;`);
+  for (const category of ["food", "preferences", "instructions"]) {
+    const refused = run(category);
+    assert.notEqual(refused.code, 0, `${category} with no child is refused`);
+    assert.match(refused.stderr, /care_items_per_child_has_child/, `${category}: refused by the new check`);
+  }
+  for (const category of ["where", "emergency"]) {
+    const kept = run(category);
+    assert.equal(kept.code, 0, `${category} stays family-wide: ${kept.stderr}`);
+  }
+});
+
+test("children (slice C): onboarding names the first child directly, and an old tab's onboarding still reaches it", async () => {
+  // The new client: create_household, then an update of the child row it made.
+  const fresh = await familyWithChild("onboard-new");
+  const named = await fresh.parent.client
+    .from("children")
+    .update({ name: "Ada", age_label: "Age 4" })
+    .eq("household_id", fresh.household)
+    .select("id");
+  assert.ifError(named.error);
+  assert.deepEqual(named.data.map((row) => row.id), [fresh.firstChild.id], "exactly the one child");
+  const [child] = await childrenOf(fresh.household);
+  assert.deepEqual([child.name, child.age_label], ["Ada", "Age 4"]);
+
+  // A tab still on the old client: the same RPC, then the household columns.
+  const old = await familyWithChild("onboard-old");
+  const saved = await old.parent.client
+    .from("households")
+    .update({ child_name: "Bea", child_age_label: "Age 2" })
+    .eq("id", old.household)
+    .select("id");
+  assert.ifError(saved.error);
+  const kids = await childrenOf(old.household);
+  assert.deepEqual(kids.map((c) => [c.id, c.name, c.age_label]), [[old.firstChild.id, "Bea", "Age 2"]]);
 });
 
 test("children: a sitter or outsider saving a care item into a family with no children makes no child", async () => {
