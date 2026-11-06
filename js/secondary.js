@@ -113,6 +113,28 @@
   const displayMonth = (key) => parseDate(key).toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const sessionHours = (item) => `${item.start_time || ""}${item.end_time ? ` – ${item.end_time}` : ""}`;
   const initials = (name) => String(name || "CareNest").split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
+  // "3:00 PM" or "3:00pm" to "15:00" for an <input type="time">; anything else gives the fallback.
+  const inputTime = (value, fallback) => {
+    const found = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(value || "");
+    if (!found) return fallback;
+    let hour = Number(found[1]);
+    if (found[3].toLowerCase() === "pm" && hour < 12) hour += 12;
+    if (found[3].toLowerCase() === "am" && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, "0")}:${found[2]}`;
+  };
+  // Appointments and tasks hang off a plan, but onboarding doesn't create one. A family's first
+  // booking or task makes it here, so a save never depends on a plan that isn't there yet.
+  async function ensurePlanId(ctx) {
+    if (data.planId) return data.planId;
+    const client = ctx.client;
+    const householdId = ctx.household.id;
+    const current = await client.from("plans").select("id").eq("household_id", householdId).order("position").limit(1);
+    if (current.error) throw current.error;
+    if (current.data[0]) return (data.planId = current.data[0].id);
+    const created = await client.from("plans").insert({ household_id: householdId, title: "Daily schedule" }).select("id").single();
+    if (created.error) throw created.error;
+    return (data.planId = created.data.id);
+  }
 
   function demoAppointments() {
     const today = new Date();
@@ -210,7 +232,8 @@
     // Household members can view this information, but only the parent can change it.
     // Keeping this check tied to the membership role prevents a sitter opened on a
     // parent-looking URL from being offered controls that row-level security rejects.
-    const editable = Boolean(ctx && ctx.role === "parent" && !ctx.demo && ctx.client && ctx.household);
+    const isParent = Boolean(ctx && ctx.role === "parent");
+    const editable = Boolean(isParent && !ctx.demo && ctx.client && ctx.household);
     const child = data.child || {};
     const editNote = ctx && ctx.demo ? '<p class="secondary-edit-note">Sign in as a parent to edit this information.</p>' : "";
     const views = {
@@ -220,7 +243,8 @@
       },
       carelog: {
         eyebrow: "CURRENT SESSION", title: "Care log", intro: "Notes, photos, and handoff details from the care session.",
-        body: `<section class="secondary-grid"><article class="panel secondary-panel"><h2 class="section-title">Current session log</h2><p class="supporting-copy">Completed activities and care updates appear here during the session.</p><a class="secondary-link" href="parent.html#today">Open today’s activity</a></article><article class="panel secondary-panel"><h2 class="section-title">Photo updates</h2><p class="supporting-copy">Photos and moments shared with the care team.</p><a class="secondary-link" href="gallery.html?as=parent">Open photo updates</a></article><article class="panel secondary-panel"><h2 class="section-title">Past sessions</h2><p class="supporting-copy">Review prior care sessions and their shared updates.</p></article></section>`,
+        // Both roles land here, so each link goes to that role's side of the page.
+        body: `<section class="secondary-grid"><article class="panel secondary-panel"><h2 class="section-title">Current session log</h2><p class="supporting-copy">Completed activities and care updates appear here during the session.</p><a class="secondary-link" href="${isParent ? "parent.html#today" : "index.html#log"}">Open today’s activity</a></article><article class="panel secondary-panel"><h2 class="section-title">Messages</h2><p class="supporting-copy">${isParent ? "Your conversation with your sitter, including photo messages." : "Your conversation with the family, including photo messages."}</p><a class="secondary-link" href="${isParent ? "messages.html?as=parent" : "messages.html"}">Open messages</a></article><article class="panel secondary-panel"><h2 class="section-title">Photo updates</h2><p class="supporting-copy">Photos and moments shared with the care team.</p><a class="secondary-link" href="${isParent ? "gallery.html?as=parent" : "gallery.html"}">Open photo updates</a></article><article class="panel secondary-panel"><h2 class="section-title">Past sessions</h2><p class="supporting-copy">Review prior care sessions and their shared updates.</p></article></section>`,
       },
       children: {
         eyebrow: "CHILD PROFILE", title: child.name || "Child profile", intro: "The permanent information that supports every care session.",
@@ -257,8 +281,9 @@
     const label = pageEl.querySelector("[data-date-label]");
     const status = pageEl.querySelector("[data-request-status]");
     const today = pageEl.dataset.today;
-    const currentAppointment = () => appointments.find((item) => item.date === selected);
-    const taskItems = () => ((currentAppointment() && currentAppointment().activities) || []).slice().sort((a, b) => timeValue(a.time) - timeValue(b.time));
+    // A day can hold more than one session (the table is unique on plan, date, and start time).
+    const dayAppointments = (date) => appointments.filter((item) => item.date === date).sort((a, b) => timeValue(a.start_time) - timeValue(b.start_time));
+    const sortedActivities = (appointment) => (Array.isArray(appointment.activities) ? appointment.activities : []).slice().sort((a, b) => timeValue(a.time) - timeValue(b.time));
     const eventDates = () => new Set(appointments.map((item) => item.date));
     const openRequest = (date) => requests.find((item) => item.date === date);
     const parentFirst = () => String(data.parentName || "").trim().split(/\s+/)[0] || "";
@@ -271,12 +296,23 @@
     function appointmentHtml(item) {
       return `<article class="upcoming-shift"><div><p><strong>${esc(displayDate(item.date))}</strong><span>${esc(sessionHours(item))}</span></p><small>Children: ${esc(data.child && data.child.name || "Child")} · Caregiver: ${esc(data.babysitter && data.babysitter.name || "Caregiver")}</small></div><div class="schedule-people"><span class="schedule-avatar">${esc(initials(data.child && data.child.name))}</span><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span></div></article>`;
     }
-    function listHtml() {
-      const appointment = currentAppointment();
-      if (!appointment) return emptyHtml();
+    function sessionHtml(appointment, several) {
+      const activities = sortedActivities(appointment);
+      const id = esc(appointment.id);
+      const notes = appointment.note ? `<aside class="schedule-notes"><strong>Today’s Notes</strong><p>${esc(appointment.note)}</p></aside>` : "";
+      const heading = several ? `<h3 class="schedule-session-heading">Session ${esc(sessionHours(appointment))}</h3>` : "";
       // A booked session with no activities yet is still a schedule: show its hours, not "Request".
-      if (!taskItems().length) return `<div class="schedule-empty"><p>Session ${esc(sessionHours(appointment))}</p><small>No activities added yet.</small>${editable ? '<button class="schedule-empty-button" type="button" data-edit-schedule>Edit Schedule</button>' : ""}</div>${appointment.note ? `<aside class="schedule-notes"><strong>Today’s Notes</strong><p>${esc(appointment.note)}</p></aside>` : ""}`;
-      return `<ol class="schedule-activity-list">${taskItems().map((item) => `<li><time>${esc(item.time || "Any time")}</time><div><strong>${esc(item.title)}</strong>${item.detail || item.location ? `<p>${esc(item.detail || item.location)}</p>` : ""}</div></li>`).join("")}</ol>${appointment.note ? `<aside class="schedule-notes"><strong>Today’s Notes</strong><p>${esc(appointment.note)}</p></aside>` : ""}${editable ? '<button type="button" class="schedule-edit-button" data-edit-schedule>Edit Schedule</button>' : ""}`;
+      if (!activities.length && !several) return `<div class="schedule-empty"><p>Session ${esc(sessionHours(appointment))}</p><small>No activities added yet.</small>${editable ? `<button class="schedule-empty-button" type="button" data-edit-schedule="${id}">Edit Schedule</button>` : ""}</div>${notes}`;
+      const list = activities.length
+        ? `<ol class="schedule-activity-list">${activities.map((item) => `<li><time>${esc(item.time || "Any time")}</time><div><strong>${esc(item.title)}</strong>${item.detail || item.location ? `<p>${esc(item.detail || item.location)}</p>` : ""}</div></li>`).join("")}</ol>`
+        : '<p class="schedule-session-empty">No activities added yet.</p>';
+      return `${heading}${list}${notes}${editable ? `<button type="button" class="schedule-edit-button" data-edit-schedule="${id}">Edit Schedule</button>` : ""}`;
+    }
+    function listHtml() {
+      const sessions = dayAppointments(selected);
+      if (!sessions.length) return emptyHtml();
+      if (sessions.length === 1) return sessionHtml(sessions[0], false);
+      return sessions.map((appointment) => `<section class="schedule-session">${sessionHtml(appointment, true)}</section>`).join("");
     }
     function emptyHtml() {
       const parent = parentFirst();
@@ -299,8 +335,8 @@
     function render() {
       const isToday = selected === today;
       // The current card follows today's real booking, whichever day the list has selected.
-      const booked = appointments.find((item) => item.date === today);
-      pageEl.querySelector("[data-current-session-time]").textContent = booked ? sessionHours(booked) : "No session today";
+      const booked = dayAppointments(today);
+      pageEl.querySelector("[data-current-session-time]").textContent = booked.length ? booked.map(sessionHours).join(", ") : "No session today";
       label.textContent = view === "calendar" ? displayMonth(selected) : `${displayDate(selected)}${isToday ? " (Today)" : ""}`;
       content.innerHTML = view === "list" ? listHtml() : calendarHtml();
       upcomingEl.innerHTML = appointments.filter((item) => item.date > today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4).map(appointmentHtml).join("") || '<p class="schedule-no-upcoming">No upcoming shifts scheduled.</p>';
@@ -345,13 +381,13 @@
       setStatus("Request dismissed.");
       render();
     }
-    function openBooking() {
-      const existing = currentAppointment();
-      const activityList = existing && Array.isArray(existing.activities) ? existing.activities.slice() : [];
+    // appointmentId: the session to edit; none books a new session on `date`.
+    function openBooking(appointmentId, date) {
+      const existing = appointmentId ? appointments.find((item) => item.id === appointmentId) : null;
+      const activityList = existing && Array.isArray(existing.activities) ? existing.activities.map((item) => ({ ...item })) : [];
       const dialog = document.createElement("dialog");
       dialog.className = "confirm-dialog manage-dialog";
-      const toInputTime = (value, fallback) => { const found = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(value || ""); if (!found) return fallback; let hour = Number(found[1]); if (found[3].toLowerCase() === "pm" && hour < 12) hour += 12; if (found[3].toLowerCase() === "am" && hour === 12) hour = 0; return `${String(hour).padStart(2, "0")}:${found[2]}`; };
-      dialog.innerHTML = `<form class="confirm-dialog-body schedule-details-form" method="dialog"><div class="schedule-details-header"><button class="schedule-close" type="button" aria-label="Close">×</button><h2 class="panel-title">Schedule Details</h2><button class="schedule-save" value="save">Save</button></div><label class="field-label" for="appointment-date">Date</label><input class="text-input" id="appointment-date" name="date" type="date" required min="${today}" value="${selected}"><div class="schedule-time-fields"><label class="field-label" for="appointment-start">Start time<input class="text-input" id="appointment-start" name="start" type="time" required value="${toInputTime(existing && existing.start_time, "15:00")}"></label><label class="field-label" for="appointment-end">End time<input class="text-input" id="appointment-end" name="end" type="time" required value="${toInputTime(existing && existing.end_time, "19:00")}"></label></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Children</strong><small>Select all that apply</small></div><button type="button" class="schedule-choice selected" data-child-choice><span class="schedule-avatar">${esc(initials(data.child && data.child.name))}</span>${esc(data.child && data.child.name || "Child")}</button><input type="hidden" name="children" value="${esc(data.child && data.child.name || "Child")}"></div><div class="schedule-detail-group"><strong>Caregiver</strong><div class="schedule-caregiver-choice"><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span>${esc(data.babysitter && data.babysitter.name || "Caregiver")} <span>›</span></div></div><div class="schedule-detail-group"><strong>Activities</strong><div class="schedule-editor-activities">${activityList.map((item) => `<div><time>${esc(item.time || "Any time")}</time><span><b>${esc(item.title)}</b>${item.detail || item.location ? `<small>${esc(item.detail || item.location)}</small>` : ""}</span><button type="button" data-edit-activity="${esc(item.id)}" aria-label="Edit ${esc(item.title)}">✎</button></div>`).join("")}</div><button class="schedule-add-activity" type="button" data-add-activity>＋ Add Activity</button></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Today’s Notes</strong><small>Optional</small></div><textarea class="text-input manage-textarea" name="note" rows="3" placeholder="Anything else the caregiver should know?">${esc(existing && existing.note || "")}</textarea></div><p class="form-error" hidden></p></form>`;
+      dialog.innerHTML = `<form class="confirm-dialog-body schedule-details-form" method="dialog"><div class="schedule-details-header"><button class="schedule-close" type="button" aria-label="Close">×</button><h2 class="panel-title">Schedule Details</h2><button class="schedule-save" value="save">Save</button></div><label class="field-label" for="appointment-date">Date</label><input class="text-input" id="appointment-date" name="date" type="date" required min="${today}" value="${esc(existing ? existing.date : date || selected)}"><div class="schedule-time-fields"><label class="field-label" for="appointment-start">Start time<input class="text-input" id="appointment-start" name="start" type="time" required value="${inputTime(existing && existing.start_time, "15:00")}"></label><label class="field-label" for="appointment-end">End time<input class="text-input" id="appointment-end" name="end" type="time" required value="${inputTime(existing && existing.end_time, "19:00")}"></label></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Children</strong><small>Select all that apply</small></div><button type="button" class="schedule-choice selected" data-child-choice><span class="schedule-avatar">${esc(initials(data.child && data.child.name))}</span>${esc(data.child && data.child.name || "Child")}</button><input type="hidden" name="children" value="${esc(data.child && data.child.name || "Child")}"></div><div class="schedule-detail-group"><strong>Caregiver</strong><div class="schedule-caregiver-choice"><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span>${esc(data.babysitter && data.babysitter.name || "Caregiver")} <span>›</span></div></div><div class="schedule-detail-group"><strong>Activities</strong><div class="schedule-editor-activities">${activityList.map((item) => `<div><time>${esc(item.time || "Any time")}</time><span><b>${esc(item.title)}</b>${item.detail || item.location ? `<small>${esc(item.detail || item.location)}</small>` : ""}</span><button type="button" data-edit-activity="${esc(item.id)}" aria-label="Edit ${esc(item.title)}">✎</button></div>`).join("")}</div><button class="schedule-add-activity" type="button" data-add-activity>＋ Add Activity</button></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Today’s Notes</strong><small>Optional</small></div><textarea class="text-input manage-textarea" name="note" rows="3" placeholder="Anything else the caregiver should know?">${esc(existing && existing.note || "")}</textarea></div><p class="form-error" hidden></p></form>`;
       document.body.appendChild(dialog);
       dialog.querySelector(".schedule-close").addEventListener("click", () => dialog.close("cancel"));
       dialog.querySelector("[data-child-choice]").addEventListener("click", (event) => {
@@ -361,26 +397,38 @@
         input.value = choice.classList.contains("selected") ? (data.child && data.child.name || "Child") : "";
       });
       dialog.addEventListener("close", async () => {
-        if (dialog.returnValue !== "save") return dialog.remove();
+        // Clear it now: Esc and cancel don't set returnValue, so a stale "save" from a failed
+        // attempt would make the next Esc save again instead of cancelling.
+        const action = dialog.returnValue;
+        dialog.returnValue = "";
+        if (action !== "save") return dialog.remove();
         const form = dialog.querySelector("form"), values = Object.fromEntries(new FormData(form).entries());
         const errorEl = dialog.querySelector(".form-error");
+        const showError = (text) => { errorEl.textContent = text; errorEl.hidden = false; dialog.showModal(); };
         const missing = !values.date ? "Enter a date." : !values.start ? "Enter a start time." : !values.end ? "Enter an end time." : !values.children ? "Select at least one child." : values.end <= values.start ? "End time must be after the start time." : "";
-        if (missing) { errorEl.textContent = missing; errorEl.hidden = false; dialog.showModal(); return; }
+        if (missing) return showError(missing);
+        const clash = appointments.find((other) => other.date === values.date && !(existing && other.id === existing.id) && inputTime(other.start_time, "") < values.end && values.start < inputTime(other.end_time, ""));
+        if (clash) return showError(`This overlaps the ${sessionHours(clash)} session that day.`);
         const format = (value) => new Date(`2000-01-01T${value}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-        const item = { id: existing && existing.id || `appointment-${Date.now()}`, date: values.date, start_time: format(values.start), end_time: format(values.end), note: values.note.trim(), activities: activityList };
+        const item = { id: existing ? existing.id : `appointment-${Date.now()}`, date: values.date, start_time: format(values.start), end_time: format(values.end), note: values.note.trim(), activities: activityList };
         try {
-          if (ctx && !ctx.demo && ctx.client && data.planId) {
-            const valuesToSave = { household_id: ctx.household.id, plan_id: data.planId, appointment_date: item.date, start_time: values.start, end_time: values.end, note: item.note, activities: item.activities };
-            const { household_id, plan_id, ...editable } = valuesToSave; // an appointment never moves to another family space or plan
-            const result = existing && existing.id ? await ctx.client.from("appointments").update(editable).eq("id", existing.id) : await ctx.client.from("appointments").insert(valuesToSave).select("id").single();
+          if (live) {
+            const fields = { appointment_date: item.date, start_time: values.start, end_time: values.end, note: item.note, activities: item.activities };
+            // An appointment never moves to another family space or plan, so updates leave those alone.
+            const result = existing
+              ? await ctx.client.from("appointments").update(fields).eq("id", existing.id).select("id")
+              : await ctx.client.from("appointments").insert({ household_id: ctx.household.id, plan_id: await ensurePlanId(ctx), ...fields }).select("id").single();
+            if (result.error && result.error.code === "23505") return showError("There's already a session starting at that time on this day.");
             if (result.error) throw result.error;
-            if (!(existing && existing.id) && result.data && result.data.id) item.id = result.data.id; // so an edit before Realtime catches up targets the real row
+            // RLS turns a refused or vanished update into zero rows, not an error.
+            if (existing && !(result.data && result.data.length)) return showError("This session couldn't be saved. It may have been changed or removed. Reload the page and try again.");
+            if (!existing && result.data && result.data.id) item.id = result.data.id; // so an edit before Realtime catches up targets the real row
           }
-          const existingIndex = existing ? appointments.findIndex((appointment) => appointment.id === existing.id) : appointments.findIndex((appointment) => appointment.date === item.date);
+          const existingIndex = existing ? appointments.findIndex((appointment) => appointment.id === existing.id) : -1;
           if (existingIndex >= 0) appointments.splice(existingIndex, 1, item); else appointments.push(item);
           requests = requests.filter((request) => request.date !== item.date); // the database resolves it too
           selected = item.date; setStatus(existing ? "Schedule saved." : "Schedule added."); render(); dialog.remove();
-        } catch (error) { const errorEl = dialog.querySelector(".form-error"); errorEl.textContent = auth.friendlyError(error); errorEl.hidden = false; dialog.showModal(); }
+        } catch (error) { showError(auth.friendlyError(error)); }
       });
       dialog.addEventListener("click", async (event) => {
         const button = event.target.closest("[data-add-activity], [data-edit-activity], [data-save-activity]");
@@ -391,7 +439,7 @@
           dialog.querySelector(".schedule-inline-activity")?.remove();
           const editor = document.createElement("div");
           editor.className = "schedule-inline-activity";
-          editor.innerHTML = `<label>Time<input class="text-input" name="activity-time" type="time" value="${toInputTime(row.time, "15:00")}"></label><label>Activity<input class="text-input" name="activity-title" value="${esc(row.title || "")}" placeholder="Activity name"></label><label>Notes<textarea class="text-input" name="activity-detail" rows="2" placeholder="Notes">${esc(row.detail || "")}</textarea></label><button class="schedule-save" type="button" data-save-activity="${esc(row.id || "")}">Save activity</button>`;
+          editor.innerHTML = `<label>Time<input class="text-input" name="activity-time" type="time" value="${inputTime(row.time, row.id ? "" : "15:00")}"></label><label>Activity<input class="text-input" name="activity-title" value="${esc(row.title || "")}" placeholder="Activity name"></label><label>Notes<textarea class="text-input" name="activity-detail" rows="2" placeholder="Notes">${esc(row.detail || "")}</textarea></label><button class="schedule-save" type="button" data-save-activity="${esc(row.id || "")}">Save activity</button>`;
           dialog.querySelector(".schedule-add-activity")?.parentElement.appendChild(editor);
           editor.querySelector("input[name=activity-title]").focus();
           return;
@@ -400,7 +448,8 @@
         const title = editor.querySelector("[name=activity-title]").value.trim();
         if (!title) return editor.querySelector("[name=activity-title]").focus();
         const rawTime = editor.querySelector("[name=activity-time]").value;
-        const displayTime = new Date(`2000-01-01T${rawTime}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).replace(" ", "").toLowerCase();
+        // A cleared time means "Any time", not new Date("2000-01-01T"), which is Invalid Date.
+        const displayTime = rawTime ? new Date(`2000-01-01T${rawTime}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).replace(" ", "").toLowerCase() : "";
         const values = { title, time: displayTime, detail: editor.querySelector("[name=activity-detail]").value.trim(), location: null };
         const existingTask = activityList.find((item) => item.id === button.dataset.saveActivity);
         try {
@@ -416,9 +465,14 @@
       if (target.dataset.date) { selected = addDays(selected, target.dataset.date === "next" ? 1 : -1); render(); }
       if (target.dataset.calendarDate) { selected = target.dataset.calendarDate; render(); }
       if (target.matches("[data-request-schedule]")) requestSchedule(target);
-      if (target.dataset.requestAdd) { selected = target.dataset.requestAdd; view = "list"; render(); openBooking(); }
+      if (target.dataset.requestAdd) { selected = target.dataset.requestAdd; view = "list"; render(); openBooking(null, selected); }
       if (target.dataset.requestDismiss && live) dismissRequest(target);
-      if (target.matches("[data-book-appointment], [data-edit-schedule]")) openBooking();
+      if (target.matches("[data-book-appointment]")) openBooking(null, selected);
+      if (target.matches("[data-edit-schedule]")) {
+        // The Current Session pencil has no id: it means today's first session, or a new one today.
+        const id = target.dataset.editSchedule || (dayAppointments(today)[0] || {}).id;
+        if (id) openBooking(id); else openBooking(null, today);
+      }
     });
     // Re-read what js/family-data.js loaded (live changes); keeps the selected date and view.
     syncSchedule = () => {
@@ -436,6 +490,7 @@
     const client = ctx.client;
     const householdId = ctx.household.id;
     let dialog;
+    // remove: optional { run, name }. `name` titles the confirmation shown before anything is deleted.
     function openDialog(title, fields, values, onSave, remove) {
       if (dialog) dialog.remove();
       dialog = document.createElement("dialog");
@@ -444,8 +499,12 @@
       document.body.appendChild(dialog);
       const form = dialog.querySelector("form");
       dialog.addEventListener("close", async () => {
+        // Clear it now: Esc doesn't set returnValue, so a stale "save" or "remove" from a failed
+        // attempt would make the next Esc repeat that action instead of cancelling.
+        const action = dialog.returnValue;
+        dialog.returnValue = "";
         try {
-          if (dialog.returnValue === "save") {
+          if (action === "save") {
             const saved = Object.fromEntries(fields.map((field) => [field.name, form.elements[field.name].value.trim()]));
             const requiredField = fields.find((field) => field.required);
             if (requiredField && !saved[requiredField.name]) {
@@ -454,8 +513,15 @@
             const result = await onSave(saved);
             if (result && result.error) throw result.error;
             window.location.reload();
-          } else if (dialog.returnValue === "remove" && remove) {
-            const result = await remove();
+          } else if (action === "remove" && remove) {
+            const confirmed = await auth.confirmDialog({
+              title: `Remove ${remove.name || "this item"}?`,
+              body: "Your sitter will no longer see this. This can't be undone.",
+              confirmLabel: "Remove",
+              danger: true,
+            });
+            if (!confirmed) return dialog.showModal(); // back to the editor, nothing removed
+            const result = await remove.run();
             if (result && result.error) throw result.error;
             window.location.reload();
           }
@@ -468,14 +534,7 @@
       });
       dialog.showModal();
     }
-    async function planId() {
-      const current = await client.from("plans").select("id").eq("household_id", householdId).order("position").limit(1);
-      if (current.error) throw current.error;
-      if (current.data[0]) return current.data[0].id;
-      const created = await client.from("plans").insert({ household_id: householdId, title: "Daily schedule" }).select("id").single();
-      if (created.error) throw created.error;
-      return created.data.id;
-    }
+    const planId = () => ensurePlanId(ctx);
     root.addEventListener("click", (event) => {
       const button = event.target.closest("[data-edit], [data-add]");
       if (!button) return;
@@ -489,12 +548,12 @@
         return openDialog(row.id ? "Edit task" : "Add task", fields, { title: row.title, time_of_day: row.time || "", detail: row.detail || "", location: row.location || "" }, async (values) => {
           values.time_of_day = toDatabaseTime(values.time_of_day);
           return row.id ? client.from("tasks").update(values).eq("id", row.id) : client.from("tasks").insert(Object.assign(values, { plan_id: await planId(), position: data.schedule.length }));
-        }, row.id ? () => client.from("tasks").update({ archived_at: new Date().toISOString() }).eq("id", row.id) : null);
+        }, row.id ? { name: row.title, run: () => client.from("tasks").update({ archived_at: new Date().toISOString() }).eq("id", row.id) } : null);
       }
       if (kind === "contact") {
         const row = (data.contacts || []).find((item) => item.id === id) || {};
         const fields = [{ name: "name", label: "Name" }, { name: "role", label: "Role" }, { name: "phone", label: "Phone" }, { name: "address", label: "Address" }];
-        return openDialog(row.id ? "Edit contact" : "Add contact", fields, row, (values) => row.id ? client.from("contacts").update(values).eq("id", row.id) : client.from("contacts").insert(Object.assign(values, { household_id: householdId, position: data.contacts.length })), row.id ? () => client.from("contacts").delete().eq("id", row.id) : null);
+        return openDialog(row.id ? "Edit contact" : "Add contact", fields, row, (values) => row.id ? client.from("contacts").update(values).eq("id", row.id) : client.from("contacts").insert(Object.assign(values, { household_id: householdId, position: data.contacts.length })), row.id ? { name: row.name, run: () => client.from("contacts").delete().eq("id", row.id) } : null);
       }
       if (kind === "care") {
         const category = button.dataset.category;
@@ -505,7 +564,7 @@
         return openDialog(row.id ? `Edit ${category}` : `Add ${category}`, fields, values, (saved) => {
           if (category === "food" && !saved.severity) saved.severity = null;
           return row.id ? client.from("care_items").update(saved).eq("id", row.id) : client.from("care_items").insert(Object.assign(saved, { household_id: householdId, category, position: source.length }));
-        }, row.id ? () => client.from("care_items").delete().eq("id", row.id) : null);
+        }, row.id ? { name: row.title || row.name, run: () => client.from("care_items").delete().eq("id", row.id) } : null);
       }
     });
   }
