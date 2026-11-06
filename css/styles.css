@@ -3250,17 +3250,27 @@ body.modal-open {
   padding: 8px 14px;
 }
 
-/* Account menu (a nav item that opens a native <dialog>) */
-.nav-account {
-  font-family: inherit;
+/* Account panel on the Profile page */
+.secondary-grid > .account-slot {
+  display: contents;
 }
 
-.account-dialog .confirm-dialog-body > * {
+.account-slot-wide {
+  margin-top: 20px;
+  max-width: 480px;
+}
+
+.account-panel > * {
   margin: 0;
 }
 
-.account-dialog .photo-source-btn {
+.account-panel {
+  gap: 12px;
+}
+
+.account-panel .photo-source-btn {
   min-height: 44px;
+  text-align: center;
 }
 
 .account-who {
@@ -3271,11 +3281,6 @@ body.modal-open {
 .account-links {
   color: var(--grey);
   font-size: var(--text-sm);
-}
-
-.account-dialog form {
-  display: flex;
-  justify-content: center;
 }
 
 .confirm-desc {

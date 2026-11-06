@@ -1,9 +1,9 @@
-// CareNestStore — the ?demo=1 backend (completions, messages, shift) in localStorage.
+// CareNestStore — the ?demo=1 backend (completions, messages, shift) in sessionStorage.
 // Signed-in people use Supabase through js/shift-data.js; parent.js still reads this store until
 // the parent side moves (T3b-2). The image helpers at the bottom are shared by both backends.
 (function () {
   // The key is per person and chosen by the auth guard (js/auth.js): "carenest:v1:<user id>" or
-  // "carenest:demo:v1". Until it is set (or when signed out) reads are empty and writes fail.
+  // "carenest:demo:v1:<demo family>". Until it is set (or when signed out) reads are empty and writes fail.
   // Pages without the guard (none ship today) fall back to the demo key.
   function storageKey() {
     const auth = window.CareNestAuth;
@@ -26,13 +26,31 @@
     return { completions: {}, messages: [], shift: null, reads: {}, saves: {}, insights: {}, logs: [] };
   }
 
+  // Demo data ("carenest:demo:*") lives in sessionStorage: it lasts while the tab is open and is
+  // gone when the tab closes, so each tester starts from the same demo family.
+  function isDemoKey(key) {
+    return String(key).startsWith("carenest:demo:");
+  }
+
+  function storageFor(key) {
+    return isDemoKey(key) ? sessionStorage : localStorage;
+  }
+
   function read() {
     const key = storageKey();
     if (!key) return emptyState();
     try {
-      const parsed = JSON.parse(localStorage.getItem(key));
+      const parsed = JSON.parse(storageFor(key).getItem(key));
       if (parsed && typeof parsed === "object") {
         return Object.assign(emptyState(), parsed);
+      }
+      // First read in this tab: start from the demo family's care log, check-offs, and messages.
+      const demo = window.CareNestDemo;
+      const seed = isDemoKey(key) && demo && demo.shiftSeed ? demo.shiftSeed() : null;
+      if (seed) {
+        const state = Object.assign(emptyState(), seed);
+        storageFor(key).setItem(key, JSON.stringify(state));
+        return state;
       }
     } catch (e) {
       /* corrupt or unavailable storage: fall through to a fresh state */
@@ -44,7 +62,7 @@
     const key = storageKey();
     if (!key) throw new Error("Please sign in again.");
     try {
-      localStorage.setItem(key, JSON.stringify(state));
+      storageFor(key).setItem(key, JSON.stringify(state));
     } catch (e) {
       if (e && (e.name === "QuotaExceededError" || e.code === 22)) {
         throw new StoreError(
@@ -112,7 +130,7 @@
       if (!state.shift) {
         state.shift = newShift(Date.now());
         try {
-          if (storageKey()) localStorage.setItem(storageKey(), JSON.stringify(state));
+          if (storageKey()) storageFor(storageKey()).setItem(storageKey(), JSON.stringify(state));
         } catch (e) {
           /* still return the in-memory shift */
         }

@@ -847,7 +847,7 @@
       if (document.visibilityState === "visible") onScreen.forEach(scheduleSeen);
     });
 
-    // ---------- demo / dev tools (localhost or ?demo=1; not part of the product) ----------
+    // ---------- demo / dev tools (localhost only; not part of the product) ----------
 
     function renderDevTools() {
       if (!ui.isDevHost) return;
@@ -857,7 +857,7 @@
       box.innerHTML = `
         <h2 class="panel-title" id="parent-dev-heading">Demo tools (not part of the product)</h2>
         <div class="dev-tools-actions">
-          ${shift.demo ? `<a class="photo-source-btn dev-link" href="index.html" target="_blank" rel="noopener">Open sitter view<span class="visually-hidden"> (opens in a new tab)</span></a>` : ""}
+          ${shift.demo ? `<a class="photo-source-btn dev-link" href="index.html?demo=1" target="_blank" rel="noopener">Open sitter view<span class="visually-hidden"> (opens in a new tab)</span></a>` : ""}
           ${shift.demo ? "" : `<button type="button" class="photo-source-btn" data-dev="moment">Bring moment forward (1–5 min)</button>`}
           <button type="button" class="photo-source-btn" data-dev="concept">Concept — not real analysis: flag newest photo as “tired”</button>
           <button type="button" class="photo-source-btn" data-dev="clear">Clear concept alerts</button>

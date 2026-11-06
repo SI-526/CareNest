@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+    <title>CareNest — Try the demo</title>
+  </head>
+  <body data-page="demo">
+    <div class="app auth-app">
+      <header class="auth-header"><span class="auth-brand">CareNest</span></header>
+      <main class="auth-main" aria-labelledby="demo-title">
+        <section class="auth-intro">
+          <h1 class="auth-title" id="demo-title">Try CareNest</h1>
+          <p class="auth-lede">
+            Explore a sample family without signing in. You can check off tasks, add care log entries, send
+            messages, and change information. Nothing is saved after you close this tab.
+          </p>
+        </section>
+        <section class="card auth-card demo-choice" aria-labelledby="demo-sitter-heading">
+          <h2 class="panel-title" id="demo-sitter-heading">Babysitter</h2>
+          <p class="signin-note">
+            You're Bethany, babysitting Jack Thomas (age 3) today. You also sit for Sofia Rivera (age 6); switch
+            families with the menu at the top of the page.
+          </p>
+          <a class="primary-btn" href="index.html?demo=1">Try as the babysitter</a>
+        </section>
+        <section class="card auth-card demo-choice" aria-labelledby="demo-parent-heading">
+          <h2 class="panel-title" id="demo-parent-heading">Parent</h2>
+          <p class="signin-note">
+            You're Mary Ann Thomas, Jack's mom. Follow today's care session and edit Jack's care information and
+            schedule.
+          </p>
+          <a class="primary-btn" href="parent.html?demo=1">Try as a parent</a>
+        </section>
+      </main>
+      <footer class="legal-footer"><a href="privacy.html">Privacy</a><span aria-hidden="true">·</span><a href="terms.html">Terms</a></footer>
+    </div>
+  </body>
+</html>

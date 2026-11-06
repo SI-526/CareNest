@@ -10,13 +10,14 @@
   let photoObjectUrl = null;
   let cameraStream = null;
   let returnFocusEl = null;
-  // The shift backend (js/shift-data.js): Supabase when signed in, the localStorage store in demo.
+  // The shift backend (js/shift-data.js): Supabase when signed in, the sessionStorage store in demo.
   let shift = null;
 
   const SHIFT_LOCKED_TEXT = "This shift has ended. Photos can't be added after a shift.";
-  const isDevHost =
-    ["localhost", "127.0.0.1", "[::1]", ""].includes(window.location.hostname) ||
-    demoFlag();
+  // Demo tools (moment trigger, "Start a new shift", concept alerts) show on localhost only. The
+  // demo on the deployed site is for user testing, where they would confuse testers.
+  demoFlag(); // remembers ?demo=1 for this tab
+  const isDevHost = ["localhost", "127.0.0.1", "[::1]", ""].includes(window.location.hostname);
   // Keep the parent-side navigation selection when the shared demo switches pages.
   const role =
     page === "parent" || new URLSearchParams(window.location.search).get("as") === "parent"
@@ -24,7 +25,7 @@
       : "sitter";
   if (role === "parent") document.body.dataset.role = "parent";
 
-  // ?demo=1 turns on the demo/dev controls for this browser tab (e.g. on the deployed site).
+  // ?demo=1 turns on demo mode for this browser tab.
   function demoFlag() {
     try {
       if (new URLSearchParams(window.location.search).has("demo")) {
@@ -1538,7 +1539,7 @@
     box.innerHTML = `
       <h2 class="panel-title" id="dev-tools-heading">Demo tools (not part of the product)</h2>
       <div class="dev-tools-actions">
-        <a class="photo-source-btn dev-link" href="parent.html" target="_blank" rel="noopener">Open parent view<span class="visually-hidden"> (opens in a new tab)</span></a>
+        <a class="photo-source-btn dev-link" href="parent.html${shift.demo ? "?demo=1" : ""}" target="_blank" rel="noopener">Open parent view<span class="visually-hidden"> (opens in a new tab)</span></a>
         ${demoButtons}
       </div>`;
     const momentBtn = box.querySelector('[data-dev="moment"]');
@@ -1966,7 +1967,6 @@
     const nav = document.querySelector(".primary-nav");
     if (!nav) return;
     nav.setAttribute("aria-label", "Parent navigation");
-    const account = nav.querySelector("[data-account-button]"); // added by js/auth.js
     nav.innerHTML = parentNavItems().map(
       (item) => `
         <a class="nav-item" href="${item.href}" data-nav="${item.id}"${item.id === current ? ' aria-current="page"' : ""}>
@@ -1974,7 +1974,6 @@
           <span>${item.label}</span>
         </a>`
     ).join("");
-    if (account) nav.appendChild(account);
   }
 
   // The five primary destinations match the product's information architecture.
@@ -1982,7 +1981,6 @@
   function renderSitterNav(current) {
     const nav = document.querySelector(".primary-nav");
     if (!nav) return;
-    const account = nav.querySelector("[data-account-button]");
     const items = [
       ["home", "index.html", "Home", '<path d="m12 3 9 7.5V21h-6v-6H9v6H3v-10.5L12 3Z" />'],
       ["schedule", "schedule.html", "Schedule", '<path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1Zm12 8H5v10h14V10ZM7 6H5v2h14V6h-2v1a1 1 0 1 1-2 0V6H8v1a1 1 0 1 1-2 0V6Z" />'],
@@ -1993,7 +1991,6 @@
     nav.innerHTML = items.map(([id, href, label, icon]) =>
       `<a class="nav-item" href="${href}"${id === current ? ' aria-current="page"' : ""}><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span>${label}</span></a>`
     ).join("");
-    if (account) nav.appendChild(account);
   }
 
   // Shared helpers for js/parent.js.

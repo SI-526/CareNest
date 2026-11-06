@@ -1,4 +1,4 @@
-// Shared sign-in state, the auth guard, role routing, the account menu, and the data notice.
+// Shared sign-in state, the auth guard, role routing, the account panel, and the data notice.
 //
 // Every app page loads, in order: the pinned supabase-js UMD build, js/config.js,
 // js/supabase.js, then this file, then its own scripts. Pages start hidden (class
@@ -65,7 +65,8 @@
   // Photos, messages, check-offs and moments still live in this browser's localStorage until T3
   // moves them to the database. Each person gets their own key so demo mode, every account, and
   // signed-out visitors never see each other's data:
-  //   carenest:demo:v1          ?demo=1 (starts empty; the sample family comes from js/data.js)
+  //   carenest:demo:v1:<family> ?demo=1, in sessionStorage so it ends with the tab (js/data.js
+  //                             seeds it with the demo family's care log and messages)
   //   carenest:v1:<user id>     a signed-in account
   // Nothing is readable until the guard picks a key (signed-out visitors get none). Signing out,
   // or the guard finding no family space, removes that account's key. Only one account can be
@@ -133,6 +134,15 @@
   function clearDemo() {
     try {
       sessionStorage.removeItem(DEMO_FLAG);
+    } catch (e) {
+      /* storage unavailable */
+    }
+    // This tab's demo data (care info edits, care logs, messages, the chosen family). Older
+    // versions kept it in localStorage under DEMO_STORE_KEY.
+    try {
+      Object.keys(sessionStorage)
+        .filter((key) => key.startsWith("carenest:demo:"))
+        .forEach((key) => sessionStorage.removeItem(key));
     } catch (e) {
       /* storage unavailable */
     }
@@ -232,6 +242,10 @@
   function switchFamily(ctx, householdId) {
     const target = (ctx.memberships || []).find((m) => m.household_id === householdId);
     if (!target) return Promise.resolve();
+    if (ctx.demo) {
+      if (window.CareNestDemo) window.CareNestDemo.switchTo(householdId);
+      return go(HOME[target.role]);
+    }
     families.remember(ctx.user.id, householdId);
     return go(HOME[target.role]);
   }
@@ -276,7 +290,12 @@
   // The auth guard for app pages (index, parent, people, messages, info, food).
   async function guard() {
     if (demoMode()) {
-      storeKey = DEMO_STORE_KEY;
+      // js/data.js (the demo family this page shows) loads after this file.
+      if (document.readyState === "loading") {
+        await new Promise((resolve) => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
+      }
+      const demo = window.CareNestDemo;
+      storeKey = demo ? demo.storeKey : DEMO_STORE_KEY;
       let session = null;
       try {
         if (client) session = (await client.auth.getSession()).data.session;
@@ -289,7 +308,16 @@
       const roles = PAGE_ROLES[page] || [];
       const parentOnlyPage = roles.includes("parent") && !roles.includes("caretaker");
       const role = page === "parent" || params.get("as") === "parent" || parentOnlyPage ? "parent" : "caretaker";
-      return { demo: true, role };
+      const ctx = { demo: true, role };
+      if (demo) {
+        ctx.household = { id: demo.familyId, name: demo.familyName };
+        // The babysitter demo sits for two families and switches with the family bar.
+        if (role === "caretaker") {
+          ctx.memberships = demo.memberships;
+          mountFamilyBar(ctx);
+        }
+      }
+      return ctx;
     }
     let ctx;
     try {
@@ -361,23 +389,9 @@
     document.body.prepend(banner);
   }
 
-  // ---------- account menu, footer ----------
+  // ---------- footer ----------
 
-  const ACCOUNT_ICON =
-    '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Zm0 14a8 8 0 0 1-6.16-2.9C7.1 15.8 9.4 15 12 15s4.9.8 6.16 2.1A8 8 0 0 1 12 20Z" />';
-
-  function mountChrome(ctx) {
-    const nav = document.querySelector(".primary-nav");
-    if (nav && !nav.querySelector("[data-account-button]")) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "nav-item nav-account";
-      button.dataset.accountButton = "";
-      button.setAttribute("aria-haspopup", "dialog");
-      button.innerHTML = `<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">${ACCOUNT_ICON}</svg><span>Account</span>`;
-      nav.appendChild(button);
-      button.addEventListener("click", () => openAccountMenu(ctx, button));
-    }
+  function mountChrome() {
     const app = document.querySelector(".app");
     if (app && !document.querySelector(".legal-footer")) {
       app.insertAdjacentHTML("beforeend", legalFooterHtml());
@@ -414,66 +428,55 @@
     </footer>`;
   }
 
-  let accountDialog = null;
+  // ---------- account panel (Profile page) ----------
 
-  function openAccountMenu(ctx, opener) {
-    if (!accountDialog) {
-      accountDialog = document.createElement("dialog");
-      accountDialog.className = "confirm-dialog account-dialog";
-      accountDialog.setAttribute("aria-labelledby", "account-title");
-      const roleLabel = ctx.role === "parent" ? "Parent" : "Sitter";
-      const familyName = ctx.household ? ctx.household.name : "";
-      const others = (ctx.memberships || []).filter((m) => m.household_id !== (ctx.household && ctx.household.id));
-      const switcher = others.length
-        ? `<p class="account-meta">Switch to</p>${others
-            .map(
-              (m) =>
-                `<button type="button" class="photo-source-btn" data-switch-family="${escapeHtml(m.household_id)}">${escapeHtml(familyLabel(m))}</button>`
-            )
-            .join("")}`
-        : "";
-      accountDialog.innerHTML = `
-        <div class="confirm-dialog-body">
-          <h2 class="panel-title" id="account-title">Your account</h2>
-          <p class="account-who">Signed in as <strong>${escapeHtml(ctx.email)}</strong></p>
-          <p class="account-meta">${escapeHtml(roleLabel)}${familyName ? ` in ${escapeHtml(familyName)}` : ""}</p>
-          ${ctx.role === "parent" ? '<a class="photo-source-btn" href="people.html">People and invites</a>' : ""}
-          ${switcher}
-          <button type="button" class="photo-source-btn" data-sign-out>Sign out</button>
-          <button type="button" class="danger-btn" data-delete-account>Delete my account and data</button>
-          <p class="form-error" role="alert" hidden data-account-error></p>
-          <p class="account-links"><a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a></p>
-          <form method="dialog"><button class="text-btn" value="close">Close</button></form>
-        </div>`;
-      document.body.appendChild(accountDialog);
-      accountDialog.addEventListener("close", () => opener.focus());
-      // Esc can't close it while the account is being deleted (its delete button is disabled).
-      accountDialog.addEventListener("cancel", (e) => {
-        if (accountDialog.querySelector("[data-delete-account]").disabled) e.preventDefault();
-      });
-      accountDialog.querySelector("[data-sign-out]").addEventListener("click", async (e) => {
-        const button = e.currentTarget;
-        const errorEl = accountDialog.querySelector("[data-account-error]");
+  // Renders "Your account" into `container` on the Profile page: who is signed in, People and
+  // invites (parents), the family switcher, Sign out, and Delete my account and data.
+  function mountAccountPanel(container, ctx) {
+    if (!container || !ctx || ctx.demo) return;
+    const roleLabel = ctx.role === "parent" ? "Parent" : "Sitter";
+    const familyName = ctx.household ? ctx.household.name : "";
+    const others = (ctx.memberships || []).filter((m) => m.household_id !== (ctx.household && ctx.household.id));
+    const switcher = others.length
+      ? `<p class="account-meta">Switch to</p>${others
+          .map(
+            (m) =>
+              `<button type="button" class="photo-source-btn" data-switch-family="${escapeHtml(m.household_id)}">${escapeHtml(familyLabel(m))}</button>`
+          )
+          .join("")}`
+      : "";
+    container.innerHTML = `
+      <article class="panel secondary-panel account-panel" aria-labelledby="account-title">
+        <h2 class="section-title" id="account-title">Your account</h2>
+        <p class="account-who">Signed in as <strong>${escapeHtml(ctx.email)}</strong></p>
+        <p class="account-meta">${escapeHtml(roleLabel)}${familyName ? ` in ${escapeHtml(familyName)}` : ""}</p>
+        ${ctx.role === "parent" ? '<a class="photo-source-btn" href="people.html">People and invites</a>' : ""}
+        ${switcher}
+        <button type="button" class="photo-source-btn" data-sign-out>Sign out</button>
+        <button type="button" class="danger-btn" data-delete-account>Delete my account and data</button>
+        <p class="form-error" role="alert" hidden data-account-error></p>
+        <p class="account-links"><a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a></p>
+      </article>`;
+    const panel = container.querySelector(".account-panel");
+    panel.querySelector("[data-sign-out]").addEventListener("click", async (e) => {
+      const button = e.currentTarget;
+      const errorEl = panel.querySelector("[data-account-error]");
+      button.disabled = true;
+      errorEl.hidden = true;
+      const { error } = await signOut();
+      if (error) {
+        errorEl.textContent = friendlyError(error);
+        errorEl.hidden = false;
+        button.disabled = false;
+      }
+    });
+    panel.querySelectorAll("[data-switch-family]").forEach((button) => {
+      button.addEventListener("click", () => {
         button.disabled = true;
-        errorEl.hidden = true;
-        const { error } = await signOut();
-        if (error) {
-          errorEl.textContent = friendlyError(error);
-          errorEl.hidden = false;
-          button.disabled = false;
-        }
+        switchFamily(ctx, button.dataset.switchFamily);
       });
-      accountDialog.querySelectorAll("[data-switch-family]").forEach((button) => {
-        button.addEventListener("click", () => {
-          button.disabled = true;
-          switchFamily(ctx, button.dataset.switchFamily);
-        });
-      });
-      accountDialog
-        .querySelector("[data-delete-account]")
-        .addEventListener("click", () => deleteAccount(ctx));
-    }
-    accountDialog.showModal();
+    });
+    panel.querySelector("[data-delete-account]").addEventListener("click", () => deleteAccount(ctx, panel));
   }
 
   // Signs out, then removes this account's device data (photos, messages, check-offs) from this
@@ -509,7 +512,7 @@
     return go("signin.html");
   }
 
-  async function deleteAccount(ctx) {
+  async function deleteAccount(ctx, panel) {
     const memberships = ctx.memberships || [];
     const consequence = families.deleteConsequence(memberships);
     const ok = await confirmDialog({
@@ -519,11 +522,11 @@
       danger: true,
     });
     if (!ok) return;
-    const errorEl = accountDialog && accountDialog.querySelector("[data-account-error]");
-    const button = accountDialog && accountDialog.querySelector("[data-delete-account]");
+    const errorEl = panel && panel.querySelector("[data-account-error]");
+    const button = panel && panel.querySelector("[data-delete-account]");
     const label = button ? button.textContent : "";
-    // Sign out and Close wait too: closing would hide an error the deletion ends with.
-    const others = accountDialog ? accountDialog.querySelectorAll("[data-sign-out], form[method=dialog] button") : [];
+    // Sign out and family switching wait too, so they can't race the deletion.
+    const others = panel ? panel.querySelectorAll("[data-sign-out], [data-switch-family]") : [];
     others.forEach((control) => (control.disabled = true));
     if (button) {
       button.disabled = true;
@@ -643,7 +646,7 @@
         <li>It stores what your family enters, including <strong>photos of your child</strong> that sitters take during a shift.</li>
         <li>You enter real information at your own risk.</li>
         <li><strong>Only invite people you trust.</strong> Everyone in your family space can see its care info, schedule, and photos.</li>
-        <li>You can delete your account and data at any time from the Account menu.</li>
+        <li>You can delete your account and data at any time from your Profile page.</li>
         <li>The details are in our <a href="privacy.html">privacy policy</a> and <a href="terms.html">terms</a>.</li>
       </ul>
     </section>`;
@@ -675,6 +678,7 @@
     endSession,
     clearDemo,
     mountChrome,
+    mountAccountPanel,
     // localStorage key for js/store.js; null until the guard has decided who this is.
     get storeKey() {
       return storeKey;
