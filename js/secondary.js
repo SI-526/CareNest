@@ -9,6 +9,8 @@
   if (!data || !ui || !root || !auth) return;
 
   const esc = auth.escapeHtml;
+  // Demo mode only (js/data.js): edits are kept in this browser tab until it is closed.
+  const demo = window.CareNestDemo;
   const ready = (window.CareNestFamily || auth).ready;
   // Loaded once before the page renders: the signed-in sitter's own profile (profile page) or
   // the fields this family's sitters chose to share (parent schedule page).
@@ -65,6 +67,8 @@
 
   async function loadSitterProfile(ctx) {
     const defaults = profileDefaults();
+    // Demo: Bethany's sample profile, with this tab's edits (js/data.js).
+    if (ctx && ctx.demo && demo) return { profile: demo.loadSitterProfile() };
     if (!ctx || ctx.demo || !ctx.client || !ctx.user) return { profile: defaults };
     const { data: row, error } = await ctx.client.from("sitter_profiles").select(PROFILE_COLUMNS).eq("user_id", ctx.user.id).maybeSingle();
     if (error) return { profile: defaults, error };
@@ -125,6 +129,7 @@
   // Appointments and tasks hang off a plan, but onboarding doesn't create one. A family's first
   // booking or task makes it here, so a save never depends on a plan that isn't there yet.
   async function ensurePlanId(ctx) {
+    if (ctx.demo) return "demo-plan";
     if (data.planId) return data.planId;
     const client = ctx.client;
     const householdId = ctx.household.id;
@@ -181,6 +186,7 @@
     const form = document.getElementById("profile-settings-form");
     if (!form) return;
     const status = document.getElementById("profile-save-status");
+    const demoSave = Boolean(ctx.demo && demo);
     const canSave = Boolean(!ctx.demo && ctx.client && ctx.user);
     // A failed load shows defaults; saving them would overwrite the saved profile, so Save stays
     // off until the page is reloaded and the profile loads.
@@ -194,7 +200,10 @@
       if (loadFailed) return;
       const values = Object.fromEntries(new FormData(form).entries());
       ["showBio", "showPhone", "showAvailability", "updates"].forEach((name) => { values[name] = form.elements[name].checked; });
-      if (canSave) {
+      if (demoSave) {
+        const error = demo.saveSitterProfile(values);
+        if (error) { status.textContent = error.message; return; }
+      } else if (canSave) {
         const button = form.querySelector('[type="submit"]');
         button.disabled = true;
         status.textContent = "Saving…";
@@ -209,7 +218,7 @@
         el.textContent = values[field] || "";
         el.hidden = !values[visible] || !values[field];
       });
-      status.textContent = canSave ? "Profile saved." : "Preview updated. Demo profiles are not saved.";
+      status.textContent = canSave || demoSave ? "Profile saved." : "Preview updated. Demo profiles are not saved.";
     });
   }
 
@@ -233,9 +242,9 @@
     // Keeping this check tied to the membership role prevents a sitter opened on a
     // parent-looking URL from being offered controls that row-level security rejects.
     const isParent = Boolean(ctx && ctx.role === "parent");
-    const editable = Boolean(isParent && !ctx.demo && ctx.client && ctx.household);
+    // Demo parents edit too; their changes stay in this browser tab (js/data.js).
+    const editable = Boolean(isParent && (ctx.demo ? demo : ctx.client && ctx.household));
     const child = data.child || {};
-    const editNote = ctx && ctx.demo ? '<p class="secondary-edit-note">Sign in as a parent to edit this information.</p>' : "";
     const views = {
       schedule: {
         eyebrow: "", title: "Schedule", intro: "",
@@ -248,7 +257,7 @@
       },
       children: {
         eyebrow: "CHILD PROFILE", title: child.name || "Child profile", intro: "The permanent information that supports every care session.",
-        body: `<section class="panel secondary-panel child-profile-card"><div class="secondary-panel-heading"><h2 class="section-title">Child profile</h2>${editable ? '<button class="photo-source-btn secondary-add" type="button" data-edit="child">Edit</button>' : ""}</div><p class="supporting-copy">${esc(child.name || "Child")}${child.age ? ` · ${esc(child.age)}` : ""}</p></section><div class="secondary-grid">${careSection("food", "Food & allergies", data.allergies.items || [], editable)}${careSection("preferences", "Routine & preferences", data.categories.preferences.items || [], editable)}${careSection("where", "Where things are", data.categories.where.items || [], editable)}${careSection("instructions", "Instructions", data.categories.instructions.items || [], editable)}${careSection("emergency", "Emergency steps", data.categories.emergency.steps || [], editable)}${contactsSection(editable)}</div>${editNote}`,
+        body: `<section class="panel secondary-panel child-profile-card"><div class="secondary-panel-heading"><h2 class="section-title">Child profile</h2>${editable ? '<button class="photo-source-btn secondary-add" type="button" data-edit="child">Edit</button>' : ""}</div><p class="supporting-copy">${esc(child.name || "Child")}${child.age ? ` · ${esc(child.age)}` : ""}</p></section><div class="secondary-grid">${careSection("food", "Food & allergies", data.allergies.items || [], editable)}${careSection("preferences", "Routine & preferences", data.categories.preferences.items || [], editable)}${careSection("where", "Where things are", data.categories.where.items || [], editable)}${careSection("instructions", "Instructions", data.categories.instructions.items || [], editable)}${careSection("emergency", "Emergency steps", data.categories.emergency.steps || [], editable)}${contactsSection(editable)}</div>`,
       },
       profile: {
         eyebrow: "PROFILE & SETTINGS", title: ctx && ctx.role === "parent" ? "Your CareNest settings" : "Your sitter profile", intro: ctx && ctx.role === "parent" ? "Manage your details and the family space with confidence." : "Choose what parents can see, and keep your personal preferences in one place.",
@@ -427,6 +436,12 @@
           }
           const existingIndex = existing ? appointments.findIndex((appointment) => appointment.id === existing.id) : -1;
           if (existingIndex >= 0) appointments.splice(existingIndex, 1, item); else appointments.push(item);
+          if (ctx && ctx.demo && demo) {
+            // Demo: keep the session in this tab so it is still there after moving between pages.
+            data.appointments = appointments.slice();
+            const saveError = demo.save();
+            if (saveError) throw saveError;
+          }
           requests = requests.filter((request) => request.date !== item.date); // the database resolves it too
           selected = item.date; setStatus(existing ? "Schedule saved." : "Schedule added."); render(); dialog.remove();
         } catch (error) { showError(auth.friendlyError(error)); }
@@ -488,7 +503,7 @@
   }
 
   function bindEditors(ctx) {
-    const client = ctx.client;
+    const client = ctx.demo ? demo.client : ctx.client;
     const householdId = ctx.household.id;
     let dialog;
     // remove: optional { run, name }. `name` titles the confirmation shown before anything is deleted.

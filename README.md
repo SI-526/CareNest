@@ -30,22 +30,43 @@ re-checked at local midnight); while a shift that started on an earlier local da
 start date's own heading. Parents pick the date for each note in the "Important today" card on
 `manage.html`. The notes refresh live (Realtime), and if they
 fail to load only that section says so.
-The shift (start, end, reopen, history), task check-offs with photo proofs, moments, and the message thread are in Supabase (`js/shift-data.js`: Postgres, the private `photos` Storage bucket, and Realtime) for both roles; `?demo=1` keeps them in this browser (`js/store.js`). The parent's Today page (`parent.html`) shows today's shift status (not started / active / reopened / ended) with its history, "x of y done", the schedule (a parent can mark a task done without a photo, "Done by <name>", and end or reopen the shift), and a live feed of the shift's proofs and moments (Late, "Added after reopen", "Photo removed by <name>", replies, "New" until seen via `message_reads`). New photos (proofs, moments, and the sitter's photo messages) and shift events raise an in-app banner and a polite live announcement (no push notifications); View scrolls to a new feed photo, or opens the Gallery when only photo messages are new (they stay out of the Today feed). Save photo uses the Web Share API with files on touch devices, otherwise a JPEG download, and adds it to the parent's Album (`#album`, `photo_saves`). Remove photo calls `remove_photo` and then deletes the object from Storage. The concept alert (`concept_flags`) and "Bring moment forward" (`trigger_moment_now`) are demo controls shown only on localhost or with `?demo=1`; the concept alert is labelled "Concept — not real analysis". The Gallery (`gallery.html`, both roles; parents at `gallery.html?as=parent`) shows every photo of the family's shifts, oldest first with the newest at the bottom, under a heading per shift date, each labelled Task update, Photo message, or Moment, with a filter (native radios styled as chips); removed photos are skipped. The sitter's "+" (Add a photo) opens the phone's camera or library (`<input type="file" accept="image/*">`), then a dialog with the preview and an optional caption, and sends a photo message; it is disabled with the reason when the shift isn't open. A shift takes up to 20 photo messages; past that the sitter sees "Photo limit reached for this shift." Parents get "Remove photo" on each photo. Photo messages also show in the Messages thread. On `manage.html`, "Remove from schedule" archives a task (`archived_at`, stamped by the database); past shifts keep it.
+The shift (start, end, reopen, history), task check-offs with photo proofs, moments, and the message thread are in Supabase (`js/shift-data.js`: Postgres, the private `photos` Storage bucket, and Realtime) for both roles; `?demo=1` keeps them in this browser (`js/store.js`). The parent's Today page (`parent.html`) shows today's shift status (not started / active / reopened / ended) with its history, "x of y done", the schedule (a parent can mark a task done without a photo, "Done by <name>", and end or reopen the shift), and a live feed of the shift's proofs and moments (Late, "Added after reopen", "Photo removed by <name>", replies, "New" until seen via `message_reads`). New photos (proofs, moments, and the sitter's photo messages) and shift events raise an in-app banner and a polite live announcement (no push notifications); View scrolls to a new feed photo, or opens the Gallery when only photo messages are new (they stay out of the Today feed). Save photo uses the Web Share API with files on touch devices, otherwise a JPEG download, and adds it to the parent's Album (`#album`, `photo_saves`). Remove photo calls `remove_photo` and then deletes the object from Storage. The concept alert (`concept_flags`) and "Bring moment forward" (`trigger_moment_now`) are demo controls shown only on localhost; the concept alert is labelled "Concept — not real analysis". The Gallery (`gallery.html`, both roles; parents at `gallery.html?as=parent`) shows every photo of the family's shifts, oldest first with the newest at the bottom, under a heading per shift date, each labelled Task update, Photo message, or Moment, with a filter (native radios styled as chips); removed photos are skipped. The sitter's "+" (Add a photo) opens the phone's camera or library (`<input type="file" accept="image/*">`), then a dialog with the preview and an optional caption, and sends a photo message; it is disabled with the reason when the shift isn't open. A shift takes up to 20 photo messages; past that the sitter sees "Photo limit reached for this shift." Parents get "Remove photo" on each photo. Photo messages also show in the Messages thread. On `manage.html`, "Remove from schedule" archives a task (`archived_at`, stamped by the database); past shifts keep it.
 Outside demo mode the bundled sample family is discarded before anything renders, so a
 signed-in person never sees sample content; an empty family shows "No information provided".
 A parent's edits (schedule, care info, contacts, child's name) reach every open page of the
 family within a second or two, without a reload (Realtime; refetched on return to the tab too).
 
-`?demo=1` (remembered for the browser tab) shows the sample family from `js/data.js` with a
+### Demo for user testing
+
+Open **`demo.html`** and pick **Try as the babysitter** (`index.html?demo=1`) or **Try as a parent**
+(`parent.html?demo=1`). No sign-in is needed. The demo families are in `js/data.js`:
+
+- **Babysitter (Bethany)** sits for the **Thomas family** (Jack, age 3) and the **Rivera family**
+  (Sofia, age 6), and switches between them with the "Family space" bar at the top of each page.
+  One child per family, as the app shows today.
+- **Parent (Mary Ann Thomas)** sees the Thomas family, the same one the babysitter sees.
+
+Each family has a profile, care info (food and allergies, preferences, where things are,
+instructions, emergency steps, contacts), today's schedule, upcoming sessions, and today's care
+log already started (two tasks done, with care log entries and a few messages). Testers can check
+off tasks, add care logs and photos, send messages, edit the sitter profile, and, as the parent,
+edit the child profile, care info, contacts, and schedule sessions. Everything is kept in the
+tab's sessionStorage, so closing the tab resets the demo for the next tester. The parent's
+"Important today" notes are read-only in the demo. The demo tools panels (moment trigger,
+"Start a new shift", concept alerts) show only on localhost.
+
+`?demo=1` (remembered for the browser tab) shows the demo families from `js/data.js` with a
 "Demo mode" banner, as before accounts existed. It does not sign anyone in or out: signed out, the
 banner links to sign-in; signed in, it reads "Demo mode — signed in as <name> · Exit demo" (Exit
 demo clears the flag). Sign-in, `invite.html`, and `onboarding.html` also clear it. Demo mode never
 reads the database (signed-out requests can read nothing anyway) and never reads an account's
 device data.
 
-Demo data (`js/store.js`, `?demo=1` only: task photos, moments, messages, check-offs) is
-localStorage. Signed-in people's photos and messages are not kept on the device. It is keyed per person: `carenest:demo:v1` for demo mode and
-`carenest:v1:<user id>` for each account, picked by the auth guard; signed-out visitors get no key.
+Demo data (`js/store.js`, `?demo=1` only: task photos, moments, messages, check-offs, care logs)
+is in sessionStorage under `carenest:demo:v1:<family>`, with the demo family's edits under
+`carenest:demo:data:<family>`; all of it ends with the tab. Signed-in people's photos and messages
+are not kept on the device. Each account's device key is `carenest:v1:<user id>`, picked by the
+auth guard; signed-out visitors get no key.
 Signing out, or the guard finding no family space, removes that account's key; deleting the
 account removes every `carenest:*` key in that browser. The pre-accounts shared key `carenest:v1`
 is discarded on load (it can't be attributed to one account). The sitter profile used to be kept only on the device

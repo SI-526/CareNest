@@ -65,7 +65,8 @@
   // Photos, messages, check-offs and moments still live in this browser's localStorage until T3
   // moves them to the database. Each person gets their own key so demo mode, every account, and
   // signed-out visitors never see each other's data:
-  //   carenest:demo:v1          ?demo=1 (starts empty; the sample family comes from js/data.js)
+  //   carenest:demo:v1:<family> ?demo=1, in sessionStorage so it ends with the tab (js/data.js
+  //                             seeds it with the demo family's care log and messages)
   //   carenest:v1:<user id>     a signed-in account
   // Nothing is readable until the guard picks a key (signed-out visitors get none). Signing out,
   // or the guard finding no family space, removes that account's key. Only one account can be
@@ -133,6 +134,15 @@
   function clearDemo() {
     try {
       sessionStorage.removeItem(DEMO_FLAG);
+    } catch (e) {
+      /* storage unavailable */
+    }
+    // This tab's demo data (care info edits, care logs, messages, the chosen family). Older
+    // versions kept it in localStorage under DEMO_STORE_KEY.
+    try {
+      Object.keys(sessionStorage)
+        .filter((key) => key.startsWith("carenest:demo:"))
+        .forEach((key) => sessionStorage.removeItem(key));
     } catch (e) {
       /* storage unavailable */
     }
@@ -232,6 +242,10 @@
   function switchFamily(ctx, householdId) {
     const target = (ctx.memberships || []).find((m) => m.household_id === householdId);
     if (!target) return Promise.resolve();
+    if (ctx.demo) {
+      if (window.CareNestDemo) window.CareNestDemo.switchTo(householdId);
+      return go(HOME[target.role]);
+    }
     families.remember(ctx.user.id, householdId);
     return go(HOME[target.role]);
   }
@@ -276,7 +290,12 @@
   // The auth guard for app pages (index, parent, people, messages, info, food).
   async function guard() {
     if (demoMode()) {
-      storeKey = DEMO_STORE_KEY;
+      // js/data.js (the demo family this page shows) loads after this file.
+      if (document.readyState === "loading") {
+        await new Promise((resolve) => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
+      }
+      const demo = window.CareNestDemo;
+      storeKey = demo ? demo.storeKey : DEMO_STORE_KEY;
       let session = null;
       try {
         if (client) session = (await client.auth.getSession()).data.session;
@@ -289,7 +308,16 @@
       const roles = PAGE_ROLES[page] || [];
       const parentOnlyPage = roles.includes("parent") && !roles.includes("caretaker");
       const role = page === "parent" || params.get("as") === "parent" || parentOnlyPage ? "parent" : "caretaker";
-      return { demo: true, role };
+      const ctx = { demo: true, role };
+      if (demo) {
+        ctx.household = { id: demo.familyId, name: demo.familyName };
+        // The babysitter demo sits for two families and switches with the family bar.
+        if (role === "caretaker") {
+          ctx.memberships = demo.memberships;
+          mountFamilyBar(ctx);
+        }
+      }
+      return ctx;
     }
     let ctx;
     try {

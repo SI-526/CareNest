@@ -10,13 +10,14 @@
   let photoObjectUrl = null;
   let cameraStream = null;
   let returnFocusEl = null;
-  // The shift backend (js/shift-data.js): Supabase when signed in, the localStorage store in demo.
+  // The shift backend (js/shift-data.js): Supabase when signed in, the sessionStorage store in demo.
   let shift = null;
 
   const SHIFT_LOCKED_TEXT = "This shift has ended. Photos can't be added after a shift.";
-  const isDevHost =
-    ["localhost", "127.0.0.1", "[::1]", ""].includes(window.location.hostname) ||
-    demoFlag();
+  // Demo tools (moment trigger, "Start a new shift", concept alerts) show on localhost only. The
+  // demo on the deployed site is for user testing, where they would confuse testers.
+  demoFlag(); // remembers ?demo=1 for this tab
+  const isDevHost = ["localhost", "127.0.0.1", "[::1]", ""].includes(window.location.hostname);
   // Keep the parent-side navigation selection when the shared demo switches pages.
   const role =
     page === "parent" || new URLSearchParams(window.location.search).get("as") === "parent"
@@ -24,7 +25,7 @@
       : "sitter";
   if (role === "parent") document.body.dataset.role = "parent";
 
-  // ?demo=1 turns on the demo/dev controls for this browser tab (e.g. on the deployed site).
+  // ?demo=1 turns on demo mode for this browser tab.
   function demoFlag() {
     try {
       if (new URLSearchParams(window.location.search).has("demo")) {
@@ -1538,7 +1539,7 @@
     box.innerHTML = `
       <h2 class="panel-title" id="dev-tools-heading">Demo tools (not part of the product)</h2>
       <div class="dev-tools-actions">
-        <a class="photo-source-btn dev-link" href="parent.html" target="_blank" rel="noopener">Open parent view<span class="visually-hidden"> (opens in a new tab)</span></a>
+        <a class="photo-source-btn dev-link" href="parent.html${shift.demo ? "?demo=1" : ""}" target="_blank" rel="noopener">Open parent view<span class="visually-hidden"> (opens in a new tab)</span></a>
         ${demoButtons}
       </div>`;
     const momentBtn = box.querySelector('[data-dev="moment"]');
