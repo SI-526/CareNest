@@ -252,7 +252,7 @@
       },
       profile: {
         eyebrow: "PROFILE & SETTINGS", title: ctx && ctx.role === "parent" ? "Your CareNest settings" : "Your sitter profile", intro: ctx && ctx.role === "parent" ? "Manage your details and the family space with confidence." : "Choose what parents can see, and keep your personal preferences in one place.",
-        body: ctx && ctx.role === "parent" ? `<section class="secondary-grid"><article class="panel secondary-panel"><h2 class="section-title">My profile</h2><p class="supporting-copy">Your name and sign-in controls are available from the Account menu.</p></article><article class="panel secondary-panel"><h2 class="section-title">Manage household</h2><p class="supporting-copy">Use the Children and Schedule tabs to edit family care information directly where it is shown.</p><a class="secondary-link" href="people.html">People and invites</a></article><article class="panel secondary-panel"><h2 class="section-title">Notification preferences</h2><p class="supporting-copy">Notification controls will appear here as they become available.</p></article></section>` : sitterProfile(),
+        body: ctx && ctx.role === "parent" ? `<section class="secondary-grid"><div class="account-slot" data-account-panel></div><article class="panel secondary-panel"><h2 class="section-title">Manage household</h2><p class="supporting-copy">Use the Children and Schedule tabs to edit family care information directly where it is shown.</p></article><article class="panel secondary-panel"><h2 class="section-title">Notification preferences</h2><p class="supporting-copy">Notification controls will appear here as they become available.</p></article></section>` : `${sitterProfile()}<div class="account-slot account-slot-wide" data-account-panel></div>`,
       },
     }[page];
     if (!views) return;
@@ -261,6 +261,7 @@
     if (page === "schedule") bindSchedule(ctx, Boolean(ctx && ctx.role === "parent"));
     if (editable) bindEditors(ctx);
     if (page === "profile" && (!ctx || ctx.role !== "parent")) bindSitterProfile(ctx || {});
+    if (page === "profile") auth.mountAccountPanel(root.querySelector("[data-account-panel]"), ctx);
   }
 
   function bindSchedule(ctx, editable) {

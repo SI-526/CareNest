@@ -1966,7 +1966,6 @@
     const nav = document.querySelector(".primary-nav");
     if (!nav) return;
     nav.setAttribute("aria-label", "Parent navigation");
-    const account = nav.querySelector("[data-account-button]"); // added by js/auth.js
     nav.innerHTML = parentNavItems().map(
       (item) => `
         <a class="nav-item" href="${item.href}" data-nav="${item.id}"${item.id === current ? ' aria-current="page"' : ""}>
@@ -1974,7 +1973,6 @@
           <span>${item.label}</span>
         </a>`
     ).join("");
-    if (account) nav.appendChild(account);
   }
 
   // The five primary destinations match the product's information architecture.
@@ -1982,7 +1980,6 @@
   function renderSitterNav(current) {
     const nav = document.querySelector(".primary-nav");
     if (!nav) return;
-    const account = nav.querySelector("[data-account-button]");
     const items = [
       ["home", "index.html", "Home", '<path d="m12 3 9 7.5V21h-6v-6H9v6H3v-10.5L12 3Z" />'],
       ["schedule", "schedule.html", "Schedule", '<path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1Zm12 8H5v10h14V10ZM7 6H5v2h14V6h-2v1a1 1 0 1 1-2 0V6H8v1a1 1 0 1 1-2 0V6Z" />'],
@@ -1993,7 +1990,6 @@
     nav.innerHTML = items.map(([id, href, label, icon]) =>
       `<a class="nav-item" href="${href}"${id === current ? ' aria-current="page"' : ""}><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span>${label}</span></a>`
     ).join("");
-    if (account) nav.appendChild(account);
   }
 
   // Shared helpers for js/parent.js.

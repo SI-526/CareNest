@@ -17,7 +17,7 @@ revoke invites, remove sitters), `invite.html#<token>` (accept an invite), and `
 `food-allergies`) loads `js/auth.js`, which keeps the page hidden until it has checked the
 session: signed out goes to `signin.html`, no family space goes to `onboarding.html`, a parent's
 home is `parent.html`, a sitter's is `index.html`, and a page for the other role redirects to the
-right one. The Account item in the nav signs out or deletes the account and its data. The child's
+right one. The Profile tab shows the signed-in account and signs out or deletes the account and its data. The child's
 name and age, the schedule, care info (Good to know, food and allergies, emergency steps) and
 contacts come from the family space in Supabase (`js/family-data.js` loads them into the shape
 `js/data.js` defines); parents edit them on `manage.html` ("Family info" in the parent nav).
@@ -215,7 +215,7 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   on this device, then the family where they are a parent, then the first joined). Every query
   filters on that family's id. Realtime subscriptions do too, except the `task_checks` and
   `shift_events` listeners (no household column), which can only cause an extra reload of the
-  shown family. A family switcher appears at the top of each page and in the Account menu once
+  shown family. A family switcher appears at the top of each page and on the Profile page once
   there is more than one. Deleting an account leaves every family it is in and deletes only
   a family where it was the sole parent.
 - **Home address.** `households.home_address` is optional (empty when not set) and only parents write it. It is
