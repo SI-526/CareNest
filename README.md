@@ -59,8 +59,8 @@ Each family has a profile, care info (food and allergies, preferences, where thi
 instructions, emergency steps, contacts), today's schedule, upcoming sessions, and today's care
 log already started (two tasks done, with care log entries and a few messages). Testers can check
 off tasks, add care logs and photos, send messages, edit the sitter profile, and, as the parent,
-add, edit, and delete children and their care info on the Children tab, and edit contacts and
-schedule sessions. Everything is kept in the
+add, edit, and delete children and their care info, contacts, where things are, and emergency
+steps on the Children tab, and schedule sessions on the Schedule tab. Everything is kept in the
 tab's sessionStorage, so closing the tab resets the demo for the next tester. The parent's
 "Important today" notes are read-only in the demo. The demo tools panels (moment trigger,
 "Start a new shift", concept alerts) show only on localhost.
@@ -239,7 +239,10 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   transitional triggers stay for a grace period: a change to one of the household's child
   columns copies that column to the first child (lowest position), and a per-child care item
   saved with no child goes to the first child (creating one if every child was deleted). The
-  copy runs one way only: a direct edit of a child does not change the household's columns. The
+  copy runs one way only: a direct edit of a child does not change the household's columns. Until
+  it reloads, an old tab also shows every child's food items in one list under the first child's
+  name (it shows more restrictions, never fewer), and an allergy it saves goes to whichever child
+  is first, so reordering children in Family info changes which one. The
   check `care_items_per_child_has_child` (validated by `20261106000100`) makes a child required
   for food, preferences, and instructions. Once no old tab can be open, a later migration drops
   the two triggers, then `ensure_first_child`, then the household child columns, in that order.

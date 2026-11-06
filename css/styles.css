@@ -4406,3 +4406,14 @@ body:not([data-role="parent"]) .gallery-list {
   color: var(--grey);
   font-weight: var(--weight-regular);
 }
+
+.family-wide {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.family-wide > .child-section-title {
+  padding: 0 4px;
+}

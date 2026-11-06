@@ -464,7 +464,7 @@
     if (window.CareNestChildren) data.categories.emergency.callout.text = window.CareNestChildren.emergencyText(data.children);
   }
 
-  // The rows the parent editors (js/secondary.js, js/manage.js) write, applied to this tab's demo
+  // The rows the parent editors (js/children-page.js, js/secondary.js) write, applied to this tab's demo
   // family. `scope` is { id } or { household_id } from .eq(). Returns { error, id }.
   function applyWrite(table, action, values, scope) {
     const data = window.CareNestData;

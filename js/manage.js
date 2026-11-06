@@ -276,7 +276,12 @@
       });
     }
 
+    // An address typed but not saved yet survives the reloads other edits trigger.
+    let familyFormDirty = false;
+    document.getElementById("family-form").addEventListener("input", () => (familyFormDirty = true));
+
     function renderFamilyForm() {
+      if (familyFormDirty) return;
       document.getElementById("home-address").value = ctx.household.home_address || "";
       const primary = state.contacts.find((c) => c.is_primary);
       document.getElementById("primary-contact").innerHTML =
@@ -446,16 +451,22 @@
       const chosen = form.primary_contact.value || null;
       const current = state.contacts.find((c) => c.is_primary);
       if ((current ? current.id : null) !== chosen) {
-        if (current) {
-          const error = writeError(await client.from("contacts").update({ is_primary: false }).eq("id", current.id).select("id"), NOT_SAVED);
-          if (error) throw error;
+        try {
+          if (current) {
+            const error = writeError(await client.from("contacts").update({ is_primary: false }).eq("id", current.id).select("id"), NOT_SAVED);
+            if (error) throw error;
+          }
+          if (chosen) {
+            const error = writeError(await client.from("contacts").update({ is_primary: true }).eq("id", chosen).select("id"), NOT_SAVED);
+            if (error) throw error;
+          }
+        } finally {
+          // Success or not, show what the database now holds (a failed second step leaves none).
+          familyFormDirty = false;
+          await load();
         }
-        if (chosen) {
-          const error = writeError(await client.from("contacts").update({ is_primary: true }).eq("id", chosen).select("id"), NOT_SAVED);
-          if (error) throw error;
-        }
-        await load();
       }
+      familyFormDirty = false;
       announce("Family details saved.");
     });
 

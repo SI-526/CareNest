@@ -132,6 +132,41 @@
         ${children.length ? `<ul class="children-list">${rows}</ul>` : empty}
         ${editable() ? '<button type="button" class="primary-btn children-add" data-add-child>Add a child</button>' : ""}
         ${isParent() && !ctx.demo ? '<a class="secondary-link" href="manage.html">Home address, primary contact, and more in Family info</a>' : ""}
+      </section>
+      ${editable() ? familyWideHtml(family) : ""}`;
+  }
+
+  // Parents only: the family-wide info, editable where it is listed. Sitters reach it through
+  // Good to know on each child's page.
+  const FAMILY_WIDE = [
+    { key: "where", title: "Where things are", noun: "item" },
+    { key: "emergency", title: "Emergency steps", noun: "step" },
+    { key: "contacts", title: "Contacts", noun: "contact" },
+  ];
+
+  function familyRows(family, key) {
+    if (key === "contacts") return (family.contacts || []).map((c) => ({ id: c.id, title: c.name, detail: [c.role, c.phone].filter(Boolean).join(" · ") }));
+    const source = key === "emergency" ? family.categories.emergency.steps : family.categories.where.items;
+    return (source || []).map((item) => ({ id: item.id, title: item.title, detail: item.detail }));
+  }
+
+  function familyWideHtml(family) {
+    return `<section class="family-wide" aria-labelledby="family-wide-title">
+        <h2 class="child-section-title" id="family-wide-title">Shared by the whole family</h2>
+        ${FAMILY_WIDE.map((section) => {
+          const rows = familyRows(family, section.key);
+          return `<section class="child-card-section" aria-labelledby="family-${section.key}">
+            <div class="child-section-head">
+              <h3 class="child-section-title" id="family-${section.key}">${section.title}</h3>
+              <button type="button" class="photo-source-btn child-add-item" data-add-family="${section.key}">Add</button>
+            </div>
+            ${rows.length
+              ? `<ul class="child-notes">${rows
+                  .map((row) => `<li class="child-note"><p class="child-note-title">${esc(row.title)}</p>${row.detail ? `<p class="child-note-detail">${esc(row.detail)}</p>` : ""}<button type="button" class="child-item-edit" data-edit-family="${section.key}" data-id="${esc(row.id)}" aria-label="Edit ${esc(row.title)}">Edit</button></li>`)
+                  .join("")}</ul>`
+              : `<p class="child-no-info">${NO_INFO}</p>`}
+          </section>`;
+        }).join("")}
       </section>`;
   }
 
@@ -204,7 +239,7 @@
 
   function sectionHtml(child, section, can) {
     const items = child[section.key] || [];
-    const body = items.length
+    const body = items.length || (section.key === "food" && child.careNote)
       ? section.key === "food"
         ? foodHtml(child, can)
         : `<ul class="child-notes">${items.map((item) => noteHtml(item, section, can)).join("")}</ul>`
@@ -459,6 +494,53 @@
     }
   }
 
+  async function saveFamilyItem(key, id) {
+    const family = data();
+    const section = FAMILY_WIDE.find((s) => s.key === key);
+    const isContact = key === "contacts";
+    const existing = id
+      ? isContact
+        ? (family.contacts || []).find((c) => c.id === id)
+        : (key === "emergency" ? family.categories.emergency.steps : family.categories.where.items).find((item) => item.id === id)
+      : null;
+    if (id && !existing) return;
+    const fields = isContact
+      ? [
+          { name: "name", label: "Name", required: true, max: 80, value: existing && existing.name },
+          { name: "role", label: "Role", max: 40, value: existing && existing.role },
+          { name: "phone", label: "Phone", max: 40, value: existing && existing.phone },
+          { name: "address", label: "Address", max: 200, value: existing && existing.address },
+        ]
+      : [
+          { name: "title", label: "Title", required: true, max: 140, value: existing && existing.title },
+          { name: "detail", label: "Details", type: "textarea", max: 2000, value: existing && existing.detail },
+        ];
+    const values = await formDialog(`${existing ? "Edit" : "Add"} ${section.noun}`, fields, Boolean(existing));
+    if (!values) return;
+    const table = isContact ? "contacts" : "care_items";
+    try {
+      if (values === "remove") {
+        const ok = await auth.confirmDialog({
+          title: `Remove ${existing.name || existing.title}?`,
+          body: "Your sitter will no longer see this. This can't be undone.",
+          confirmLabel: "Remove",
+          danger: true,
+        });
+        if (!ok) return;
+        await written(client().from(table).delete().eq("id", existing.id).select("id"), "This couldn't be removed. Reload the page and try again.");
+      } else if (existing) {
+        await written(client().from(table).update(values).eq("id", existing.id).select("id"));
+      } else {
+        const position = familyRows(family, key).length;
+        const row = Object.assign(values, { household_id: ctx.household.id, position }, isContact ? {} : { category: key });
+        await written(client().from(table).insert(row).select("id"));
+      }
+      done();
+    } catch (error) {
+      showError(error);
+    }
+  }
+
   root.addEventListener("click", (event) => {
     const link = event.target.closest("a[data-route]");
     if (link && !event.metaKey && !event.ctrlKey && !event.shiftKey && event.button === 0) {
@@ -472,6 +554,8 @@
     if (!button) return;
     const child = kids.findChild(data(), new URLSearchParams(window.location.search).get("child"));
     if (button.matches("[data-add-child]")) addChild();
+    else if (button.dataset.addFamily) saveFamilyItem(button.dataset.addFamily, null);
+    else if (button.dataset.editFamily) saveFamilyItem(button.dataset.editFamily, button.dataset.id);
     else if (button.dataset.editChild && child) editChild(child);
     else if (button.dataset.deleteChild && child) deleteChild(child);
     else if (button.dataset.addItem && child) saveItem(child, button.dataset.addItem, null);

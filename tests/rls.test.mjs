@@ -3379,16 +3379,20 @@ test("children: a care item cannot point at another family's child or leave its 
   assert.equal(moved.data.child_id, second.id, "moving between the family's own children is allowed");
 });
 
-test("children (slice C): food, preferences, and instructions must name a child, and the check is validated", (t) => {
-  if (!psqlAvailable()) {
-    t.skip("psql is not on PATH; this test needs a direct database connection");
-    return;
-  }
+test("children (slice C): the per-child check exists and the second migration validated it", () => {
   const [check] = localSql(
     "select convalidated as valid, pg_get_constraintdef(oid) as def from pg_constraint where conname = 'care_items_per_child_has_child'",
   );
   assert.ok(check, "care_items_per_child_has_child exists");
   assert.equal(check.valid, true, "the second migration validated it");
+  assert.match(check.def, /child_id IS NOT NULL/);
+});
+
+test("children (slice C): food, preferences, and instructions must name a child", (t) => {
+  if (!psqlAvailable()) {
+    t.skip("psql is not on PATH; this test needs a direct database connection");
+    return;
+  }
   // With the old client's default-child trigger off (rolled back), nothing fills child_id, so the
   // check alone decides. A family-wide category with no child is still fine.
   const household = uuid(randomUUID());

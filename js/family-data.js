@@ -23,8 +23,7 @@
 (function () {
   const auth = window.CareNestAuth;
   const sample = window.CareNestData;
-  const kids = window.CareNestChildren;
-  if (!auth || !sample || !kids) return;
+  if (!auth || !sample) return;
 
   // Same rule as js/auth.js (which has already run and remembered ?demo=1 for this tab).
   function demoMode() {
@@ -80,6 +79,14 @@
     };
   }
   const data = window.CareNestData;
+
+  // js/children.js is required to show a family. If it failed to load, stop here: the sample
+  // family is already gone, so pages show empty sections, never sample data as the family's own.
+  const kids = window.CareNestChildren;
+  if (!kids) {
+    console.error("CareNest: js/children.js did not load, so family data was not loaded.");
+    return;
+  }
 
   // Which pages render the family's data (and so load it). people/manage only need the scrub.
   // Secondary parent tabs render the same household data as the home views. Include them

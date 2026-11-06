@@ -71,11 +71,17 @@
     }
     if (userId) window.CareNestFamilies.remember(userId, householdId);
     if (childName || childAge) {
-      // create_household made the family's first child (SI-45); name it.
-      const { error: childError } = await auth.client
-        .from("children")
-        .update({ name: childName, age_label: childAge })
-        .eq("household_id", householdId);
+      // create_household made the family's first child (SI-45); name it. A call already under way
+      // while the slice C migration deployed can have run the old body, which made no child: then
+      // add it, so the name typed here is never silently dropped.
+      const values = { name: childName, age_label: childAge };
+      const named = await auth.client.from("children").update(values).eq("household_id", householdId).select("id");
+      let childError = named.error;
+      if (!childError && !(named.data && named.data.length)) {
+        ({ error: childError } = await auth.client
+          .from("children")
+          .insert(Object.assign({ household_id: householdId, position: 0 }, values)));
+      }
       if (childError) {
         // The family space exists; only the child's details didn't save. Don't strand them here.
         showError(

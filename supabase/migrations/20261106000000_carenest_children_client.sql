@@ -27,13 +27,15 @@
 --   * public.ensure_first_child, which both triggers use.
 --
 -- Locks: as in 20261102000000, the file opens by taking care_items, then households, with a
--- 5 second lock timeout (55P03 and nothing changed if they are busy; rerun it). The same
+-- 2 second lock timeout per table. So the push waits at most about 4 seconds for its locks, and a
+-- client query queued behind it stays under the client role's 8 second statement timeout. If a
+-- lock is not free in time the push fails cleanly (55P03) with nothing changed; rerun it. The same
 -- reverse-order deadlock with delete_my_account applies (40P01: a cancelled push changed
 -- nothing). Both locks are held only for the catalog changes below; nothing here scans a table.
 
 do $$
 begin
-  set local lock_timeout = '5s';
+  set local lock_timeout = '2s';
   lock table public.care_items, public.households in access exclusive mode;
 end;
 $$;
