@@ -9,8 +9,18 @@
 --   select '00000000-0000-4000-8000-00000000c0de', id, 'parent', lower(email), 'Mary'
 --   from auth.users where email = 'you@example.test';
 
-insert into public.households (id, name, child_name, child_age_label, risk_acknowledged_at)
-values ('00000000-0000-4000-8000-00000000c0de', 'Thomas family', 'Jack Thomas', 'Age 3', now());
+insert into public.households (id, name, child_name, child_age_label, home_address, risk_acknowledged_at)
+values ('00000000-0000-4000-8000-00000000c0de', 'Thomas family', 'Jack Thomas', 'Age 3',
+        '213 Maple Lane, Ann Arbor, MI 48104', now());
+
+-- Two children. Jack is first (position 0), so the care items below with no child id are his
+-- (care_items_default_child); Kylie's name hers explicitly.
+insert into public.children (id, household_id, position, name, age_label, stage_label, pinned_note)
+values
+  ('00000000-0000-4000-8000-0000000c1d01', '00000000-0000-4000-8000-00000000c0de', 0,
+   'Jack Thomas', 'Age 3', 'Preschooler', ''),
+  ('00000000-0000-4000-8000-0000000c1d02', '00000000-0000-4000-8000-00000000c0de', 1,
+   'Kylie Thomas', 'Age 6', '1st Grader', 'Currently recovering from a cold');
 
 insert into public.plans (id, household_id, title, schedule)
 values (
@@ -29,14 +39,14 @@ values
   ('00000000-0000-4000-8000-00000000d00d', 2, '17:00', 'Dinner', 'Pasta and vegetables', '', ''),
   ('00000000-0000-4000-8000-00000000d00d', 3, '19:00', 'Wind down', 'Bath time and reading', '', '');
 
-insert into public.contacts (household_id, position, name, role, phone, address)
+insert into public.contacts (household_id, position, name, role, phone, address, is_primary)
 values
-  ('00000000-0000-4000-8000-00000000c0de', 0, 'Mary Ann Thomas', 'Parent', '588-909-3489', ''),
-  ('00000000-0000-4000-8000-00000000c0de', 1, 'David Thomas', 'Parent', '734-555-0142', ''),
-  ('00000000-0000-4000-8000-00000000c0de', 2, 'Linda Thomas', 'Grandmother', '616-555-0187', ''),
-  ('00000000-0000-4000-8000-00000000c0de', 3, 'Dr. Priya Shah', 'Pediatrician', '734-555-0123', ''),
+  ('00000000-0000-4000-8000-00000000c0de', 0, 'Mary Ann Thomas', 'Parent', '588-909-3489', '', true),
+  ('00000000-0000-4000-8000-00000000c0de', 1, 'David Thomas', 'Parent', '734-555-0142', '', false),
+  ('00000000-0000-4000-8000-00000000c0de', 2, 'Linda Thomas', 'Grandmother', '616-555-0187', '', false),
+  ('00000000-0000-4000-8000-00000000c0de', 3, 'Dr. Priya Shah', 'Pediatrician', '734-555-0123', '', false),
   ('00000000-0000-4000-8000-00000000c0de', 4, 'C.S. Mott Children’s Hospital', 'Hospital',
-   '734-555-0100', '1540 E Hospital Dr, Ann Arbor, MI 48109');
+   '734-555-0100', '1540 E Hospital Dr, Ann Arbor, MI 48109', false);
 
 insert into public.care_items (household_id, category, position, title, detail, severity)
 values
@@ -98,3 +108,10 @@ values
    'Avoid nuts and nut traces. Follow the child’s allergy care plan.', 'Severe'),
   ('00000000-0000-4000-8000-00000000c0de', 'food', 3, 'Care note',
    'Epinephrine auto-injector (EpiPen) available in bathroom cabinet for use in the event of a severe allergic reaction.', null);
+
+insert into public.care_items (household_id, child_id, category, position, title, detail, severity)
+values
+  ('00000000-0000-4000-8000-00000000c0de', '00000000-0000-4000-8000-0000000c1d02', 'preferences', 0,
+   'Reading', 'Loves chapter books. She will read to you if you ask.', null),
+  ('00000000-0000-4000-8000-00000000c0de', '00000000-0000-4000-8000-0000000c1d02', 'instructions', 0,
+   'Rest', 'She is getting over a cold: quiet play inside, and plenty of water.', null);

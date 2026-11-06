@@ -8,10 +8,13 @@
 //
 // What reads what (every query filters on the active family's id, ctx.household.id; RLS alone
 // would return every family the caller belongs to):
-//   households (child_name, child_age_label) -> child name and age (already on the auth context)
+//   households (name, home_address)           -> family card on the Children page
+//   children                                  -> data.children (SI-45); the first is data.child
 //   tasks of the household's plan            -> schedule
-//   care_items                                -> Good to know categories, food page, emergency steps
-//   contacts                                  -> Your Contacts, Who to contact; role "Hospital" -> hospital card
+//   care_items                                -> each child's food, preferences, instructions
+//                                                (js/children.js), where things are, emergency steps
+//   contacts                                  -> Your Contacts, Who to contact; role "Hospital" -> hospital card;
+//                                                is_primary -> the family card's primary contact
 //   appointments                              -> schedule page sessions
 //   schedule_requests (open only)             -> a sitter's "Request Schedule" reminders (SI-50)
 //
@@ -20,7 +23,8 @@
 (function () {
   const auth = window.CareNestAuth;
   const sample = window.CareNestData;
-  if (!auth || !sample) return;
+  const kids = window.CareNestChildren;
+  if (!auth || !sample || !kids) return;
 
   // Same rule as js/auth.js (which has already run and remembered ?demo=1 for this tab).
   function demoMode() {
@@ -42,6 +46,10 @@
     window.CareNestData = {
       babysitter: { name: "your sitter", avatar: null, address: "" },
       child: { name: "Child", age: "", avatar: null, dateLabel: "", shiftTime: "" },
+      children: [],
+      familyName: "",
+      homeAddress: "",
+      primaryContact: null,
       contacts: [],
       schedule: [],
       dayNotes: [],
@@ -80,7 +88,6 @@
   const DATA_PAGES = ["home", "parent", "info", "food", "messages", "gallery", "schedule", "carelog", "children", "profile"];
 
   const HOSPITAL_ROLE = "hospital";
-  const SEVERITY_CLASS = { Severe: "badge--severe", Moderate: "badge--moderate", Mild: "badge--mild" };
 
   // "13:30:00" -> "1:30pm". Null or malformed -> "".
   function formatTaskTime(value) {
@@ -139,6 +146,7 @@
       phone: row.phone || "",
       phoneHref: phoneHref(row.phone),
       address: row.address || "",
+      isPrimary: Boolean(row.is_primary),
       avatar: null,
     };
   }
@@ -152,13 +160,12 @@
       ctx.role === "caretaker" ? ctx.membership : members.find((m) => m.role === "caretaker");
     const plan = rows.plan;
 
-    data.child = {
-      name: (household.child_name || "").trim() || "Child",
-      age: (household.child_age_label || "").trim(),
-      avatar: null,
-      dateLabel: todayLabel(),
-      shiftTime: plan ? plan.schedule || "" : "",
-    };
+    // Several children (SI-45): each child's own food, preferences, and instructions. flatten()
+    // below rebuilds the family-wide lists and data.child (the first child) from these.
+    data.children = kids.fromRows(rows.children, rows.careItems);
+    data.child = { dateLabel: todayLabel(), shiftTime: plan ? plan.schedule || "" : "" };
+    data.familyName = (household.name || "").trim();
+    data.homeAddress = (household.home_address || "").trim();
     data.babysitter = {
       name: sitter ? auth.firstName(sitter) : "your sitter",
       userId: sitter ? sitter.user_id : null,
@@ -195,6 +202,7 @@
     const hospitalRow = contacts.find(isHospital);
     const people = contacts.filter((c) => !isHospital(c));
     data.contacts = people;
+    data.primaryContact = contacts.find((c) => c.isPrimary) || null;
 
     // Only active tasks; archived ones live on in past shifts' check snapshots.
     data.schedule = sortTasks(plan ? (plan.tasks || []).filter((t) => !t.archived_at) : []).map((t) => ({
@@ -214,9 +222,8 @@
     });
     const toItem = (item) => ({ id: item.id, title: item.title, detail: item.detail || "" });
 
-    data.categories.preferences.items = byCategory.preferences.map(toItem);
+    // Family-wide categories only; per-child ones come from data.children in flatten().
     data.categories.where.items = byCategory.where.map(toItem);
-    data.categories.instructions.items = byCategory.instructions.map(toItem);
 
     const emergency = data.categories.emergency;
     emergency.steps = byCategory.emergency.map(toItem);
@@ -231,41 +238,39 @@
         }
       : null;
     emergency.contacts = people;
-    // The "Call 911" callout stays (static); name the child in it.
-    emergency.callout = Object.assign({}, emergency.callout, {
-      text: `If ${household.child_name ? data.child.name.split(/\s+/)[0] : "your child"} is in danger, not breathing, or having a severe allergic reaction, call 911 first.`,
-    });
+    // The "Call 911" callout stays (static); name the children in it.
+    emergency.callout = Object.assign({}, emergency.callout, { text: kids.emergencyText(data.children) });
 
     data.viewerRole = ctx.role;
     data.isEmpty =
       !data.schedule.length && !rows.careItems.length && !rows.contacts.length;
 
-    data.allergies.careNote = null; // no data source; shown only in demo mode
-    data.allergies.items = byCategory.food.map((item) => ({
-      id: item.id,
-      name: item.title,
-      severity: item.severity || "",
-      severityClass: SEVERITY_CLASS[item.severity] || "",
-      image: null,
-      description: item.detail || "",
-    }));
+    // Food, preferences, instructions, the care note (demo only), and data.child.
+    kids.flatten(data);
   }
 
   async function fetchRows(ctx) {
     const client = ctx.client;
     const householdId = ctx.household.id;
-    const [household, contacts, careItems, plans, appointments, scheduleRequests] = await Promise.all([
-      // Re-read so a renamed child shows live (the auth context's copy is from sign-in).
-      client.from("households").select("id, name, child_name, child_age_label").eq("id", householdId).maybeSingle(),
+    const [household, children, contacts, careItems, plans, appointments, scheduleRequests] = await Promise.all([
+      // Re-read so a renamed family space shows live (the auth context's copy is from sign-in).
+      client.from("households").select("id, name, child_name, child_age_label, home_address").eq("id", householdId).maybeSingle(),
+      client
+        .from("children")
+        .select("id, name, age_label, stage_label, pinned_note, position, created_at")
+        .eq("household_id", householdId)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true }),
       client
         .from("contacts")
-        .select("id, name, role, phone, address, position")
+        .select("id, name, role, phone, address, position, is_primary")
         .eq("household_id", householdId)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true }),
       client
         .from("care_items")
-        .select("id, category, title, detail, severity, position")
+        .select("id, category, title, detail, severity, position, child_id")
         .eq("household_id", householdId)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true }),
@@ -291,13 +296,14 @@
         .gte("request_date", localDateKey(-1))
         .order("request_date", { ascending: true }),
     ]);
-    const error = household.error || contacts.error || careItems.error || plans.error || appointments.error;
+    const error = household.error || children.error || contacts.error || careItems.error || plans.error || appointments.error;
     if (error) throw error;
     // Reminders are optional: if they cannot load (e.g. the table is not there yet), the family
     // pages still work, just without them.
     if (scheduleRequests.error) console.warn("Schedule requests unavailable", scheduleRequests.error);
     return {
       household: household.data,
+      children: children.data || [],
       contacts: contacts.data || [],
       careItems: careItems.data || [],
       plan: (plans.data && plans.data[0]) || null,
@@ -328,7 +334,7 @@
     if (rows.household) Object.assign(ctx.household, rows.household);
     apply(ctx, rows);
     const plan = rows.plan ? [rows.plan].concat(rows.plan.tasks || []) : [];
-    shownIds = new Set(rows.contacts.concat(rows.careItems, plan).map((r) => r.id));
+    shownIds = new Set(rows.contacts.concat(rows.careItems, rows.children, plan).map((r) => r.id));
     return true;
   }
 
@@ -416,7 +422,7 @@
       channelPlanId = data.planId;
       if (channel) await client.removeChannel(channel);
       channel = client.channel(`carenest-family-${householdId}-${channelPlanId || "none"}`);
-      ["contacts", "care_items", "plans"].forEach((table) => {
+      ["contacts", "care_items", "plans", "children"].forEach((table) => {
         channel
           .on("postgres_changes", changes(table, `household_id=eq.${householdId}`), scheduleReload)
           .on("postgres_changes", { event: "DELETE", schema: "public", table }, onDelete);

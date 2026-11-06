@@ -1,7 +1,7 @@
 # CareNest
 
 A babysitter app for two phones. A parent sets up the family space and invites a babysitter by
-email; the babysitter sees the child's schedule and care info and checks off tasks while the
+email; the babysitter sees the schedule and each child's care info and checks off tasks while the
 parent watches progress live.
 
 The site itself is plain HTML, CSS, and JavaScript served as static files (Vercel, no build
@@ -17,10 +17,19 @@ revoke invites, remove sitters), `invite.html#<token>` (accept an invite), and `
 `food-allergies`) loads `js/auth.js`, which keeps the page hidden until it has checked the
 session: signed out goes to `signin.html`, no family space goes to `onboarding.html`, a parent's
 home is `parent.html`, a sitter's is `index.html`, and a page for the other role redirects to the
-right one. The Profile tab shows the signed-in account and signs out or deletes the account and its data. The child's
-name and age, the schedule, care info (Good to know, food and allergies, emergency steps) and
-contacts come from the family space in Supabase (`js/family-data.js` loads them into the shape
-`js/data.js` defines); parents edit them on `manage.html` ("Family info" in the parent nav).
+right one. The Profile tab shows the signed-in account and signs out or deletes the account and its data. The children,
+the schedule, care info (Good to know, food and allergies, emergency steps) and contacts come from
+the family space in Supabase (`js/family-data.js` loads them into the shape `js/data.js` defines);
+parents edit them on `manage.html` ("Family info" in the parent nav).
+The Children tab (`children.html`, both roles) shows the family card (family name, next sit,
+primary contact, phone, and home address) and each child, with their age, stage, pinned note, and
+any severe allergies. Tapping a child (`children.html?child=<id>`) shows that child's food and
+allergies, preferences, and instructions, the family's contacts, and links to where things are and
+emergency steps, which stay family-wide. A category with nothing in it says "No information
+provided". Parents add, edit, and delete children and each child's items there too, and set the
+home address and primary contact in Family info. Pages that list care info for the whole family
+(the food page, the care info pages) tag each per-child item with the child's first name once
+the family has more than one child. Children are shown by initials, never by photo.
 The top of the sitter's page (`index.html`) is an "Important today" section: the parent's notes
 for that day (`day_notes`: routine change, special instruction, schedule change, food or
 medication, other), each opening in place to its details and marked "Updated <time>" after a
@@ -33,7 +42,7 @@ fail to load only that section says so.
 The shift (start, end, reopen, history), task check-offs with photo proofs, moments, and the message thread are in Supabase (`js/shift-data.js`: Postgres, the private `photos` Storage bucket, and Realtime) for both roles; `?demo=1` keeps them in this browser (`js/store.js`). The parent's Today page (`parent.html`) shows today's shift status (not started / active / reopened / ended) with its history, "x of y done", the schedule (a parent can mark a task done without a photo, "Done by <name>", and end or reopen the shift), and a live feed of the shift's proofs and moments (Late, "Added after reopen", "Photo removed by <name>", replies, "New" until seen via `message_reads`). New photos (proofs, moments, and the sitter's photo messages) and shift events raise an in-app banner and a polite live announcement (no push notifications); View scrolls to a new feed photo, or opens the Gallery when only photo messages are new (they stay out of the Today feed). Save photo uses the Web Share API with files on touch devices, otherwise a JPEG download, and adds it to the parent's Album (`#album`, `photo_saves`). Remove photo calls `remove_photo` and then deletes the object from Storage. The concept alert (`concept_flags`) and "Bring moment forward" (`trigger_moment_now`) are demo controls shown only on localhost; the concept alert is labelled "Concept — not real analysis". The Gallery (`gallery.html`, both roles; parents at `gallery.html?as=parent`) shows every photo of the family's shifts, oldest first with the newest at the bottom, under a heading per shift date, each labelled Task update, Photo message, or Moment, with a filter (native radios styled as chips); removed photos are skipped. The sitter's "+" (Add a photo) opens the phone's camera or library (`<input type="file" accept="image/*">`), then a dialog with the preview and an optional caption, and sends a photo message; it is disabled with the reason when the shift isn't open. A shift takes up to 20 photo messages; past that the sitter sees "Photo limit reached for this shift." Parents get "Remove photo" on each photo. Photo messages also show in the Messages thread. On `manage.html`, "Remove from schedule" archives a task (`archived_at`, stamped by the database); past shifts keep it.
 Outside demo mode the bundled sample family is discarded before anything renders, so a
 signed-in person never sees sample content; an empty family shows "No information provided".
-A parent's edits (schedule, care info, contacts, child's name) reach every open page of the
+A parent's edits (schedule, care info, contacts, children) reach every open page of the
 family within a second or two, without a reload (Realtime; refetched on return to the tab too).
 
 ### Demo for user testing
@@ -41,16 +50,17 @@ family within a second or two, without a reload (Realtime; refetched on return t
 Open **`demo.html`** and pick **Try as the babysitter** (`index.html?demo=1`) or **Try as a parent**
 (`parent.html?demo=1`). No sign-in is needed. The demo families are in `js/data.js`:
 
-- **Babysitter (Bethany)** sits for the **Thomas family** (Jack, age 3) and the **Rivera family**
-  (Sofia, age 6), and switches between them with the "Family space" bar at the top of each page.
-  One child per family, as the app shows today.
+- **Babysitter (Bethany)** sits for the **Thomas family** (Jack, age 3, and Kylie, age 6) and the
+  **Rivera family** (Sofia, age 6), and switches between them with the "Family space" bar at the
+  top of each page. Kylie has no food info, so her page shows "No information provided".
 - **Parent (Mary Ann Thomas)** sees the Thomas family, the same one the babysitter sees.
 
 Each family has a profile, care info (food and allergies, preferences, where things are,
 instructions, emergency steps, contacts), today's schedule, upcoming sessions, and today's care
 log already started (two tasks done, with care log entries and a few messages). Testers can check
 off tasks, add care logs and photos, send messages, edit the sitter profile, and, as the parent,
-edit the child profile, care info, contacts, and schedule sessions. Everything is kept in the
+add, edit, and delete children and their care info on the Children tab, and edit contacts and
+schedule sessions. Everything is kept in the
 tab's sessionStorage, so closing the tab resets the demo for the next tester. The parent's
 "Important today" notes are read-only in the demo. The demo tools panels (moment trigger,
 "Start a new shift", concept alerts) show only on localhost.
@@ -151,8 +161,9 @@ works only on localhost, only changes the port on `127.0.0.1`, and only accepts 
 
 ### Demo family (local only)
 
-`supabase/seed.sql` loads the demo family from `js/data.js` (Jack Thomas: the day's schedule,
-care info, food and allergies, emergency steps, contacts, and the hospital) into a household
+`supabase/seed.sql` loads the demo family from `js/data.js` (Jack Thomas and Kylie Thomas: the
+day's schedule, care info, food and allergies, emergency steps, contacts with Mary Ann as the
+primary contact, the home address, and the hospital) into a household
 with id `00000000-0000-4000-8000-00000000c0de` that has **no members**. Users cannot be created
 from SQL, so sign up on the local stack, then attach yourself as its parent in Studio's SQL
 editor:
@@ -169,11 +180,11 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 
 | Table | Holds | Who can write |
 | --- | --- | --- |
-| `households` | Family space name, the first child's name and age label (transitional: the live client still writes these), optional home address | Created by `create_household`; parents edit name/child fields and the home address. Only current members read the address |
+| `households` | Family space name, optional home address, and the old single-child columns `child_name` and `child_age_label` (transitional: only tabs still open on the pre-SI-45 client write these) | Created by `create_household`, which also creates the first child; parents edit the name, the child columns, and the home address. Only current members read the address |
 | `children` | One row per child: name, age label, stage label, pinned note, order | Members read; parents add, edit, and delete. Reads, adds, and edits use column grants (delete is table-level): a child's household, id, and creation time are fixed, so a child never moves to another family space |
 | `household_members` | Parent and caretaker roles. An account is a parent of at most one family space (a partial unique index) and a sitter in any number, including while a parent elsewhere | Added only by RPCs; parents remove caretakers |
 | `invites` | Email-bound invites (token hash, 7-day expiry) | Created by `create_invite`; parents revoke |
-| `care_items` | Preferences, where things are, instructions, emergency steps, food/allergies (with severity). Food, preferences, and instructions belong to one child (`child_id`); where things are and emergency steps are family-wide (`child_id` is null, enforced by a check) | Parents. A composite foreign key means an item can only point at a child of its own family space. Deleting a child deletes that child's items |
+| `care_items` | Preferences, where things are, instructions, emergency steps, food/allergies (with severity). Food, preferences, and instructions belong to one child (`child_id` set, enforced by a check); where things are and emergency steps are family-wide (`child_id` is null, enforced by a check) | Parents. A composite foreign key means an item can only point at a child of its own family space. Deleting a child deletes that child's items |
 | `contacts` | People and places to call (including the hospital, with address), shared by the family space; at most one primary contact per family space (`is_primary`, a deferrable exclusion constraint, so one update can move primary to another contact) | Parents |
 | `day_notes` | "Important today": notes for one calendar date (category, title, detail); who wrote and last edited each, and when | Parents add, edit, delete; members read. Authorship and edit times are set by the database (a trigger), so "Updated" cannot be forged; a note never moves to another family space |
 | `plans`, `tasks` | The child's day (one plan per family space): ordered tasks with time, detail, location, care note, usual hours | Parents; clients update only a plan's `schedule` (its household and title are fixed); archived tasks are frozen |
@@ -219,16 +230,19 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   server-side, so hidden fields and the private reminders preference never reach a parent's
   browser. A profile saved on a device before this change is moved to the database once and
   the device copy is deleted.
-- **Children (SI-45, transition).** `20261102000000_carenest_children.sql` gave every household
-  exactly one `children` row (blank ones included) and moved its food, preferences, and
-  instructions to that child. The live client does not know about children yet and still writes
-  `households.child_name`, `child_age_label`, and `care_items` with no child id, so three
-  transitional triggers keep those writes correct: a new household gets a first child, a change
-  to one of the household's child columns copies that column to the first child (lowest
-  position), and a per-child care item saved with no child goes to the first child. If every
-  child was deleted, the next such write creates a new first child. The copy runs one way only:
-  a direct edit of a child does not change the household's columns. A later migration removes
-  the triggers, `ensure_first_child`, and the household columns once no client uses them.
+- **Children (SI-45).** `20261102000000_carenest_children.sql` gave every household exactly one
+  `children` row (blank ones included) and moved its food, preferences, and instructions to that
+  child. The client reads and writes `children` and per-child `care_items` directly
+  (`20261106000000_carenest_children_client.sql`): `create_household` creates the first child,
+  and onboarding names it. A tab left open on the old client from before that deploy still writes
+  `households.child_name`, `child_age_label`, and care items with no child id, so two
+  transitional triggers stay for a grace period: a change to one of the household's child
+  columns copies that column to the first child (lowest position), and a per-child care item
+  saved with no child goes to the first child (creating one if every child was deleted). The
+  copy runs one way only: a direct edit of a child does not change the household's columns. The
+  check `care_items_per_child_has_child` (validated by `20261106000100`) makes a child required
+  for food, preferences, and instructions. Once no old tab can be open, a later migration drops
+  the two triggers, then `ensure_first_child`, then the household child columns, in that order.
 - **Several families (SI-45).** `20261105000000_carenest_several_families.sql` lets a sitter
   join more than one family space by invite; `create_household` still refuses anyone already in a
   family space. RLS was already per family, so someone in two families reads both. The app shows

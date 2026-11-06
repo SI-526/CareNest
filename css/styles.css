@@ -3934,3 +3934,475 @@ body:not([data-role="parent"]) .gallery-list {
   padding: 4px 8px;
   font: inherit;
 }
+
+/* ---------------------------------------------------------------- Children (SI-45 slice C)
+   children.html: the family card and its children (Figma 210:155), one child (255:790 and
+   259:1100), and the empty states (267:1320). Initials, never children's photos. */
+
+.children-main {
+  max-width: var(--detail-width);
+  margin: 0 auto;
+  gap: 12px;
+  padding-bottom: 24px;
+}
+
+.children-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  padding-top: 24px;
+}
+
+.children-header h1 {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  color: var(--blue);
+}
+
+.children-header--detail {
+  position: relative;
+}
+
+.children-header-family {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  color: var(--blue);
+}
+
+.children-back {
+  position: absolute;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+.children-back:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.family-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.family-card-top {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.family-card-top h2 {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  color: var(--blue);
+}
+
+.sit-tag,
+.child-tag {
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--line);
+  color: var(--blue);
+  font-size: var(--text-xs);
+  line-height: 18px;
+}
+
+.sit-tag--soon {
+  background: var(--accent-strong);
+  color: #ffffff;
+}
+
+.family-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.family-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.family-detail--lines {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.family-detail-name,
+.family-detail-sub,
+.family-detail-line {
+  margin: 0;
+  color: var(--blue);
+  font-size: var(--text-xs);
+  line-height: 18px;
+}
+
+.family-detail-name {
+  font-weight: var(--weight-bold);
+}
+
+.family-detail-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+.family-detail-line img {
+  flex: none;
+  margin-top: 2px;
+}
+
+.family-detail-line a {
+  color: inherit;
+}
+
+.family-details-empty,
+.child-know-note {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--grey);
+  font-size: var(--text-xs);
+}
+
+.children-count {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--blue);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-regular);
+}
+
+.children-list,
+.child-notes,
+.child-contacts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.child-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.child-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 60px;
+  color: var(--blue);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.child-row:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+}
+
+.child-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: #dce7ef;
+  color: var(--blue);
+  font-weight: var(--weight-bold);
+}
+
+.child-avatar--large {
+  width: 60px;
+  height: 60px;
+  font-size: var(--text-lg);
+}
+
+.child-row-text,
+.child-hero-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.child-name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
+.child-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--blue);
+  font-size: var(--text-xs);
+  line-height: 18px;
+}
+
+.child-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.child-chevron {
+  flex: none;
+  width: 24px;
+  color: var(--grey);
+  font-size: 28px;
+  line-height: 1;
+  text-align: center;
+}
+
+.child-tag--severe {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.child-tag--pinned {
+  align-self: stretch;
+}
+
+.children-none {
+  padding: 16px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--blue);
+  text-align: center;
+}
+
+.children-none p {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.children-none p + p {
+  margin-top: 4px;
+  color: var(--grey);
+  font-size: var(--text-xs);
+}
+
+.children-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 120px 16px;
+  color: var(--blue);
+  text-align: center;
+}
+
+.children-empty h2 {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+}
+
+.children-empty p {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.children-empty-action {
+  width: auto;
+  margin-top: 12px;
+  padding: 10px 20px;
+}
+
+.child-hero {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-surface);
+}
+
+.child-hero h1 {
+  color: var(--blue);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  overflow-wrap: anywhere;
+}
+
+.child-edit,
+.child-add-item {
+  width: auto;
+  min-height: 36px;
+  padding: 6px 14px;
+}
+
+.child-card-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-surface);
+}
+
+.child-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.child-section-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--blue);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
+.child-no-info {
+  margin: 0;
+  padding: 4px 0;
+  color: var(--blue);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.child-food {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.child-care-note,
+.child-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--neutral-soft);
+}
+
+.child-care-note p,
+.child-note p {
+  margin: 0;
+}
+
+.child-care-note-title,
+.child-note-title {
+  color: var(--blue);
+  font-size: var(--text-sm);
+}
+
+.child-care-note p:not(.child-care-note-title),
+.child-note-detail {
+  color: var(--grey);
+  font-size: var(--text-xs);
+  line-height: 18px;
+}
+
+.child-item-edit {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: 4px 0;
+  color: var(--accent-strong);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.child-contact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 4px 0;
+}
+
+.child-contact-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.child-contact-text p {
+  margin: 0;
+  color: var(--blue);
+  font-size: var(--text-xs);
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.child-know-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.child-know-tiles .know-tile {
+  background: var(--neutral-soft);
+  text-align: center;
+}
+
+.child-delete {
+  align-self: center;
+  width: auto;
+  margin-top: 12px;
+  padding: 10px 20px;
+}
+
+.children-add {
+  align-self: stretch;
+}
+
+.children-error {
+  margin: 0;
+}
+
+/* A per-child item on a family-wide page (food, care info) says whose it is. */
+.child-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  line-height: 20px;
+  vertical-align: middle;
+}
+
+#care-note-body {
+  white-space: pre-line;
+}
+
+.manage-for-child {
+  color: var(--grey);
+  font-weight: var(--weight-regular);
+}

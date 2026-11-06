@@ -1,16 +1,18 @@
-// manage.html (parents only): edit the child's name and age, the schedule (the household's one
-// plan and its tasks), care items per category, and contacts. The database enforces who may
-// write (RLS: parents only); this page is the convenience on top.
+// manage.html (parents only): the children (SI-45), the home address and primary contact, the
+// schedule (the household's one plan and its tasks), care items per category, and contacts.
+// Food, preferences, and instructions belong to one child, picked above those sections; where
+// things are and emergency steps are family-wide. The database enforces who may write (RLS:
+// parents only); this page is the convenience on top.
 (function () {
   const auth = window.CareNestAuth;
   const esc = auth.escapeHtml;
 
   const CATEGORIES = [
-    { key: "preferences", title: "Preferences", noun: "preference" },
-    { key: "where", title: "Where things are", noun: "item" },
-    { key: "instructions", title: "Instructions", noun: "instruction" },
-    { key: "emergency", title: "Emergency steps", noun: "step", hint: "Shown in order under \"What to do\" on the emergency page. The Call 911 box always shows above them." },
-    { key: "food", title: "Food & allergies", noun: "food or allergy", hint: "Add a severity for allergies and restrictions." },
+    { key: "preferences", title: "Preferences", noun: "preference", perChild: true },
+    { key: "where", title: "Where things are", noun: "item", hint: "Shared by the whole family." },
+    { key: "instructions", title: "Instructions", noun: "instruction", perChild: true },
+    { key: "emergency", title: "Emergency steps", noun: "step", hint: "Shared by the whole family. Shown in order under \"What to do\" on the emergency page. The Call 911 box always shows above them." },
+    { key: "food", title: "Food & allergies", noun: "food or allergy", perChild: true, hint: "Add a severity for allergies and restrictions." },
   ];
 
   const SEVERITIES = ["Mild", "Moderate", "Severe"];
@@ -58,6 +60,12 @@
   const FOOD_FIELDS = CARE_FIELDS.concat([
     { name: "severity", label: "Severity", type: "select", options: SEVERITIES, optional: true },
   ]);
+  const CHILD_FIELDS = [
+    { name: "name", label: "Name", type: "text", max: 80, required: true },
+    { name: "age_label", label: "Age", type: "text", max: 40, optional: true, placeholder: "For example \"Age 3\" or \"11 months\"" },
+    { name: "stage_label", label: "Stage", type: "text", max: 40, optional: true, placeholder: "For example \"Preschooler\" or \"1st Grader\"" },
+    { name: "pinned_note", label: "Pinned note", type: "text", max: 200, optional: true, placeholder: "For example \"Recovering from a cold\"" },
+  ];
   const CONTACT_FIELDS = [
     { name: "name", label: "Name", type: "text", max: 80, required: true },
     { name: "role", label: "Role", type: "text", max: 40, optional: true, list: "contact-roles" },
@@ -118,7 +126,7 @@
 
     const client = ctx.client;
     const householdId = ctx.household.id;
-    const state = { plan: null, tasks: [], care: {}, contacts: [], dayNotes: [], dayNotesError: null };
+    const state = { plan: null, tasks: [], care: {}, contacts: [], children: [], careChildId: null, dayNotes: [], dayNotesError: null };
     CATEGORIES.forEach((c) => (state.care[c.key] = []));
 
     const sectionsEl = document.getElementById("manage-sections");
@@ -140,12 +148,15 @@
 
     document.getElementById("care-sections").innerHTML = CATEGORIES.map(
       (c) => `<section class="card auth-card manage-care" aria-labelledby="care-${c.key}-heading">
-        <h2 class="panel-title" id="care-${c.key}-heading">${esc(c.title)}</h2>
+        <h2 class="panel-title" id="care-${c.key}-heading">${esc(c.title)}${c.perChild ? ' <span class="manage-for-child" data-care-child-name></span>' : ""}</h2>
         ${c.hint ? `<p class="signin-note">${esc(c.hint)}</p>` : ""}
         <ul class="people-list" id="list-care-${c.key}"></ul>
         <button type="button" class="primary-btn" data-add="care-${c.key}">Add ${esc(c.noun)}</button>
       </section>`
     ).join("");
+
+    const childName = (child) => (child && child.name.trim()) || "Unnamed child";
+    const careChild = () => state.children.find((c) => c.id === state.careChildId) || null;
 
     // ---------- lists ----------
 
@@ -180,6 +191,17 @@
               .join(" · "),
         };
       }
+      if (key === "children") {
+        return {
+          table: "children",
+          noun: "child",
+          rows: state.children,
+          fields: CHILD_FIELDS,
+          empty: "No children added yet.",
+          summary: (r) => childName(r),
+          sub: (r) => [r.age_label, r.stage_label, r.pinned_note].filter(Boolean).join(" · "),
+        };
+      }
       if (key === "contacts") {
         return {
           table: "contacts",
@@ -195,7 +217,9 @@
         table: "care_items",
         category: category.key,
         noun: category.noun,
-        rows: state.care[category.key],
+        // Per-child categories list (and add to) the child picked above them.
+        childId: category.perChild ? state.careChildId : null,
+        rows: category.perChild ? state.care[category.key].filter((item) => item.child_id === state.careChildId) : state.care[category.key],
         fields: category.key === "food" ? FOOD_FIELDS : CARE_FIELDS,
         summary: (r) => r.title,
         sub: (r) => [r.severity, r.detail].filter(Boolean).join(" · "),
@@ -233,15 +257,47 @@
     }
 
     function allListKeys() {
-      return ["day-notes", "tasks", "contacts"].concat(CATEGORIES.map((c) => `care-${c.key}`));
+      return ["day-notes", "children", "tasks", "contacts"].concat(CATEGORIES.map((c) => `care-${c.key}`));
+    }
+
+    // The child whose food, preferences, and instructions show: the one picked before, else the first.
+    function renderChildPicker() {
+      if (!state.children.some((c) => c.id === state.careChildId)) {
+        state.careChildId = state.children.length ? state.children[0].id : null;
+      }
+      const select = document.getElementById("care-child");
+      select.innerHTML = state.children.map((c) => `<option value="${esc(c.id)}"${c.id === state.careChildId ? " selected" : ""}>${esc(childName(c))}</option>`).join("");
+      select.hidden = !state.children.length;
+      document.getElementById("care-child-empty").hidden = Boolean(state.children.length);
+      const label = state.careChildId ? `for ${childName(careChild()).split(/\s+/)[0]}` : "";
+      document.querySelectorAll("[data-care-child-name]").forEach((el) => (el.textContent = label));
+      CATEGORIES.filter((c) => c.perChild).forEach((c) => {
+        document.querySelector(`[data-add="care-${c.key}"]`).disabled = !state.careChildId;
+      });
+    }
+
+    function renderFamilyForm() {
+      document.getElementById("home-address").value = ctx.household.home_address || "";
+      const primary = state.contacts.find((c) => c.is_primary);
+      document.getElementById("primary-contact").innerHTML =
+        '<option value="">None</option>' +
+        state.contacts
+          .map((c) => `<option value="${esc(c.id)}"${primary && primary.id === c.id ? " selected" : ""}>${esc([c.name, c.role].filter(Boolean).join(" · "))}</option>`)
+          .join("");
     }
 
     function renderAll() {
-      document.getElementById("child-name").value = ctx.household.child_name || "";
-      document.getElementById("child-age").value = ctx.household.child_age_label || "";
       document.getElementById("plan-hours").value = state.plan ? state.plan.schedule || "" : "";
+      renderFamilyForm();
+      renderChildPicker();
       allListKeys().forEach(renderList);
     }
+
+    document.getElementById("care-child").addEventListener("change", (event) => {
+      state.careChildId = event.target.value || null;
+      renderChildPicker();
+      CATEGORIES.filter((c) => c.perChild).forEach((c) => renderList(`care-${c.key}`));
+    });
 
     // ---------- load ----------
 
@@ -288,17 +344,24 @@
     async function load() {
       loadingEl.hidden = false;
       loadErrorEl.hidden = true;
-      const [household, contacts, careItems, plans] = await Promise.all([
-        client.from("households").select("child_name, child_age_label").eq("id", householdId).single(),
+      const [household, children, contacts, careItems, plans] = await Promise.all([
+        client.from("households").select("child_name, child_age_label, home_address").eq("id", householdId).single(),
+        client
+          .from("children")
+          .select("id, name, age_label, stage_label, pinned_note, position, created_at")
+          .eq("household_id", householdId)
+          .order("position", { ascending: true })
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true }),
         client
           .from("contacts")
-          .select("id, name, role, phone, address, position")
+          .select("id, name, role, phone, address, position, is_primary")
           .eq("household_id", householdId)
           .order("position", { ascending: true })
           .order("created_at", { ascending: true }),
         client
           .from("care_items")
-          .select("id, category, title, detail, severity, position")
+          .select("id, category, title, detail, severity, position, child_id")
           .eq("household_id", householdId)
           .order("position", { ascending: true })
           .order("created_at", { ascending: true }),
@@ -312,7 +375,7 @@
         loadDayNotes(),
       ]);
       loadingEl.hidden = true;
-      const error = household.error || contacts.error || careItems.error || plans.error;
+      const error = household.error || children.error || contacts.error || careItems.error || plans.error;
       if (error) {
         document.getElementById("manage-load-error-text").textContent = friendly(error);
         loadErrorEl.hidden = false;
@@ -320,6 +383,7 @@
         return;
       }
       Object.assign(ctx.household, household.data);
+      state.children = children.data;
       state.contacts = contacts.data;
       CATEGORIES.forEach((c) => {
         state.care[c.key] = careItems.data.filter((item) => item.category === c.key);
@@ -367,15 +431,32 @@
       });
     }
 
-    bindSimpleForm("child-form", async (form) => {
-      const values = {
-        child_name: form.child_name.value.trim(),
-        child_age_label: form.child_age_label.value.trim(),
-      };
-      const error = writeError(await client.from("households").update(values).eq("id", householdId).select("id"), NOT_SAVED);
-      if (error) throw error;
-      Object.assign(ctx.household, values);
-      announce("Child details saved.");
+    bindSimpleForm("family-form", async (form) => {
+      const address = form.home_address.value.trim();
+      if ((ctx.household.home_address || "") !== address) {
+        // Not null in the database: no address is ''.
+        const error = writeError(
+          await client.from("households").update({ home_address: address }).eq("id", householdId).select("id"),
+          NOT_SAVED
+        );
+        if (error) throw error;
+        ctx.household.home_address = address;
+      }
+      // One primary contact per family (an exclusion constraint): clear the old one, then set the new.
+      const chosen = form.primary_contact.value || null;
+      const current = state.contacts.find((c) => c.is_primary);
+      if ((current ? current.id : null) !== chosen) {
+        if (current) {
+          const error = writeError(await client.from("contacts").update({ is_primary: false }).eq("id", current.id).select("id"), NOT_SAVED);
+          if (error) throw error;
+        }
+        if (chosen) {
+          const error = writeError(await client.from("contacts").update({ is_primary: true }).eq("id", chosen).select("id"), NOT_SAVED);
+          if (error) throw error;
+        }
+        await load();
+      }
+      announce("Family details saved.");
     });
 
     bindSimpleForm("plan-form", async (form) => {
@@ -412,7 +493,8 @@
       } else {
         const v = field.type === "time" ? (value || "").slice(0, 5) : value || "";
         const list = field.list ? ` list="${field.list}"` : "";
-        control = `<input class="text-input" id="${id}" name="${field.name}" type="${field.type}" value="${esc(v)}" autocomplete="off"${max}${required}${list} />`;
+        const placeholder = field.placeholder ? ` placeholder="${esc(field.placeholder)}"` : "";
+        control = `<input class="text-input" id="${id}" name="${field.name}" type="${field.type}" value="${esc(v)}" autocomplete="off"${max}${required}${list}${placeholder} />`;
       }
       return `<div class="manage-field">${label}${control}</div>`;
     }
@@ -473,6 +555,7 @@
           else insert.household_id = householdId;
           if (config.table === "day_notes") insert.note_date = dayNotesDateEl.value || localToday();
           if (config.category) insert.category = config.category;
+          if (config.childId) insert.child_id = config.childId;
           const { error } = await client.from(config.table).insert(insert);
           if (error) throw error;
         }
@@ -526,12 +609,16 @@
           await load();
           return;
         }
-        const ok = await auth.confirmDialog({
-          title: `Delete ${name}?`,
-          body: `Your sitter will no longer see this ${config.noun}. This cannot be undone.`,
-          confirmLabel: "Delete",
-          danger: true,
-        });
+        const ok = await auth.confirmDialog(
+          config.table === "children"
+            ? childDeleteConfirm(row)
+            : {
+                title: `Delete ${name}?`,
+                body: `Your sitter will no longer see this ${config.noun}. This cannot be undone.`,
+                confirmLabel: "Delete",
+                danger: true,
+              }
+        );
         if (!ok) return;
         const error = writeError(await client.from(config.table).delete().eq("id", row.id).select("id"), NOT_DELETED);
         if (error) show(pageError, friendly(error));
@@ -541,6 +628,26 @@
         await move(config, row, Number(button.dataset.move));
       }
     });
+
+    // Deleting a child deletes their own care info with them (the database cascades), so the
+    // confirmation says exactly what goes.
+    function childDeleteConfirm(child) {
+      const name = childName(child);
+      const first = name.split(/\s+/)[0];
+      const words = { food: ["food or allergy entry", "food and allergy entries"], preferences: ["preference", "preferences"], instructions: ["instruction", "instructions"] };
+      const parts = Object.keys(words)
+        .map((key) => [key, state.care[key].filter((item) => item.child_id === child.id).length])
+        .filter(([, n]) => n)
+        .map(([key, n]) => `${n} ${words[key][n === 1 ? 0 : 1]}`);
+      const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
+      const lost = parts.length ? `This also deletes ${first}'s ${list}.` : `Nothing else is saved for ${first} yet.`;
+      return {
+        title: `Delete ${name}?`,
+        body: `${lost} Your sitter will no longer see any of it. This cannot be undone.`,
+        confirmLabel: "Delete child",
+        danger: true,
+      };
+    }
 
     // Moves a row one place and renumbers the list's positions 0..n-1 (only changed rows are
     // written).

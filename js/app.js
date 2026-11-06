@@ -572,7 +572,7 @@
         ${item.image ? `<img class="restriction-thumb" src="${escapeHtml(item.image)}" alt="" width="64" height="64" />` : ""}
         <div class="restriction-content">
           <div class="restriction-top">
-            <h3 class="restriction-name">${escapeHtml(item.name)}</h3>
+            <h3 class="restriction-name">${escapeHtml(item.name)}${childChip(item)}</h3>
             ${item.severity ? `<span class="badge ${escapeHtml(item.severityClass || "")}">${escapeHtml(item.severity)}</span>` : ""}
           </div>
           ${item.description ? `<p class="restriction-desc">${escapeHtml(item.description)}</p>` : ""}
@@ -634,6 +634,11 @@
     return `<div class="${cardClass} empty-state"><p>No information provided.${nudge}</p></div>`;
   }
 
+  // With several children, a per-child item on a family-wide page says whose it is (SI-45).
+  function childChip(item) {
+    return item.childName ? ` <span class="child-chip">${escapeHtml(item.childName.split(/\s+/)[0])}</span>` : "";
+  }
+
   function renderInfoItems(items) {
     if (!items || !items.length) return "";
     return `
@@ -643,7 +648,7 @@
             .map(
               (item) => `
             <li class="info-item">
-              <h2 class="info-item-title">${escapeHtml(item.title)}</h2>
+              <h2 class="info-item-title">${escapeHtml(item.title)}${childChip(item)}</h2>
               ${item.detail ? `<p class="info-item-detail">${escapeHtml(item.detail)}</p>` : ""}
             </li>`
             )
@@ -790,18 +795,24 @@
     if (!cardEl) return;
 
     const child = data.child;
+    // Every child in the family (SI-45); a family with none still shows the shift's day and hours.
+    const children = data.children && data.children.length ? data.children : [child];
     cardEl.innerHTML = `
       <div class="shift-timing">
         <p class="shift-date">${escapeHtml(child.dateLabel)}</p>
         ${child.shiftTime ? `<p class="shift-hours">${escapeHtml(child.shiftTime)}</p>` : ""}
       </div>
-      <div class="shift-child">
-        ${avatarHtml(child.avatar, child.name, "shift-avatar", 60)}
+      ${children
+        .map(
+          (kid) => `<div class="shift-child">
+        ${avatarHtml(null, kid.name, "shift-avatar", 60)}
         <div class="shift-meta">
-          <p class="shift-name">${escapeHtml(child.name)}</p>
-          ${child.age ? `<p class="shift-age">${escapeHtml(child.age)}</p>` : ""}
+          <p class="shift-name">${escapeHtml((kid.name || "").trim() || "Child")}</p>
+          ${kid.age ? `<p class="shift-age">${escapeHtml(kid.age)}</p>` : ""}
         </div>
-      </div>`;
+      </div>`
+        )
+        .join("")}`;
   }
 
   // Today's schedule: the family's active tasks, with each checked task shown as it was when it
