@@ -965,6 +965,67 @@ test("appointments: parents book and edit in their own plan, members read, nothi
   assert.deepEqual(gone, []);
 });
 
+// 20261109100000_carenest_overnight_sessions.sql (SI-80): an end before the start ends the next
+// day; an end equal to the start is refused. The database has no overlap rule between sessions
+// (the app checks overlaps, across midnight too, in js/schedule-dates.js).
+test("appointments: overnight sessions are accepted, equal start and end are refused, same-day is unchanged", async () => {
+  const a = await newFamily("appt-night", 1);
+  const p = a.parent.client;
+  const book = (date, start_time, end_time) =>
+    p
+      .from("appointments")
+      .insert({ household_id: a.householdId, plan_id: a.planId, appointment_date: date, start_time, end_time })
+      .select("id, appointment_date, start_time, end_time")
+      .single();
+
+  // 7:00 PM to 1:00 AM is booked on the day it starts.
+  const night = await book(isoDate(7), "19:00", "01:00");
+  assert.ifError(night.error);
+  assert.equal(night.data.appointment_date, isoDate(7));
+  assert.equal(night.data.start_time, "19:00:00");
+  assert.equal(night.data.end_time, "01:00:00");
+
+  // Ending at midnight, and just under a day, are fine too.
+  const midnight = await book(isoDate(8), "21:00", "00:00");
+  assert.ifError(midnight.error);
+  const long = await book(isoDate(9), "00:05", "00:00");
+  assert.ifError(long.error);
+
+  // The same start and end is not a session, on insert or on edit.
+  const equal = await book(isoDate(10), "19:00", "19:00");
+  assert.ok(equal.error, "equal start and end were booked");
+  assert.equal(equal.error.code, "23514");
+  const flattened = await p.from("appointments").update({ end_time: "19:00" }).eq("id", night.data.id).select("id");
+  assert.ok(flattened.error, "an edit made start and end equal");
+  assert.equal(flattened.error.code, "23514");
+
+  // A parent edits an overnight session like any other, and can make it same-day again.
+  const moved = await p.from("appointments").update({ start_time: "20:00", end_time: "00:30" }).eq("id", night.data.id).select("start_time, end_time");
+  assert.ifError(moved.error);
+  assert.deepEqual(moved.data, [{ start_time: "20:00:00", end_time: "00:30:00" }]);
+  const sameDay = await p.from("appointments").update({ start_time: "09:00", end_time: "12:00" }).eq("id", night.data.id).select("start_time, end_time");
+  assert.ifError(sameDay.error);
+  assert.deepEqual(sameDay.data, [{ start_time: "09:00:00", end_time: "12:00:00" }]);
+
+  // The sitter still reads but cannot book, overnight or not.
+  const sitterBook = await a.sitter.client
+    .from("appointments")
+    .insert({ household_id: a.householdId, plan_id: a.planId, appointment_date: isoDate(11), start_time: "22:00", end_time: "02:00" })
+    .select();
+  assertDenied(sitterBook, "caretaker booked an overnight appointment");
+  const seen = await a.sitter.client.from("appointments").select("id").eq("household_id", a.householdId);
+  assert.ifError(seen.error);
+  assert.equal(seen.data.length, 3);
+
+  // The same-day rule is gone and the new one is the only time check on the table.
+  if (psqlAvailable()) {
+    const checks = psqlQuery(
+      "select string_agg(conname || ': ' || pg_get_constraintdef(oid), E'\\n' order by conname) from pg_constraint where conrelid = 'public.appointments'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%end_time%'",
+    );
+    assert.equal(checks, "appointments_end_differs_from_start: CHECK ((end_time <> start_time))");
+  }
+});
+
 test("appointments: the update policy refuses a plan from another family space even if plan_id were updatable", async (t) => {
   if (!psqlAvailable()) {
     t.skip("psql is not on PATH; this test needs a direct database connection");

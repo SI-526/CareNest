@@ -39,7 +39,27 @@
     // A parent's edit on another device, or a switch of child in this tab.
     if (window.CareNestFamily && window.CareNestFamily.subscribe) window.CareNestFamily.subscribe(render);
     window.addEventListener("popstate", render);
+    initSitTagClock();
   });
+
+  // The next-sit tag follows the clock (SI-80): "Now until 1:00 AM" gives way to the next sit once
+  // last night's session ends, and "Tomorrow" becomes "Today" at midnight. Checked each minute and
+  // on return to the tab, and redrawn only when the tag would change, as js/app.js's What's next.
+  function initSitTagClock() {
+    const recheck = () => {
+      const tag = !switching && ctx && ctx.household ? root.querySelector(".household-pin .sit-tag") : null;
+      if (!tag) return;
+      // Compared as parsed, so escaping differences never count as a change.
+      const next = document.createElement("template");
+      next.innerHTML = sitTagHtml();
+      const fresh = next.content.firstElementChild;
+      if (fresh && !fresh.isEqualNode(tag)) tag.replaceWith(fresh);
+    };
+    const untilNextMinute = () => 60000 - (Date.now() % 60000) + 50;
+    const tick = () => { recheck(); setTimeout(tick, untilNextMinute()); };
+    setTimeout(tick, untilNextMinute());
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) recheck(); });
+  }
 
   const data = () => window.CareNestData;
   const isParent = () => Boolean(ctx && ctx.role === "parent");
@@ -111,14 +131,18 @@
 
   // ---------------------------------------------------------------- list (SI-46)
 
+  function sitTagHtml() {
+    const sit = kids.nextSit(data().appointments || []);
+    return sit
+      ? `<p class="sit-tag${sit.soon ? " sit-tag--soon" : ""}">Next sit: ${esc(sit.text)}</p>`
+      : '<p class="sit-tag">No scheduled sits</p>';
+  }
+
   function listHtml() {
     const family = data();
     const children = family.children || [];
     const name = family.familyName || (ctx.household && ctx.household.name) || "Your family";
-    const sit = kids.nextSit(family.appointments || []);
-    const sitTag = sit
-      ? `<p class="sit-tag${sit.soon ? " sit-tag--soon" : ""}">Next sit: ${esc(sit.text)}</p>`
-      : '<p class="sit-tag">No scheduled sits</p>';
+    const sitTag = sitTagHtml();
     const rows = children.map(childRowHtml).join("");
     const empty = isParent()
       ? `<div class="children-none"><p>No children added yet.</p><p>Add each child so your sitter sees their own food, preferences, and instructions.</p></div>`
