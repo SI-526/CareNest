@@ -211,6 +211,7 @@
     return `<section class="schedule-page${editable ? " schedule-page--parent" : ""}" data-schedule-page data-parent="${editable}" data-today="${today}" data-appointments="${esc(JSON.stringify(appointments))}">
       ${editable ? '<div class="schedule-request-notices" data-request-notices aria-live="polite"></div>' : ""}
       ${current}
+      ${editable ? "" : "<div data-checklist-slot></div>"}
       <div class="schedule-heading"><h1>Schedule</h1></div>
       <div class="schedule-tabs" role="tablist" aria-label="Schedule view"><button type="button" role="tab" aria-selected="true" data-view="list">List</button><button type="button" role="tab" aria-selected="false" data-view="calendar">Calendar</button></div>
       <div class="schedule-date-controls"><button type="button" class="schedule-chevron" data-date="previous" aria-label="Previous date">‹</button><p data-date-label></p><button type="button" class="schedule-chevron" data-date="next" aria-label="Next date">›</button></div>
@@ -297,7 +298,13 @@
     if (!views) return;
     document.title = `CareNest — ${views.title}`;
     root.innerHTML = page === "schedule" ? views.body : `<header class="secondary-header"><p class="page-eyebrow">${views.eyebrow}</p><h1>${views.title}</h1><p>${views.intro}</p></header>${views.body}`;
-    if (page === "schedule") bindSchedule(ctx, Boolean(ctx && ctx.role === "parent"));
+    if (page === "schedule") {
+      // SI-71: the sitter's checklist (schedule.html, filled by js/app.js) sits under Current Shift.
+      const slot = root.querySelector("[data-checklist-slot]");
+      const checklist = document.getElementById("checklist");
+      if (slot && checklist) slot.replaceWith(checklist);
+      bindSchedule(ctx, Boolean(ctx && ctx.role === "parent"));
+    }
     if (editable) bindEditors(ctx);
     if (page === "profile" && (!ctx || ctx.role !== "parent")) bindSitterProfile(ctx || {});
     if (page === "profile") auth.mountAccountPanel(root.querySelector("[data-account-panel]"), ctx);
