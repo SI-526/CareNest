@@ -55,6 +55,10 @@
     return `${url.pathname.split("/").pop()}${url.search}`;
   }
 
+  function infoAllHref() {
+    return new URLSearchParams(window.location.search).get("as") === "parent" ? "info.html?as=parent" : "info.html";
+  }
+
   function infoHref(category) {
     const asParent = new URLSearchParams(window.location.search).get("as") === "parent";
     return `info.html?category=${category}${asParent ? "&as=parent" : ""}`;
@@ -64,8 +68,22 @@
     return `<span class="child-avatar child-avatar--${size}" aria-hidden="true">${esc(kids.initials(name))}</span>`;
   }
 
+  // Material icons (assets/icon-*.svg), decorative: the text beside each says what it means.
+  function icon(name, size) {
+    return `<img class="cn-icon" src="assets/icon-${name}.svg" alt="" width="${size}" height="${size}" />`;
+  }
+
+  // Stored family names may already end in "family" (the demo's is "Thomas family").
+  function listFamilyTitle(name) {
+    return `The ${kids.familyBase(name)} Family`;
+  }
+
+  function detailFamilyTitle(name) {
+    return `${kids.familyBase(name)} Family`;
+  }
+
   function details(child) {
-    const parts = kids.detailParts(child);
+    const parts = kids.displayParts(child);
     return parts.length ? `<p class="child-details">${parts.map(esc).join('<span class="child-dot" aria-hidden="true"></span>')}</p>` : "";
   }
 
@@ -95,8 +113,8 @@
   function noFamilyHtml() {
     return `<header class="children-header"><h1>Children</h1></header>
       <section class="children-empty" aria-live="polite">
-        <h2>No families added yet</h2>
-        <p>Ask the family you sit for to send you an invitation.</p>
+        <h2>No Families Added Yet</h2>
+        <p>Get an invitation from your client</p>
       </section>`;
   }
 
@@ -114,18 +132,19 @@
   function listHtml() {
     const family = data();
     const children = family.children || [];
-    const name = family.familyName || (ctx.household && ctx.household.name) || "Your family";
+    const stored = family.familyName || (ctx.household && ctx.household.name);
+    const name = stored ? listFamilyTitle(stored) : "Your family";
     const sit = kids.nextSit(family.appointments || []);
     const sitTag = sit
-      ? `<p class="sit-tag${sit.soon ? " sit-tag--soon" : ""}">Next sit: ${esc(sit.text)}</p>`
-      : '<p class="sit-tag">No scheduled sits</p>';
+      ? `<p class="sit-tag${sit.soon ? " sit-tag--soon" : ""}">Next Sit: ${esc(sit.text)}</p>`
+      : '<p class="sit-tag">No Scheduled Sits</p>';
     const rows = children.map(childRowHtml).join("");
     const empty = isParent()
       ? `<div class="children-none"><p>No children added yet.</p><p>Add each child so your sitter sees their own food, preferences, and instructions.</p></div>`
       : '<div class="children-none"><p>No children added yet.</p><p>The family hasn’t added their children.</p></div>';
     return `<header class="children-header"><h1>Children</h1></header>
-      ${pinHtml(name, sitTag)}
       <section class="family-card" aria-labelledby="family-card-name" data-household="${esc(ctx.household.id)}">
+        ${pinHtml(name, sitTag)}
         ${familyDetailsHtml(family)}
         <h3 class="children-count">Children (${children.length})</h3>
         ${children.length ? `<ul class="children-list">${rows}</ul>` : empty}
@@ -150,7 +169,8 @@
   }
 
   function familyName(membership) {
-    return (membership && membership.households && membership.households.name) || "Family space";
+    const name = membership && membership.households && membership.households.name;
+    return name ? listFamilyTitle(name) : "Family space";
   }
 
   function pinHtml(name, sitTag) {
@@ -166,27 +186,27 @@
           </select>
         </label>`
       : "";
-    return `<section class="household-pin" aria-labelledby="family-card-name" data-household="${esc(ctx.household.id)}">
+    return `<div class="household-pin" data-household="${esc(ctx.household.id)}">
         <div class="household-pin-text">
-          <p class="household-pin-label">${label}</p>
+          <p class="household-pin-label visually-hidden">${label}</p>
           <h2 id="family-card-name">${esc(name)}</h2>
           ${sitTag}
         </div>
         ${switcher}
-      </section>`;
+      </div>`;
   }
 
   // While a switch is under way: the new household pinned, and no children until its data loads.
   function switchingHtml(membership) {
     return `<header class="children-header"><h1>Children</h1></header>
-      <section class="household-pin" aria-labelledby="family-card-name" data-household="${esc(membership.household_id)}">
-        <div class="household-pin-text">
-          <p class="household-pin-label">${isParent() ? "Your household" : "Current household"}</p>
-          <h2 id="family-card-name">${esc(familyName(membership))}</h2>
-          <p class="sit-tag">Loading…</p>
+      <section class="family-card children-switching" aria-labelledby="family-card-name" aria-busy="true" aria-live="polite" data-household="${esc(membership.household_id)}">
+        <div class="household-pin">
+          <div class="household-pin-text">
+            <p class="household-pin-label visually-hidden">${isParent() ? "Your household" : "Current household"}</p>
+            <h2 id="family-card-name">${esc(familyName(membership))}</h2>
+            <p class="sit-tag">Loading…</p>
+          </div>
         </div>
-      </section>
-      <section class="family-card children-switching" aria-busy="true" aria-live="polite">
         <p class="family-details-empty">Loading ${esc(familyName(membership))}’s children…</p>
       </section>`;
   }
@@ -278,10 +298,10 @@
         </div>`
       : "";
     const phone = primary && primary.phone
-      ? `<p class="family-detail-line"><img src="assets/call.svg" alt="" width="15" height="15" />${primary.phoneHref ? `<a href="${esc(primary.phoneHref)}">${esc(primary.phone)}</a>` : esc(primary.phone)}</p>`
+      ? `<p class="family-detail-line">${icon("call", 15)}${primary.phoneHref ? `<a href="${esc(primary.phoneHref)}">${esc(primary.phone)}</a>` : esc(primary.phone)}</p>`
       : "";
     const home = address
-      ? `<p class="family-detail-line"><img src="assets/location.svg" alt="" width="15" height="15" /><span><span class="visually-hidden">Home address: </span>${esc(address)}</span></p>`
+      ? `<p class="family-detail-line">${icon("home-pin", 18)}<span><span class="visually-hidden">Home address: </span>${esc(address)}</span></p>`
       : "";
     return `<div class="family-details">${person}${phone || home ? `<div class="family-detail family-detail--lines">${phone}${home}</div>` : ""}</div>`;
   }
@@ -293,10 +313,10 @@
         <a class="child-row" href="${esc(hrefFor(child.id))}" data-route>
           ${avatar(name, "large")}
           <span class="child-row-text"><span class="child-name">${esc(name)}</span>${details(child)}</span>
-          <span class="child-chevron" aria-hidden="true">›</span>
+          <span class="child-chevron" aria-hidden="true">${icon("chevron-right", 24)}</span>
         </a>
-        ${severe.length ? `<p class="child-tag child-tag--severe"><strong>Severe allergies:</strong> ${esc(severe.join(", "))}</p>` : ""}
-        ${child.pinnedNote ? `<p class="child-tag"><span class="visually-hidden">Note: </span>${esc(child.pinnedNote)}</p>` : ""}
+        ${severe.length ? `<p class="child-tag child-tag--severe">${icon("error", 20)}<span><strong>Severe Allergies:</strong> ${esc(severe.join(", "))}</span></p>` : ""}
+        ${child.pinnedNote ? `<p class="child-tag">${icon("keep", 20)}<span><span class="visually-hidden">Note: </span>${esc(child.pinnedNote)}</span></p>` : ""}
       </li>`;
   }
 
@@ -308,19 +328,21 @@
     const can = editable();
     return `<header class="children-header children-header--detail">
         <a class="children-back" href="${esc(hrefFor(null))}" data-route aria-label="Back to all children"><img src="assets/back.svg" alt="" width="28" height="28" /></a>
-        <p class="children-header-family">${esc(family.familyName || "Children")}</p>
+        <p class="children-header-family">${esc(family.familyName ? detailFamilyTitle(family.familyName) : "Children")}</p>
       </header>
       <section class="child-hero" aria-labelledby="child-name">
         ${avatar(name, "large")}
         <div class="child-hero-text"><h1 id="child-name">${esc(name)}</h1>${details(child)}</div>
         ${can ? `<button type="button" class="photo-source-btn child-edit" data-edit-child="${esc(child.id)}">Edit</button>` : ""}
       </section>
-      ${child.pinnedNote ? `<p class="child-tag child-tag--pinned"><span class="visually-hidden">Note: </span>${esc(child.pinnedNote)}</p>` : ""}
+      ${child.pinnedNote ? `<p class="child-tag child-tag--pinned">${icon("keep", 20)}<span><span class="visually-hidden">Note: </span>${esc(child.pinnedNote)}</span></p>` : ""}
       ${SECTIONS.map((section) => sectionHtml(child, section, can)).join("")}
       ${contactsHtml(family)}
-      <section class="child-card-section" aria-labelledby="child-know">
-        <h2 class="child-section-title" id="child-know">Good to know</h2>
-        <p class="child-know-note">Shared by the whole family.</p>
+      <section class="child-card-section child-card-section--compact" aria-labelledby="child-know">
+        <div class="child-section-head">
+          <h2 class="child-section-title" id="child-know">Good to Know</h2>
+          <a class="child-know-all" href="${esc(infoAllHref())}">View all</a>
+        </div>
         <div class="child-know-tiles">
           <a class="know-tile" href="${esc(infoHref("where"))}"><img src="assets/orders.svg" alt="" width="24" height="24" /><span>Where things are</span></a>
           <a class="know-tile" href="${esc(infoHref("emergency"))}"><img src="assets/emergency.svg" alt="" width="24" height="24" /><span>Emergency steps</span></a>
@@ -353,7 +375,7 @@
           <div class="restriction-content">
             <div class="restriction-top">
               <h3 class="restriction-name">${esc(item.name)}</h3>
-              ${item.severity ? `<span class="badge ${esc(item.severityClass || "")}">${esc(item.severity)}</span>` : ""}
+              ${item.severity ? `<span class="badge ${esc(item.severityClass || "")}">${item.severity === "Severe" ? icon("error", 20) : ""}${esc(item.severity)}</span>` : ""}
             </div>
             ${item.description ? `<p class="restriction-desc">${esc(item.description)}</p>` : ""}
             ${can ? editButton("food", item.id, item.name) : ""}
@@ -386,7 +408,7 @@
           )
           .join("")
       : "";
-    return `<section class="child-card-section" aria-labelledby="child-contacts">
+    return `<section class="child-card-section child-card-section--compact" aria-labelledby="child-contacts">
         <h2 class="child-section-title" id="child-contacts">Contacts</h2>
         ${contacts.length ? `<ul class="child-contacts">${rows}</ul>` : `<p class="child-no-info">${NO_INFO}</p>`}
       </section>`;
