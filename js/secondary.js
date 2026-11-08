@@ -115,7 +115,10 @@
   };
   const displayDate = (key, includeYear) => parseDate(key).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", ...(includeYear ? { year: "numeric" } : {}) });
   const displayMonth = (key) => parseDate(key).toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  const sessionHours = (item) => `${item.start_time || ""}${item.end_time ? ` – ${item.end_time}` : ""}`;
+  // Display only: "3:00pm" (the stored format) reads as "3:00 PM", as in the Figma designs.
+  // Stored strings are never rewritten.
+  const displayTime = (value) => String(value || "").replace(/^(\d{1,2}:\d{2})\s*(am|pm)$/i, (_, hm, period) => `${hm} ${period.toUpperCase()}`);
+  const sessionHours = (item) => `${displayTime(item.start_time)}${item.end_time ? ` - ${displayTime(item.end_time)}` : ""}`;
   const initials = (name) => String(name || "CareNest").split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
   // "3:00 PM" or "3:00pm" to "15:00" for an <input type="time">; anything else gives the fallback.
   const inputTime = (value, fallback) => {
@@ -155,7 +158,26 @@
   };
   let activityCounter = 0;
   const newActivityId = () => `activity-${Date.now().toString(36)}-${(activityCounter += 1)}-${Math.random().toString(36).slice(2, 6)}`;
-  const TRASH_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  // Figma hi-fi icons (Material Symbols), drawn in currentColor.
+  const svgIcon = (size, box, path, cls) => `<svg${cls ? ` class="${cls}"` : ""} viewBox="0 0 ${box} ${box}" width="${size}" height="${size}" aria-hidden="true" focusable="false"><path fill="currentColor" d="${path}"/></svg>`;
+  const EDIT_PATH = "M5 19H6.425L16.2 9.225L14.775 7.8L5 17.575V19ZM3 21V16.75L16.2 3.575C16.4 3.39167 16.6208 3.25 16.8625 3.15C17.1042 3.05 17.3583 3 17.625 3C17.8917 3 18.15 3.05 18.4 3.15C18.65 3.25 18.8667 3.4 19.05 3.6L20.425 5C20.625 5.18333 20.7708 5.4 20.8625 5.65C20.9542 5.9 21 6.15 21 6.4C21 6.66667 20.9542 6.92083 20.8625 7.1625C20.7708 7.40417 20.625 7.625 20.425 7.825L7.25 21H3ZM15.475 8.525L14.775 7.8L16.2 9.225L15.475 8.525Z";
+  const CALENDAR_PATH = "M10 44.0002C8.9 44.0002 7.95833 43.6085 7.175 42.8252C6.39167 42.0419 6 41.1002 6 40.0002V12.0002C6 10.9002 6.39167 9.95853 7.175 9.1752C7.95833 8.39186 8.9 8.0002 10 8.0002H12V4.0002H16V8.0002H32V4.0002H36V8.0002H38C39.1 8.0002 40.0417 8.39186 40.825 9.1752C41.6083 9.95853 42 10.9002 42 12.0002V40.0002C42 41.1002 41.6083 42.0419 40.825 42.8252C40.0417 43.6085 39.1 44.0002 38 44.0002H10ZM10 40.0002H38V20.0002H10V40.0002Z";
+  const ICONS = {
+    edit: svgIcon(24, 24, EDIT_PATH),
+    cardEdit: svgIcon(18, 18, "M2 16H3.425L13.2 6.225L11.775 4.8L2 14.575V16ZM0 18V13.75L13.2 0.575C13.4 0.391667 13.6208 0.25 13.8625 0.15C14.1042 0.05 14.3583 0 14.625 0C14.8917 0 15.15 0.05 15.4 0.15C15.65 0.25 15.8667 0.4 16.05 0.6L17.425 2C17.625 2.18333 17.7708 2.4 17.8625 2.65C17.9542 2.9 18 3.15 18 3.4C18 3.66667 17.9542 3.92083 17.8625 4.1625C17.7708 4.40417 17.625 4.625 17.425 4.825L4.25 18H0ZM12.475 5.525L11.775 4.8L13.2 6.225L12.475 5.525Z"),
+    chevronLeft: svgIcon(24, 24, "M14 18L8 12L14 6L15.4 7.4L10.8 12L15.4 16.6L14 18Z"),
+    chevronRight: svgIcon(24, 24, "M10 18L16 12L10 6L8.6 7.4L13.2 12L8.6 16.6L10 18Z"),
+    chevronDown: svgIcon(24, 24, "M12 15.4 6 9.4 7.4 8l4.6 4.6L16.6 8 18 9.4l-6 6Z"),
+    pin: svgIcon(16, 16, "M7.61033 13.893C7.48033 13.8482 7.36278 13.7787 7.25767 13.6847C6.65944 13.1334 6.09961 12.5656 5.57817 11.9814C5.05683 11.3973 4.60367 10.8133 4.21867 10.2295C3.83356 9.64577 3.52883 9.06716 3.3045 8.49371C3.08017 7.92016 2.968 7.36627 2.968 6.83205C2.968 5.2936 3.46561 4.0481 4.46083 3.09555C5.45617 2.14299 6.63589 1.66671 8 1.66671C9.36411 1.66671 10.5438 2.14299 11.5392 3.09555C12.5344 4.0481 13.032 5.2936 13.032 6.83205C13.032 7.36627 12.9198 7.91905 12.6955 8.49038C12.4712 9.06182 12.1676 9.64049 11.7847 10.2264C11.4017 10.8123 10.9495 11.3962 10.4282 11.9782C9.90683 12.5603 9.347 13.127 8.74867 13.6782C8.64356 13.7722 8.525 13.8427 8.393 13.8897C8.26089 13.9367 8.12989 13.9602 8 13.9602C7.87011 13.9602 7.74022 13.9378 7.61033 13.893ZM8.85183 7.55705C9.08739 7.3216 9.20517 7.03766 9.20517 6.70521C9.20517 6.37277 9.08739 6.08877 8.85183 5.85321C8.61639 5.61777 8.33244 5.50005 8 5.50005C7.66756 5.50005 7.38361 5.61777 7.14817 5.85321C6.91261 6.08877 6.79483 6.37277 6.79483 6.70521C6.79483 7.03766 6.91261 7.3216 7.14817 7.55705C7.38361 7.79249 7.66756 7.91021 8 7.91021C8.33244 7.91021 8.61639 7.79249 8.85183 7.55705Z"),
+    notes: svgIcon(20, 20, "M13.3333 10L15 11.6667V13.3333H10.8333V18.3333L10 19.1667L9.16667 18.3333V13.3333H5V11.6667L6.66667 10V4.16667H5.83333V2.5H14.1667V4.16667H13.3333V10Z", "schedule-notes-icon"),
+    emptyCalendar: svgIcon(48, 48, CALENDAR_PATH),
+    smallCalendar: svgIcon(24, 48, CALENDAR_PATH),
+    cancel: svgIcon(28, 28, "M8.96 21L14 15.96L19.04 21L21 19.04L15.96 14L21 8.96L19.04 7L14 12.04L8.96 7L7 8.96L12.04 14L7 19.04L8.96 21ZM14 28C12.0633 28 10.2433 27.6325 8.54 26.8975C6.83667 26.1625 5.355 25.165 4.095 23.905C2.835 22.645 1.8375 21.1633 1.1025 19.46C0.3675 17.7567 0 15.9367 0 14C0 12.0633 0.3675 10.2433 1.1025 8.54C1.8375 6.83667 2.835 5.355 4.095 4.095C5.355 2.835 6.83667 1.8375 8.54 1.1025C10.2433 0.3675 12.0633 0 14 0C15.9367 0 17.7567 0.3675 19.46 1.1025C21.1633 1.8375 22.645 2.835 23.905 4.095C25.165 5.355 26.1625 6.83667 26.8975 8.54C27.6325 10.2433 28 12.0633 28 14C28 15.9367 27.6325 17.7567 26.8975 19.46C26.1625 21.1633 25.165 22.645 23.905 23.905C22.645 25.165 21.1633 26.1625 19.46 26.8975C17.7567 27.6325 15.9367 28 14 28Z"),
+  };
+  // "Nov. 8" for the list's date selector (Figma: month abbreviation, period, day; no weekday).
+  const shortDate = (key) => { const date = parseDate(key); return `${date.toLocaleDateString("en-US", { month: "short" })}. ${date.getDate()}`; };
+  // "Tue, Nov. 10" for the Schedule Details date field.
+  const pickerDate = (key) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(key || "")) return "Select a date"; const date = parseDate(key); return `${date.toLocaleDateString("en-US", { weekday: "short" })}, ${shortDate(key)}`; };
   // The family's children (SI-75), and the ones a session is for. A session saved before
   // sessions recorded children was for the whole family.
   const familyChildren = () => (Array.isArray(data.children) ? data.children : []).filter((child) => child && child.id);
@@ -166,13 +188,17 @@
     const picked = all.filter((child) => ids.includes(child.id));
     return picked.length ? picked : all;
   }
+  // An activity's notes, then its address (only when it already has one) behind a location pin.
+  const activityDetails = (item, tag) => `${item.detail ? `<${tag}>${esc(item.detail)}</${tag}>` : ""}${item.location ? `<${tag} class="schedule-activity-location">${ICONS.pin}<span>${esc(item.location)}</span></${tag}>` : ""}`;
   // "Jack" when an activity is for only some of the session's children; "" when it's for all of them.
   function activityFor(activity, sessionKids) {
     const ids = Array.isArray(activity.childIds) ? activity.childIds : [];
     const picked = sessionKids.filter((child) => ids.includes(child.id));
     return picked.length && picked.length < sessionKids.length ? picked.map(firstName).join(", ") : "";
   }
-  const childAvatars = (children) => (children.length ? children : [{ name: "Child" }]).map((child) => `<span class="schedule-avatar" title="${esc(child.name || "Child")}">${esc(initials(child.name))}</span>`).join("");
+  // Figma: a 32px initials avatar with the first name underneath (photos are out of scope).
+  const personHtml = (name, extraClass) => `<span class="schedule-person"><span class="schedule-avatar${extraClass ? ` ${extraClass}` : ""}" aria-hidden="true">${esc(initials(name))}</span><small>${esc(String(name || "").trim().split(/\s+/)[0] || "Child")}</small></span>`;
+  const childAvatars = (children) => (children.length ? children : [{ name: "Child" }]).map((child) => personHtml(child.name || "Child")).join("");
   // Appointments and tasks hang off a plan, but onboarding doesn't create one. A family's first
   // booking or task makes it here, so a save never depends on a plan that isn't there yet.
   async function ensurePlanId(ctx) {
@@ -204,19 +230,22 @@
     const appointments = (Array.isArray(data.appointments) ? data.appointments : (ctx && ctx.demo ? demoAppointments() : [])).slice();
     const today = dateKey(new Date());
     // Filled by bindSchedule's render(): the children of today's sessions.
-    const people = `<div class="schedule-people"><span class="schedule-people-children" data-current-children></span><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span></div>`;
+    // The children only: the caregiver has its own cell on the parent's card, and the sitter is the viewer.
+    const people = '<div class="schedule-people" data-current-children></div>';
+    const caregiver = sharedSitter && sharedSitter.display_name || data.babysitter && data.babysitter.name || "Caregiver";
     const current = editable
-      ? `<section class="current-shift-card current-session-card"><div class="current-session-title"><div><p class="schedule-card-title">Current Session</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span data-current-session-time></span></p></div><button type="button" class="schedule-icon-button" data-edit-schedule aria-label="Edit current session">✎</button></div><div class="current-session-people"><div><strong>Children</strong>${people}</div><div><strong>Caregiver</strong><span class="caregiver-name">${esc(sharedSitter && sharedSitter.display_name || data.babysitter && data.babysitter.name || "Caregiver")}</span>${caregiverDetails()}</div></div></section>`
+      ? `<section class="current-shift-card current-session-card"><div class="current-session-title"><div><p class="schedule-card-title">Current Session</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span data-current-session-time></span></p></div><button type="button" class="schedule-icon-button" data-edit-schedule aria-label="Edit current session">${ICONS.cardEdit}</button></div><div class="current-session-people"><div><strong>Children</strong>${people}</div><span class="current-session-divider" aria-hidden="true"></span><div><strong>Caregiver</strong><div class="schedule-people">${personHtml(caregiver, "schedule-avatar--sitter")}</div></div></div>${caregiverDetails()}</section>`
       : `<section class="current-shift-card"><div><p class="schedule-card-title">Current Shift</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span data-current-session-time></span></p></div>${people}</section>`;
     return `<section class="schedule-page${editable ? " schedule-page--parent" : ""}" data-schedule-page data-parent="${editable}" data-today="${today}" data-appointments="${esc(JSON.stringify(appointments))}">
+      <header class="schedule-topnav"><h1>Schedule</h1></header>
       ${editable ? '<div class="schedule-request-notices" data-request-notices aria-live="polite"></div>' : ""}
       ${current}
       ${editable ? "" : "<div data-checklist-slot></div>"}
-      <div class="schedule-heading"><h1>Schedule</h1></div>
+      <div class="schedule-heading"><h2>Schedule</h2></div>
       <div class="schedule-tabs" role="tablist" aria-label="Schedule view"><button type="button" role="tab" aria-selected="true" data-view="list">List</button><button type="button" role="tab" aria-selected="false" data-view="calendar">Calendar</button></div>
-      <div class="schedule-date-controls"><button type="button" class="schedule-chevron" data-date="previous" aria-label="Previous date">‹</button><p data-date-label></p><button type="button" class="schedule-chevron" data-date="next" aria-label="Next date">›</button></div>
-      <div class="schedule-body-grid"><div class="schedule-primary-content" data-schedule-content></div><section class="upcoming-shifts"><h2>Upcoming Shifts</h2><div data-upcoming-shifts></div></section></div>
-      ${editable ? '<button type="button" class="schedule-new-session" data-book-appointment>＋ New Session</button>' : ""}<p class="schedule-request-status" data-request-status role="status"></p>
+      <div class="schedule-date-controls"><button type="button" class="schedule-chevron" data-date="previous" aria-label="Previous date">${ICONS.chevronLeft}</button><p data-date-label></p><button type="button" class="schedule-chevron" data-date="next" aria-label="Next date">${ICONS.chevronRight}</button></div>
+      <div class="schedule-body-grid"><div class="schedule-primary-content" data-schedule-content></div><section class="upcoming-shifts"><h2>${editable ? "Upcoming Sessions" : "Upcoming Shifts"}</h2><div data-upcoming-shifts></div></section></div>
+      ${editable ? '<button type="button" class="schedule-new-session" data-book-appointment><span aria-hidden="true">+&nbsp;</span> New Session</button>' : ""}<p class="schedule-request-status" data-request-status role="status"></p>
     </section>`;
   }
 
@@ -342,19 +371,18 @@
 
     function appointmentHtml(item) {
       const children = sessionChildren(item);
-      const names = children.map(firstName).join(", ") || "Child";
-      return `<article class="upcoming-shift"><div><p><strong>${esc(displayDate(item.date))}</strong><span>${esc(sessionHours(item))}</span></p><small>Children: ${esc(names)} · Caregiver: ${esc(data.babysitter && data.babysitter.name || "Caregiver")}</small></div><div class="schedule-people">${childAvatars(children)}<span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span></div></article>`;
+      return `<article class="upcoming-shift"><p><strong>${esc(displayDate(item.date))}</strong><span>${esc(sessionHours(item))}</span></p><div class="schedule-people">${childAvatars(children)}</div></article>`;
     }
     function sessionHtml(appointment, several) {
       const activities = sortedActivities(appointment);
       const id = esc(appointment.id);
-      const notes = appointment.note ? `<aside class="schedule-notes"><strong>Today’s Notes</strong><p>${esc(appointment.note)}</p></aside>` : "";
+      const notes = appointment.note ? `<aside class="schedule-notes">${ICONS.notes}<div><strong>Today’s Notes</strong><p>${esc(appointment.note)}</p></div></aside>` : "";
       const heading = several ? `<h3 class="schedule-session-heading">Session ${esc(sessionHours(appointment))}</h3>` : "";
       const forWhom = (item) => activityFor(item, sessionChildren(appointment));
       // A booked session with no activities yet is still a schedule: show its hours, not "Request".
       if (!activities.length && !several) return `<div class="schedule-empty"><p>Session ${esc(sessionHours(appointment))}</p><small>No activities added yet.</small>${editable ? `<button class="schedule-empty-button" type="button" data-edit-schedule="${id}">Edit Schedule</button>` : ""}</div>${notes}`;
       const list = activities.length
-        ? `<ol class="schedule-activity-list">${activities.map((item) => `<li><time>${esc(item.time || "Any time")}</time><div><strong>${esc(item.title)}</strong>${item.detail || item.location ? `<p>${esc(item.detail || item.location)}</p>` : ""}${forWhom(item) ? `<p class="schedule-activity-for">For ${esc(forWhom(item))}</p>` : ""}</div></li>`).join("")}</ol>`
+        ? `<ol class="schedule-activity-list">${activities.map((item) => `<li><time>${esc(displayTime(item.time) || "Any time")}</time><div><strong>${esc(item.title)}</strong>${activityDetails(item, "p")}${forWhom(item) ? `<p class="schedule-activity-for">For ${esc(forWhom(item))}</p>` : ""}</div></li>`).join("")}</ol>`
         : '<p class="schedule-session-empty">No activities added yet.</p>';
       return `${heading}${list}${notes}${editable ? `<button type="button" class="schedule-edit-button" data-edit-schedule="${id}">Edit Schedule</button>` : ""}`;
     }
@@ -372,7 +400,7 @@
       else if (selected < today) action = "";
       else if (openRequest(selected)) action = `<button class="schedule-empty-button" type="button" disabled>Reminder sent to ${esc(parent || "the parent")}</button><small>${esc(parent || "The parent")} will see it on their schedule.</small>`;
       else action = '<button class="schedule-empty-button" type="button" data-request-schedule>Request Schedule</button><small>Send a reminder to the parent to add a schedule for this day.</small>';
-      return `<div class="schedule-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3m10-3v3M4 9h16M6 5h12a2 2 0 0 1 2-2Z"/></svg><p>No schedule has been added${editable ? "." : " for this shift."}</p>${action}</div>`;
+      return `<div class="schedule-empty">${ICONS.emptyCalendar}<p>No schedule has been added${editable ? "." : " for this shift."}</p>${action}</div>`;
     }
     function calendarHtml() {
       const selectedDate = parseDate(selected);
@@ -391,9 +419,9 @@
       const todayKids = familyChildren().filter((child) => !booked.length || todayIds.has(child.id));
       const currentChildren = pageEl.querySelector("[data-current-children]");
       if (currentChildren) currentChildren.innerHTML = childAvatars(todayKids);
-      label.textContent = view === "calendar" ? displayMonth(selected) : `${displayDate(selected)}${isToday ? " (Today)" : ""}`;
+      label.textContent = view === "calendar" ? displayMonth(selected) : `${shortDate(selected)}${isToday ? " (Today)" : ""}`;
       content.innerHTML = view === "list" ? listHtml() : calendarHtml();
-      upcomingEl.innerHTML = appointments.filter((item) => item.date > today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4).map(appointmentHtml).join("") || '<p class="schedule-no-upcoming">No upcoming shifts scheduled.</p>';
+      upcomingEl.innerHTML = appointments.filter((item) => item.date > today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4).map(appointmentHtml).join("") || `<p class="schedule-no-upcoming">No upcoming ${editable ? "sessions" : "shifts"} scheduled.</p>`;
       pageEl.querySelectorAll("[data-view]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.view === view)));
       if (notices) notices.innerHTML = requests.map(noticeHtml).join("");
     }
@@ -457,13 +485,17 @@
         ? `<div class="schedule-child-choices" role="group" aria-label="Children for this session">${kids.map((child) => childChip(child, "data-session-child", sessionIds.includes(child.id))).join("")}</div>`
         : '<p class="schedule-session-empty">No children added yet. Add them on the Children tab.</p>';
       const dialog = document.createElement("dialog");
-      dialog.className = "confirm-dialog manage-dialog";
+      dialog.className = "confirm-dialog manage-dialog schedule-sheet";
       dialog.setAttribute("aria-labelledby", "schedule-details-title");
-      dialog.innerHTML = `<form class="confirm-dialog-body schedule-details-form" method="dialog"><div class="schedule-details-header"><button class="schedule-close" type="button" aria-label="Close without saving">×</button><h2 class="panel-title" id="schedule-details-title">Schedule Details</h2><button class="schedule-save" value="save">Save</button></div><label class="field-label" for="appointment-date">Date</label><input class="text-input" id="appointment-date" name="date" type="date" required min="${today}" value="${esc(existing ? existing.date : date || selected)}"><div class="schedule-time-fields"><div class="field-label"><span>Start time</span>${timeWheelHtml("start", startValue, "Start time")}</div><div class="field-label"><span>End time</span>${timeWheelHtml("end", endValue, "End time")}</div></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Children</strong>${kids.length > 1 ? "<small>Select all that apply</small>" : ""}</div>${childrenGroup}</div><div class="schedule-detail-group"><strong>Caregiver</strong><div class="schedule-caregiver-choice"><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span>${esc(data.babysitter && data.babysitter.name || "Caregiver")} <span>›</span></div></div><div class="schedule-detail-group"><strong id="schedule-activities-title">Activities</strong><div class="schedule-editor-activities" data-activity-list aria-labelledby="schedule-activities-title"></div><button class="schedule-add-activity" type="button" data-add-activity>＋ Add Activity</button></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Today’s Notes</strong><small>Optional</small></div><textarea class="text-input manage-textarea" name="note" rows="3" placeholder="Anything else the caregiver should know?">${esc(existing && existing.note || "")}</textarea></div><p class="form-error" hidden data-form-error></p>${existing ? '<button type="button" class="danger-btn schedule-delete" data-delete-schedule>Delete Schedule</button>' : ""}<p class="visually-hidden" role="status" data-dialog-status></p></form>`;
+      dialog.innerHTML = `<form class="confirm-dialog-body schedule-details-form" method="dialog"><div class="schedule-details-header"><button class="schedule-close" type="button" aria-label="Close without saving">${ICONS.cancel}</button><h2 class="panel-title" id="schedule-details-title">Schedule Details</h2><button class="schedule-save" value="save">Save</button></div><label class="field-label" for="appointment-date">Date</label><span class="schedule-picker">${ICONS.smallCalendar}<span class="schedule-picker-value" data-date-display aria-hidden="true">${esc(pickerDate(existing ? existing.date : date || selected))}</span>${ICONS.chevronDown}<input class="schedule-picker-input" id="appointment-date" name="date" type="date" required min="${today}" value="${esc(existing ? existing.date : date || selected)}"></span><div class="schedule-time-fields"><div class="field-label"><span>Start time</span>${timeWheelHtml("start", startValue, "Start time")}</div><div class="field-label"><span>End time</span>${timeWheelHtml("end", endValue, "End time")}</div></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Children</strong>${kids.length > 1 ? "<small>Select all that apply</small>" : ""}</div>${childrenGroup}</div><div class="schedule-detail-group"><strong>Caregiver</strong><div class="schedule-caregiver-choice"><span class="schedule-caregiver-name"><span class="schedule-avatar schedule-avatar--sitter" aria-hidden="true">${esc(initials(data.babysitter && data.babysitter.name))}</span>${esc(data.babysitter && data.babysitter.name || "Caregiver")}</span>${ICONS.chevronRight}</div></div><div class="schedule-detail-group"><strong id="schedule-activities-title">Activities</strong><div class="schedule-editor-activities" data-activity-list aria-labelledby="schedule-activities-title"></div><button class="schedule-add-activity" type="button" data-add-activity>Add Activity</button></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Today’s Notes</strong><small class="is-optional">Optional</small></div><textarea class="text-input manage-textarea" name="note" rows="3" placeholder="Anything else the caregiver should know?">${esc(existing && existing.note || "")}</textarea></div><p class="form-error" hidden data-form-error></p>${existing ? '<button type="button" class="schedule-delete" data-delete-schedule>Delete Schedule</button>' : ""}<p class="visually-hidden" role="status" data-dialog-status></p></form>`;
       document.body.appendChild(dialog);
       const form = dialog.querySelector("form");
       const errorEl = dialog.querySelector("[data-form-error]");
       const addButton = dialog.querySelector("[data-add-activity]");
+      // The date field shows "Tue, Nov. 10" over the native picker, which still holds the value.
+      const dateInput = dialog.querySelector("#appointment-date");
+      dateInput.addEventListener("input", () => { dialog.querySelector("[data-date-display]").textContent = pickerDate(dateInput.value); });
+      dateInput.addEventListener("click", () => { try { dateInput.showPicker(); } catch (e) { /* the browser opens it itself */ } });
       const announce = (text) => { dialog.querySelector("[data-dialog-status]").textContent = text; };
       const showError = (text) => { errorEl.textContent = text; errorEl.hidden = false; if (!dialog.open) dialog.showModal(); errorEl.scrollIntoView({ block: "nearest" }); };
 
@@ -473,7 +505,7 @@
         list.innerHTML = rows.length
           ? rows.map((item) => {
             const forWhom = activityFor(item, activityChoices());
-            return `<div data-activity-row="${esc(item.id)}"><time>${esc(item.time || "Any time")}</time><span><b>${esc(item.title)}</b>${item.detail || item.location ? `<small>${esc(item.detail || item.location)}</small>` : ""}${forWhom ? `<small class="schedule-activity-for">For ${esc(forWhom)}</small>` : ""}</span><span class="schedule-activity-actions"><button type="button" data-edit-activity="${esc(item.id)}" aria-label="Edit ${esc(item.title)}">✎</button><button type="button" class="schedule-delete-activity" data-delete-activity="${esc(item.id)}" aria-label="Delete ${esc(item.title)}">${TRASH_ICON}</button></span></div>`;
+            return `<div data-activity-row="${esc(item.id)}"><time>${esc(displayTime(item.time) || "Any time")}</time><span><b>${esc(item.title)}</b>${activityDetails(item, "small")}${forWhom ? `<small class="schedule-activity-for">For ${esc(forWhom)}</small>` : ""}</span><span class="schedule-activity-actions"><button type="button" data-edit-activity="${esc(item.id)}" aria-label="Edit ${esc(item.title)}">${ICONS.edit}</button></span></div>`;
           }).join("")
           : '<p class="schedule-session-empty">No activities added yet.</p>';
       }
@@ -496,7 +528,7 @@
         const editor = document.createElement("div");
         editor.className = "schedule-inline-activity";
         editor.dataset.activityEditor = row ? row.id : "";
-        editor.innerHTML = `<div class="field-label"><span>Time</span>${timeWheelHtml("activity", time, "Activity time")}</div><label>Activity<input class="text-input" data-field="title" value="${esc(row ? row.title : "")}" placeholder="Activity name" maxlength="120" autocomplete="off"></label><label>Notes<textarea class="text-input" data-field="detail" rows="2" placeholder="Notes" maxlength="500">${esc(row ? row.detail || "" : "")}</textarea></label>${kids.length > 1 ? `<div class="schedule-activity-children"><span id="activity-children-label">Children</span><div class="schedule-child-choices" role="group" aria-labelledby="activity-children-label">${choices.map((child) => childChip(child, "data-activity-child", picked.includes(child.id))).join("")}</div></div>` : ""}<p class="form-error" hidden data-activity-error></p><div class="schedule-activity-editor-actions"><button class="photo-source-btn" type="button" data-cancel-activity>Cancel</button><button class="schedule-save" type="button" data-save-activity>${row ? "Save activity" : "Add activity"}</button></div>`;
+        editor.innerHTML = `<div class="field-label"><span>Time</span>${timeWheelHtml("activity", time, "Activity time")}</div><label>Activity<input class="text-input" data-field="title" value="${esc(row ? row.title : "")}" placeholder="Activity name" maxlength="120" autocomplete="off"></label><label>Notes<textarea class="text-input" data-field="detail" rows="2" placeholder="Notes" maxlength="500">${esc(row ? row.detail || "" : "")}</textarea></label>${kids.length > 1 ? `<div class="schedule-activity-children"><span id="activity-children-label">Children</span><div class="schedule-child-choices" role="group" aria-labelledby="activity-children-label">${choices.map((child) => childChip(child, "data-activity-child", picked.includes(child.id))).join("")}</div></div>` : ""}<p class="form-error" hidden data-activity-error></p><div class="schedule-activity-editor-actions">${row ? `<button class="schedule-delete-activity" type="button" data-delete-activity="${esc(row.id)}">Delete activity</button>` : ""}<button class="photo-source-btn" type="button" data-cancel-activity>Cancel</button><button class="schedule-save" type="button" data-save-activity>${row ? "Save activity" : "Add activity"}</button></div>`;
         addButton.after(editor);
         addButton.hidden = true;
         editor.querySelector("[data-field=title]").focus();

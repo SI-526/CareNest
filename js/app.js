@@ -2034,7 +2034,7 @@
     {
       id: "care-log",
       href: "care-log.html?as=parent",
-      label: "Care log",
+      label: "Care Log",
       icon: '<path d="M9 2h6a1 1 0 0 1 1 1v1h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 1-1Zm1 2v2h4V4h-4Zm-2 7a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2H8Zm0 4a1 1 0 1 0 0 2h5a1 1 0 0 0 0-2H8Z" />',
     },
     {
@@ -2074,7 +2074,7 @@
     const items = [
       ["home", "index.html", "Home", '<path d="m12 3 9 7.5V21h-6v-6H9v6H3v-10.5L12 3Z" />'],
       ["schedule", "schedule.html", "Schedule", '<path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1Zm12 8H5v10h14V10ZM7 6H5v2h14V6h-2v1a1 1 0 1 1-2 0V6H8v1a1 1 0 1 1-2 0V6Z" />'],
-      ["care-log", "care-log.html", "Care log", '<path d="M9 2h6a1 1 0 0 1 1 1v1h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 1-1Zm1 2v2h4V4h-4Zm-2 7a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2H8Z" />'],
+      ["care-log", "care-log.html", "Care Log", '<path d="M9 2h6a1 1 0 0 1 1 1v1h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 1-1Zm1 2v2h4V4h-4Zm-2 7a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2H8Z" />'],
       ["children", "children.html", "Children", '<path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-1a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM9 13c-3.87 0-7 2.24-7 5v3h14v-3c0-2.76-3.13-5-7-5Z" />'],
       ["profile", "profile.html", "Profile", '<path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z" />'],
     ];
