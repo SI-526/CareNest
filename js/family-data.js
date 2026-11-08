@@ -92,7 +92,7 @@
   // Secondary parent tabs render the same household data as the home views. Include them
   // here so an inline save is followed by a reload from Supabase instead of an empty local
   // data object.
-  const DATA_PAGES = ["home", "parent", "info", "food", "messages", "gallery", "schedule", "carelog", "children", "profile"];
+  const DATA_PAGES = ["home", "parent", "info", "food", "gallery", "schedule", "carelog", "children", "profile"];
 
   const HOSPITAL_ROLE = "hospital";
 

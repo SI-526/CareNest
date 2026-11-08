@@ -119,3 +119,54 @@ test("timelineHtml escapes user text and shows the neutral states", () => {
   });
   assert.doesNotMatch(quiet, /care-log-entries|No information/);
 });
+
+// ---------------------------------------------------------------- Care Log page (SI-63/64/65)
+
+test("validateEntry needs a child of the family (skipped with one child) and a note", () => {
+  const two = ["jack", "kylie"];
+  assert.deepEqual(careLog.validateEntry({ childId: "kylie", note: "  Fort  " }, two), {
+    entry: { childId: "kylie", note: "Fort", category: "note" },
+  });
+  assert.equal(careLog.validateEntry({ note: "x" }, two).field, "child");
+  assert.equal(careLog.validateEntry({ childId: "sofia", note: "x" }, two).field, "child");
+  assert.equal(careLog.validateEntry({ childId: "jack", note: " \n " }, two).error, careLog.MESSAGES.entryNote);
+  assert.equal(careLog.validateEntry({ childId: "jack", note: "x".repeat(1001) }, two).error, careLog.MESSAGES.noteTooLong);
+  // One child: the picker is skipped, so no child id is needed.
+  assert.equal(careLog.validateEntry({ note: "Nap" }, ["jack"]).entry.childId, "jack");
+  assert.equal(careLog.validateEntry({ note: "Nap" }, []).error, careLog.MESSAGES.entryNoChildren);
+});
+
+test("sessionEntries lists entries and task details oldest first, each with its child or task and time", () => {
+  const state = {
+    checks: { snack: { checkedAt: 50, snapshot: { title: "Snack" } } },
+    logs: [
+      { id: "b", taskId: null, childId: "kylie", category: "note", note: "Fort", createdAt: 300, authorName: "Bethany" },
+      { id: "a", taskId: "snack", category: "meal", mealAmount: "most", note: "", createdAt: 100 },
+      { id: "c", taskId: null, childId: "gone", childName: "Baby Thomas", category: "note", note: "Bottle", createdAt: 200 },
+    ],
+  };
+  const children = [{ id: "jack", name: "Jack Thomas" }, { id: "kylie", name: "Kylie Thomas" }];
+  const entries = careLog.sessionEntries(state, children, []);
+  assert.deepEqual(entries.map((e) => e.id), ["a", "c", "b"]);
+  assert.equal(entries[0].kind, "task");
+  assert.equal(entries[0].taskTitle, "Snack");
+  assert.deepEqual(entries[0].facts, ["Ate most"]);
+  assert.equal(entries[1].childName, "Baby Thomas", "a removed child keeps the stored name");
+  assert.equal(entries[2].childFirst, "Kylie");
+  const html = careLog.sessionLogHtml(entries);
+  assert.match(html, /Kylie/);
+  assert.match(html, /<time class="session-log-time" datetime="1970-01-01T00:00:00.300Z">/);
+  // The task timeline (Home, parent page) leaves task-less entries out.
+  assert.deepEqual(careLog.timeline(state, []).flatMap((r) => r.logs.map((l) => l.id)), ["a"]);
+});
+
+test("sessionLogHtml escapes user text", () => {
+  const html = careLog.sessionLogHtml(
+    careLog.sessionEntries(
+      { logs: [{ id: "x", taskId: null, childId: "k", category: "note", note: "<script>x</script>", authorName: "<b>A</b>", createdAt: 1 }] },
+      [{ id: "k", name: "<img src=x onerror=1>" }],
+      [],
+    ),
+  );
+  assert.doesNotMatch(html, /<script>|<img|<b>/);
+});

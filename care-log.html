@@ -1,1 +1,103 @@
-<!doctype html><html lang="en" class="auth-pending"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CareNest — Care log</title><link rel="stylesheet" href="css/styles.css"></head><body data-page="carelog"><div class="app detail-app"><nav class="primary-nav" aria-label="Primary navigation"></nav><main class="secondary-main" id="secondary-content"></main></div><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" crossorigin="anonymous"></script><script src="js/config.js"></script><script src="js/supabase.js"></script><script src="js/active-family.js"></script><script src="js/auth.js"></script><script src="js/children.js"></script><script src="js/data.js"></script><script src="js/family-data.js"></script><script src="js/app.js"></script><script src="js/schedule-dates.js"></script><script src="js/secondary.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="en" class="auth-pending">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CareNest — Care log</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body data-page="carelog">
+    <div class="app detail-app">
+      <!-- Filled by js/app.js (renderSitterNav / renderParentNav) once the role is known. -->
+      <nav class="primary-nav" aria-label="Primary navigation"></nav>
+
+      <main class="secondary-main session-log-main" id="care-log-content">
+        <!-- The current session's log (SI-65). -->
+        <section class="session-log-view" id="session-log-view" aria-labelledby="care-log-title">
+          <header class="session-log-header">
+            <h1 id="care-log-title">Care Log</h1>
+            <p class="session-log-sub" id="session-log-sub">Current session</p>
+          </header>
+
+          <p class="session-log-status" id="session-log-status" hidden></p>
+
+          <button type="button" class="primary-btn session-log-add" id="session-log-add" hidden>
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z" fill="currentColor" /></svg>
+            <span>New entry</span>
+          </button>
+
+          <ol class="session-log-list" id="session-log-list" aria-label="Session entries, oldest first"></ol>
+
+          <div class="session-log-empty care-log-empty" id="session-log-empty" hidden>
+            <p class="session-log-empty-title">No entries yet</p>
+            <p class="session-log-empty-copy" id="session-log-empty-copy"></p>
+          </div>
+        </section>
+
+        <!-- A new entry (SI-64). Opened with #new so the phone's back button closes it; what was
+             typed stays in the form until it is saved. -->
+        <section class="session-entry-view" id="session-entry-view" aria-labelledby="entry-title" hidden>
+          <div class="session-entry-top">
+            <button type="button" class="back-btn" id="entry-back" aria-label="Back to the care log">
+              <img src="assets/back.svg" alt="" width="30" height="30" />
+            </button>
+            <h1 id="entry-title">New entry</h1>
+          </div>
+          <p class="session-entry-when" id="entry-when"></p>
+
+          <form class="session-entry-form" id="session-entry-form" novalidate>
+            <fieldset class="tag-picker" id="entry-child-picker" hidden>
+              <legend class="complete-note-label">Which child is this about?</legend>
+              <div class="tag-options session-entry-children" id="entry-children"></div>
+            </fieldset>
+            <p class="session-entry-child" id="entry-one-child" hidden></p>
+
+            <div class="care-log-field">
+              <label class="complete-note-label" for="entry-note">What happened?</label>
+              <textarea
+                class="complete-note session-entry-note"
+                id="entry-note"
+                rows="6"
+                maxlength="1000"
+                placeholder="Meals, naps, moods, milestones, anything the parents should know."
+                aria-describedby="entry-count entry-error"
+              ></textarea>
+              <p class="session-entry-count" id="entry-count">0 / 1000</p>
+            </div>
+
+            <p class="form-error" id="entry-error" role="alert" hidden></p>
+
+            <button type="submit" class="primary-btn" id="entry-save">Save entry</button>
+            <button type="button" class="photo-source-btn" id="entry-cancel">Cancel</button>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <p class="visually-hidden" id="app-status" aria-live="polite"></p>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"
+      integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok"
+      crossorigin="anonymous"
+    ></script>
+    <script src="js/config.js"></script>
+    <script src="js/supabase.js"></script>
+    <script src="js/active-family.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/children.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/family-data.js"></script>
+    <script src="js/care-log.js"></script>
+    <script src="js/store.js"></script>
+    <script src="js/shift-data.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/care-log-page.js"></script>
+  </body>
+</html>

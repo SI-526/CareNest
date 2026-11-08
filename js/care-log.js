@@ -1,7 +1,8 @@
 // CareNestCareLog — care details logged under completed tasks (SI-28 "Logging Care Details").
 //
-// Shared by the sitter home (index.html: the Care log section, the log modal, the activity modal)
-// and the parent home (parent.html: a read-only Care log). Data comes from js/shift-data.js:
+// Shared by the sitter home (index.html: the log modal, the activity modal), the parent home
+// (parent.html: a read-only Care log), and the Care Log page (care-log.html, js/care-log-page.js:
+// the current session's entries about each child, SI-63). Data comes from js/shift-data.js:
 // state.checks (completed tasks) and state.logs (append-only entries, oldest first), and new
 // entries go through backend.addCareLog(), which checks the same rules again (the database has
 // the final say through CHECK constraints and the stamp_care_log trigger).
@@ -17,8 +18,13 @@
     empty: "No information provided",
     bottleRange: "Enter between 0.5 and 16 oz.",
     noteTooLong: `Keep the note to ${MAX_NOTE} characters or fewer.`,
+    entryChild: "Choose which child this entry is about.",
+    entryNoChildren: "This family space has no children yet, so there is no one to log about.",
+    entryNote: "Write what happened before saving.",
   };
   const CATEGORY_LABELS = { meal: "Meal", bottle: "Bottle", care: "Care" };
+  // A Care Log page entry (care_logs.category 'note'): about a child, not tied to a task.
+  const ENTRY_CATEGORY = "note";
   const AMOUNT_LABELS = { all: "Ate all", most: "Ate most", some: "Ate some", none: "Ate none" };
   const AMOUNTS = ["all", "most", "some", "none"];
 
@@ -91,7 +97,8 @@
   // and is placed by its first log.
   function timeline(state, schedule) {
     const checks = (state && state.checks) || {};
-    const logs = ((state && state.logs) || []).slice().sort((a, b) => a.createdAt - b.createdAt);
+    // Care Log page entries (no task) are listed on that page, not under a task.
+    const logs = ((state && state.logs) || []).filter((l) => l.taskId).sort((a, b) => a.createdAt - b.createdAt);
     const rows = Object.keys(checks).map((taskId) => {
       const check = checks[taskId];
       return {
@@ -115,7 +122,101 @@
   }
 
   function logsFor(state, taskId) {
-    return ((state && state.logs) || []).filter((l) => l.taskId === taskId).sort((a, b) => a.createdAt - b.createdAt);
+    return ((state && state.logs) || []).filter((l) => l.taskId && l.taskId === taskId).sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  // ---------------------------------------------------------------- Care Log page (SI-63)
+
+  // A new entry: { childId, note } checked against the family's children (ids). With one child
+  // the picker is skipped and that child is used. Mirrors stamp_care_log() and the CHECKs
+  // (child_required, child_not_found, care_logs_not_empty, the 1000-character note).
+  function validateEntry(input, childIds) {
+    const ids = Array.isArray(childIds) ? childIds : [];
+    if (!ids.length) return { error: MESSAGES.entryNoChildren };
+    const childId = ids.length === 1 ? ids[0] : input && input.childId;
+    if (!childId || !ids.includes(childId)) return { error: MESSAGES.entryChild, field: "child" };
+    const note = String((input && input.note) || "").trim();
+    if (!note) return { error: MESSAGES.entryNote, field: "note" };
+    if (note.length > MAX_NOTE) return { error: MESSAGES.noteTooLong, field: "note" };
+    return { entry: { childId, note, category: ENTRY_CATEGORY } };
+  }
+
+  function firstName(name) {
+    return String(name || "").trim().split(/\s+/)[0] || "";
+  }
+
+  // Every entry of the session, oldest first: Care Log entries (about a child) and the details
+  // logged under completed tasks. children: the family's children ({ id, name }); a child who was
+  // removed keeps the name the entry was written under (care_logs.child_name).
+  function sessionEntries(state, children, schedule) {
+    const kids = children || [];
+    const checks = (state && state.checks) || {};
+    return ((state && state.logs) || [])
+      .slice()
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((log) => {
+        const child = log.childId ? kids.find((c) => c.id === log.childId) : null;
+        const childName = (child && child.name) || log.childName || "";
+        let taskTitle = null;
+        if (log.taskId) {
+          const check = checks[log.taskId];
+          const task = (schedule || []).find((t) => t.id === log.taskId);
+          taskTitle = (check && check.snapshot && check.snapshot.title) || (task && task.title) || "Task";
+        }
+        const facts = [];
+        if (log.category === "meal" && log.mealAmount) facts.push(AMOUNT_LABELS[log.mealAmount] || "");
+        if (log.category === "bottle" && log.bottleOz != null) facts.push(formatOz(log.bottleOz));
+        return {
+          id: log.id,
+          kind: log.taskId ? "task" : "entry",
+          childName,
+          childFirst: firstName(childName),
+          taskTitle,
+          category: log.category,
+          facts: facts.filter(Boolean),
+          note: log.note || "",
+          authorName: log.authorName || "",
+          createdAt: log.createdAt,
+        };
+      });
+  }
+
+  function initialsOf(name) {
+    const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "?";
+    const letters = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : parts[0].slice(0, 2);
+    return letters.toUpperCase();
+  }
+
+  // The list on the Care Log page. Each entry shows its child (or the task it is about), the
+  // content, and the time.
+  function sessionLogHtml(entries) {
+    return entries
+      .map((e) => {
+        const iso = new Date(e.createdAt).toISOString();
+        const badge =
+          e.kind === "task"
+            ? `<span class="session-log-badge session-log-badge--task" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M9.6 16.2 5.4 12l-1.4 1.4 5.6 5.6 12-12-1.4-1.4z" fill="currentColor"/></svg></span>`
+            : `<span class="session-log-badge" aria-hidden="true">${escapeHtml(initialsOf(e.childName))}</span>`;
+        const subject =
+          e.kind === "task"
+            ? `${escapeHtml(e.taskTitle)}<span class="session-log-kind"> · ${escapeHtml(CATEGORY_LABELS[e.category] || "Care")}</span>`
+            : escapeHtml(e.childFirst || "A removed child");
+        const label = e.kind === "task" ? `Task details: ${e.taskTitle}` : `Entry about ${e.childName || "a removed child"}`;
+        return `<li class="session-log-entry" data-entry-id="${escapeHtml(e.id)}">
+          <article class="session-log-card" aria-label="${escapeHtml(label)}">
+            <div class="session-log-entry-head">
+              ${badge}
+              <p class="session-log-subject">${subject}</p>
+              <time class="session-log-time" datetime="${iso}">${escapeHtml(shortTime(e.createdAt))}</time>
+            </div>
+            ${e.facts.length ? `<p class="session-log-fact">${escapeHtml(e.facts.join(" · "))}</p>` : ""}
+            ${e.note ? `<p class="session-log-text">${escapeHtml(e.note)}</p>` : ""}
+            ${e.authorName ? `<p class="session-log-author">By ${escapeHtml(e.authorName)}</p>` : ""}
+          </article>
+        </li>`;
+      })
+      .join("");
   }
 
   // ---------------------------------------------------------------- rendering
@@ -354,6 +455,11 @@
     MESSAGES,
     CATEGORY_LABELS,
     AMOUNT_LABELS,
+    ENTRY_CATEGORY,
+    validateEntry,
+    sessionEntries,
+    sessionLogHtml,
+    initialsOf,
     parseAgeMonths,
     categoriesFor,
     validate,

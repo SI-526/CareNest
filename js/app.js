@@ -44,15 +44,15 @@
   const readySource = window.CareNestFamily || window.CareNestAuth;
   const authReady = readySource ? readySource.ready : Promise.resolve();
   authReady.then((ctx) => {
-    if ((page === "home" || page === "messages" || page === "parent") && window.CareNestShift) {
+    if ((page === "home" || page === "parent") && window.CareNestShift) {
       window.CareNestShift.ready.then((backend) => {
         shift = backend;
         if (page === "home") {
           initHome();
           initDayNotes(ctx);
-        } else if (page === "parent") {
+        } else {
           initDayNotes(ctx);
-        } else initMessages();
+        }
       });
     } else if (page === "food") {
       renderFood();
@@ -1535,7 +1535,7 @@
 
   // Dev-only controls so the moment prompt and shift lock can be tested quickly.
   // Dev-only controls. The sitter's moment trigger and the reset are demo-only: with real
-  // accounts only a parent can move the moment (trigger_moment_now), from messages.html?as=parent.
+  // accounts only a parent can move the moment (trigger_moment_now), from parent.html's demo tools.
   function renderDevTools() {
     if (!isDevHost) return;
     const host = document.querySelector(".side-column") || document.querySelector(".app");
@@ -1565,32 +1565,6 @@
     host.appendChild(box);
   }
 
-  // Parent side of messages.html, signed in, on localhost: move this shift's moment prompt to
-  // 1-5 minutes from now (trigger_moment_now; the database refuses sitters).
-  function renderParentMomentTrigger(host) {
-    if (!isDevHost || shift.demo || role !== "parent" || !host) return;
-    const box = document.createElement("section");
-    box.className = "panel dev-tools";
-    box.innerHTML = `
-      <h2 class="panel-title">Demo tools (not part of the product)</h2>
-      <div class="dev-tools-actions">
-        <button type="button" class="photo-source-btn" data-dev="parent-moment">Trigger the sitter's moment (1–5 min)</button>
-      </div>
-      <p class="photo-upload-error" role="alert" hidden></p>`;
-    const err = box.querySelector("[role=alert]");
-    box.querySelector("button").addEventListener("click", () => {
-      err.hidden = true;
-      shift
-        .triggerMomentNow()
-        .then(() => announce("The sitter's moment prompt will appear within 5 minutes."))
-        .catch((e) => {
-          err.textContent = shift.errorMessage(e);
-          err.hidden = false;
-        });
-    });
-    host.appendChild(box);
-  }
-
   function senderName(sender) {
     if (sender === "parent") {
       if (data.parentName) return data.parentName;
@@ -1605,180 +1579,12 @@
     return `<img class="${className}" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" />`;
   }
 
-  function messageMeta(message) {
-    const iso = new Date(message.sentAt).toISOString();
-    return `<p class="msg-meta">${escapeHtml(senderName(message.sender))} · <time datetime="${iso}">${escapeHtml(formatTime(message.sentAt))}</time></p>`;
-  }
-
   // Label for a task_proof/moment message, e.g. "Snack" or "Moment".
   function photoTitle(message) {
     if (!message) return "Photo";
     if (message.kind === "moment") return "Moment";
     const task = data.schedule.find((s) => s.id === message.taskId);
     return task ? task.title : "Task";
-  }
-
-  function threadPhotoHtml(message, alt) {
-    if (message.photoPath) {
-      return `<img class="msg-photo" data-photo-path="${escapeHtml(message.photoPath)}" alt="${escapeHtml(alt)}" />`;
-    }
-    if (message.photoRemoved) {
-      return `<p class="photo-removed">Photo removed by ${escapeHtml(message.photoRemovedByName || "a parent")}</p>`;
-    }
-    return "";
-  }
-
-  function threadMeta(message) {
-    const iso = new Date(message.createdAt).toISOString();
-    return `<p class="msg-meta">${escapeHtml(message.senderName)} · <time datetime="${iso}">${escapeHtml(formatTime(message.createdAt))}</time></p>`;
-  }
-
-  function threadPhotoTitle(message) {
-    if (!message) return "an earlier";
-    if (message.kind === "moment") return "Moment";
-    return message.taskTitle || "Task";
-  }
-
-  function renderThreadMessage(message, byId) {
-    const side = message.mine ? "is-mine" : "is-theirs";
-
-    if (message.kind === "task_proof") {
-      const title = message.taskTitle || "Task";
-      return `
-        <li class="msg ${side}" id="msg-${escapeHtml(message.id)}">
-          <article class="msg-card proof-card" aria-label="Task completed: ${escapeHtml(title)}">
-            <p class="msg-card-kicker">
-              <img src="assets/check.svg" alt="" width="16" height="16" />
-              Task completed
-            </p>
-            <h2 class="msg-card-title">${escapeHtml(title)}${message.taskTime ? ` <span class="msg-card-time">${escapeHtml(message.taskTime)}</span>` : ""}</h2>
-            ${threadPhotoHtml(message, `Photo for ${title}`)}
-            ${message.tag ? `<p class="tag-chip">${escapeHtml(message.tag)}</p>` : ""}
-            ${message.body ? `<p class="msg-card-note">${escapeHtml(message.body)}</p>` : ""}
-            ${threadMeta(message)}
-          </article>
-        </li>`;
-    }
-
-    if (message.kind === "moment") {
-      return `
-        <li class="msg ${side}" id="msg-${escapeHtml(message.id)}">
-          <article class="msg-card moment-card" aria-label="Moment${message.late ? ", late" : ""}">
-            <p class="msg-card-kicker">
-              Moment
-              ${message.late ? `<span class="late-badge">Late</span>` : ""}
-            </p>
-            ${threadPhotoHtml(message, "Moment photo from the shift")}
-            ${message.body ? `<p class="msg-card-note">${escapeHtml(message.body)}</p>` : ""}
-            ${threadMeta(message)}
-          </article>
-        </li>`;
-    }
-
-    // Photo message (sent from the gallery): the photo, then the caption if there is one.
-    if (message.photoPath || message.photoRemoved) {
-      return `
-      <li class="msg ${side}" id="msg-${escapeHtml(message.id)}">
-        <article class="msg-card photo-msg-card" aria-label="Photo from ${escapeHtml(message.senderName)}">
-          ${threadPhotoHtml(message, `Photo message from ${message.senderName}`)}
-          ${message.body ? `<p class="msg-card-note">${escapeHtml(message.body)}</p>` : ""}
-          ${threadMeta(message)}
-        </article>
-      </li>`;
-    }
-
-    const target = message.replyTo ? byId[message.replyTo] : null;
-    const replyRef = message.replyTo
-      ? target
-        ? `<a class="msg-reply-ref" href="#msg-${escapeHtml(message.replyTo)}">Reply to ${escapeHtml(threadPhotoTitle(target))} photo</a>`
-        : `<span class="msg-reply-ref">Reply to an earlier photo</span>`
-      : "";
-    return `
-      <li class="msg ${side}">
-        <div class="msg-bubble">
-          ${replyRef}
-          <p class="msg-body">${escapeHtml(message.body)}</p>
-        </div>
-        ${threadMeta(message)}
-      </li>`;
-  }
-
-  function initMessages() {
-    const list = document.getElementById("message-list");
-    const form = document.getElementById("message-form");
-    const input = document.getElementById("message-input");
-    const error = document.getElementById("message-error");
-    const title = document.getElementById("messages-title");
-    const sendBtn = form.querySelector('button[type="submit"]');
-    // The other person in the thread, from the viewer's side (re-read when family data changes).
-    let parentName;
-    const renderNames = () => {
-      parentName = role === "parent" ? data.babysitter.name : parentFirstName();
-      if (title) title.textContent = `Messages with ${parentName}`;
-      if (input) input.placeholder = `Message ${parentName}`;
-      const label = document.querySelector('label[for="message-input"]');
-      if (label) label.textContent = `Message to ${parentName}`;
-    };
-    renderNames();
-    if (role === "parent") renderParentNav("care-log");
-    else renderSitterNav("care-log");
-    renderParentMomentTrigger(document.querySelector(".messages-main"));
-
-    let lastCount = -1;
-    const render = () => {
-      const st = shift.state;
-      const messages = st.thread;
-      const byId = {};
-      messages.forEach((m) => {
-        byId[m.id] = m;
-      });
-      list.innerHTML = st.loadError
-        ? `<li class="empty-state msg-empty"><p>${escapeHtml(st.loadError)}</p></li>`
-        : messages.length
-        ? messages.map((m) => renderThreadMessage(m, byId)).join("")
-        : `<li class="empty-state msg-empty"><p>No messages yet. Say hi to ${escapeHtml(parentName)}!</p></li>`;
-      hydratePhotos(list);
-      const lock = document.getElementById("messages-locked");
-      if (lock) lock.hidden = role === "parent" || !(st.ended || st.tooOld);
-      if (messages.length !== lastCount) {
-        lastCount = messages.length;
-        const last = list.lastElementChild;
-        if (last) last.scrollIntoView({ block: "end" });
-      }
-    };
-
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      error.hidden = true;
-      if (!input.value.trim()) {
-        error.textContent = "Type a message first.";
-        error.hidden = false;
-        input.focus();
-        return;
-      }
-      sendBtn.disabled = true;
-      shift
-        .sendChat(input.value)
-        .then(() => {
-          input.value = "";
-          announce(`Message sent to ${parentName}.`);
-        })
-        .catch((err) => {
-          error.textContent = shift.errorMessage(err);
-          error.hidden = false;
-        })
-        .finally(() => {
-          sendBtn.disabled = false;
-          input.focus();
-        });
-    });
-
-    shift.subscribe(render);
-    render();
-    onFamilyChange(() => {
-      renderNames();
-      render();
-    });
   }
 
   function openModal(item, opener) {
@@ -1910,7 +1716,7 @@
       : () => {
           const logged =
             item.check && !item.check.afterReopen && shift.state.events.some((e) => e.kind === "reopened");
-          const photoNote = item.check && item.check.proof ? " The photo message stays in Messages." : "";
+          const photoNote = item.check && item.check.proof ? " The photo stays in the Gallery." : "";
           const body = logged
             ? `${item.title} will go back to not done. Because this shift was reopened, the uncheck is recorded in the shift history.${photoNote}`
             : `${item.title} will go back to not done.${photoNote}`;
@@ -1937,7 +1743,7 @@
         };
   }
 
-  // A function (not a const) because initMessages runs before this line is reached.
+  // A function (not a const) because page set-up runs before this line is reached.
   function parentNavItems() {
     return [
     {

@@ -554,7 +554,7 @@
         await shift.sendChat(input.value, entry.id);
         input.value = "";
         toggleReply(entry, false);
-        announce(`Reply sent to ${entry.item.senderName}. It's in Messages too.`);
+        announce(`Reply sent to ${entry.item.senderName}.`);
       } catch (err) {
         error.textContent = shift.errorMessage(err) || "Reply not sent. Please try again.";
         error.hidden = false;
