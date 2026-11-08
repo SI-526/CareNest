@@ -257,9 +257,40 @@
     return `<p class="supporting-copy caregiver-details">${[sharedSitter.availability ? esc(sharedSitter.availability) : "", phone].filter(Boolean).join(" · ")}</p>`;
   }
 
+  // Profile tab (Figma 316:2252 / 316:2360): who is signed in, their contact details, and the
+  // account settings list. Read-only; the sitter edits name and phone in the public-profile form
+  // below. Parents have no personal profile row, so they get their family-roster name and email.
+  function profileSummary(ctx) {
+    const isParent = Boolean(ctx && ctx.role === "parent");
+    const profile = isParent ? null : (sitterProfileState && sitterProfileState.profile) || profileDefaults();
+    const memberName = ctx && ctx.membership ? ctx.membership.display_name : ctx && ctx.demo ? data.parentName : "";
+    const name = String((isParent ? memberName : profile.name) || "").trim();
+    const phone = isParent ? "" : String(profile.phone || "").trim();
+    const email = String((ctx && ctx.email) || "").trim();
+    const empty = !name && !phone;
+    const avatar = empty
+      ? '<span class="profile-id-avatar profile-id-avatar--empty" aria-hidden="true"><img src="assets/icon-account-circle.svg" alt=""></span>'
+      : `<span class="profile-id-avatar" aria-hidden="true">${esc(initials(name || "?"))}</span>`;
+    const identity = `<header class="profile-identity">${avatar}<div><h1>${empty ? "Your profile" : esc(name)}</h1><p>${empty ? "Signed in" : `${isParent ? "Parent" : "Sitter"} · Signed in`}</p></div></header>`;
+    const row = (label, value) => `<div class="profile-info-row"><p class="profile-info-label">${label}</p><p class="profile-info-value">${value}</p></div>`;
+    const rows = [];
+    if (email) rows.push(row("Email address", esc(email)));
+    if (!isParent && !empty) rows.push(row("Phone number", phone ? esc(phone) : '<span class="profile-info-missing">Not provided</span>'));
+    const emptyBlock = '<div class="profile-info-empty"><p class="profile-info-empty-title">No information provided.</p><p>Add your name and contact details using Profile management.</p><p class="profile-info-empty-note">You&#39;re still signed in to your account.</p></div>';
+    const info = empty ? emptyBlock + rows.join("") : rows.length ? rows.join("") : '<p class="profile-info-missing">No contact details provided.</p>';
+    const settingsRow = (href, icon, title, sub) => `<li><a class="profile-settings-row" href="${href}"><span class="profile-settings-icon" aria-hidden="true"><img src="assets/${icon}" alt=""></span><span class="profile-settings-text"><span class="profile-settings-title">${title}</span><span class="profile-settings-sub">${sub}</span></span><img class="profile-settings-chevron" src="assets/icon-chevron-right.svg" alt="" aria-hidden="true"></a></li>`;
+    const settings = [
+      settingsRow(isParent ? "#account" : "#profile-management", "icon-person.svg", "Profile management", "Personal details"),
+      isParent ? settingsRow("people.html", "icon-home.svg", "Manage household", "People &amp; invites") : "",
+      isParent ? "" : settingsRow("#profile-updates", "icon-notifications.svg", "Notifications", "Care reminders &amp; family updates"),
+    ].join("");
+    const household = isParent ? '<p class="profile-household-links">Edit each child on the <a href="children.html">Children</a> tab, sessions on the <a href="schedule.html">Schedule</a> tab, and everything else in <a href="manage.html">Family info</a>.</p>' : "";
+    return `${identity}<section class="profile-section" aria-labelledby="profile-info-title"><h2 class="profile-section-title" id="profile-info-title">Personal information</h2><div class="profile-block profile-info">${info}</div></section><section class="profile-section" aria-labelledby="profile-settings-title"><h2 class="profile-section-title" id="profile-settings-title">Account settings</h2><ul class="profile-block profile-settings-list">${settings}</ul>${household}</section>`;
+  }
+
   function sitterProfile() {
     const profile = (sitterProfileState && sitterProfileState.profile) || profileDefaults();
-    return `<section class="profile-settings-layout"><article class="panel secondary-panel public-profile-card"><p class="page-eyebrow">VISIBLE TO PARENTS</p><h2 class="section-title">Your public profile</h2><p class="supporting-copy">Parents only see the fields you choose to share below.</p><form class="profile-settings-form" id="profile-settings-form"><label class="field-label" for="profile-name">Display name</label><input class="text-input" id="profile-name" name="name" maxlength="80" value="${esc(profile.name)}"><label class="field-label" for="profile-bio">About you</label><textarea class="text-input profile-textarea" id="profile-bio" name="bio" maxlength="500" rows="4" placeholder="Friendly, dependable care for busy families.">${esc(profile.bio)}</textarea><label class="field-label" for="profile-phone">Phone number</label><input class="text-input" id="profile-phone" name="phone" type="tel" maxlength="40" value="${esc(profile.phone)}"><label class="field-label" for="profile-availability">Availability</label><input class="text-input" id="profile-availability" name="availability" maxlength="160" placeholder="Weekday afternoons and weekends" value="${esc(profile.availability)}"><fieldset class="profile-visibility"><legend class="field-label">What parents can see</legend><label><input type="checkbox" name="showBio"${profile.showBio ? " checked" : ""}> About you</label><label><input type="checkbox" name="showPhone"${profile.showPhone ? " checked" : ""}> Phone number</label><label><input type="checkbox" name="showAvailability"${profile.showAvailability ? " checked" : ""}> Availability</label></fieldset><fieldset class="profile-visibility"><legend class="field-label">Your preferences</legend><label><input type="checkbox" name="updates"${profile.updates ? " checked" : ""}> Receive session update reminders</label></fieldset><div class="profile-save-row"><button class="primary-btn" type="submit">Save profile</button><p class="profile-save-status" id="profile-save-status" role="status" aria-live="polite"></p></div></form></article><aside class="panel secondary-panel profile-preview"><p class="page-eyebrow">PARENT PREVIEW</p><h2 class="section-title" id="profile-preview-name">${esc(profile.name) || "Your name"}</h2><p class="supporting-copy" id="profile-preview-bio"${profile.showBio && profile.bio ? "" : " hidden"}>${esc(profile.bio)}</p><p class="supporting-copy" id="profile-preview-phone"${profile.showPhone && profile.phone ? "" : " hidden"}>${esc(profile.phone)}</p><p class="supporting-copy" id="profile-preview-availability"${profile.showAvailability && profile.availability ? "" : " hidden"}>${esc(profile.availability)}</p><p class="profile-private-note">Private fields stay visible only to you.</p></aside></section>`;
+    return `<section class="profile-settings-layout" id="profile-management" aria-label="Profile management"><article class="panel secondary-panel public-profile-card"><p class="page-eyebrow">VISIBLE TO PARENTS</p><h2 class="section-title">Your public profile</h2><p class="supporting-copy">Parents only see the fields you choose to share below.</p><form class="profile-settings-form" id="profile-settings-form"><label class="field-label" for="profile-name">Display name</label><input class="text-input" id="profile-name" name="name" maxlength="80" value="${esc(profile.name)}"><label class="field-label" for="profile-bio">About you</label><textarea class="text-input profile-textarea" id="profile-bio" name="bio" maxlength="500" rows="4" placeholder="Friendly, dependable care for busy families.">${esc(profile.bio)}</textarea><label class="field-label" for="profile-phone">Phone number</label><input class="text-input" id="profile-phone" name="phone" type="tel" maxlength="40" value="${esc(profile.phone)}"><label class="field-label" for="profile-availability">Availability</label><input class="text-input" id="profile-availability" name="availability" maxlength="160" placeholder="Weekday afternoons and weekends" value="${esc(profile.availability)}"><fieldset class="profile-visibility"><legend class="field-label">What parents can see</legend><label><input type="checkbox" name="showBio"${profile.showBio ? " checked" : ""}> About you</label><label><input type="checkbox" name="showPhone"${profile.showPhone ? " checked" : ""}> Phone number</label><label><input type="checkbox" name="showAvailability"${profile.showAvailability ? " checked" : ""}> Availability</label></fieldset><fieldset class="profile-visibility" id="profile-updates"><legend class="field-label">Your preferences</legend><label><input type="checkbox" name="updates"${profile.updates ? " checked" : ""}> Receive session update reminders</label></fieldset><div class="profile-save-row"><button class="primary-btn" type="submit">Save profile</button><p class="profile-save-status" id="profile-save-status" role="status" aria-live="polite"></p></div></form></article><aside class="panel secondary-panel profile-preview"><p class="page-eyebrow">PARENT PREVIEW</p><h2 class="section-title" id="profile-preview-name">${esc(profile.name) || "Your name"}</h2><p class="supporting-copy" id="profile-preview-bio"${profile.showBio && profile.bio ? "" : " hidden"}>${esc(profile.bio)}</p><p class="supporting-copy" id="profile-preview-phone"${profile.showPhone && profile.phone ? "" : " hidden"}>${esc(profile.phone)}</p><p class="supporting-copy" id="profile-preview-availability"${profile.showAvailability && profile.availability ? "" : " hidden"}>${esc(profile.availability)}</p><p class="profile-private-note">Private fields stay visible only to you.</p></aside></section>`;
   }
 
   function bindSitterProfile(ctx) {
@@ -299,6 +330,12 @@
         el.hidden = !values[visible] || !values[field];
       });
       status.textContent = canSave || demoSave ? "Profile saved." : "Preview updated. Demo profiles are not saved.";
+      // The name and phone at the top of the page follow what was just saved.
+      const summary = document.querySelector("[data-profile-summary]");
+      if ((canSave || demoSave) && summary) {
+        sitterProfileState = { profile: { ...((sitterProfileState && sitterProfileState.profile) || profileDefaults()), ...values } };
+        summary.innerHTML = profileSummary(ctx);
+      }
     });
   }
 
@@ -320,13 +357,15 @@
         body: `<p class="supporting-copy care-log-loading">Loading the care log…</p>`,
       },
       profile: {
-        eyebrow: "PROFILE & SETTINGS", title: ctx && ctx.role === "parent" ? "Your CareNest settings" : "Your sitter profile", intro: ctx && ctx.role === "parent" ? "Manage your details and the family space with confidence." : "Choose what parents can see, and keep your personal preferences in one place.",
-        body: ctx && ctx.role === "parent" ? `<section class="secondary-grid"><div class="account-slot" data-account-panel></div><article class="panel secondary-panel"><h2 class="section-title">Manage household</h2><p class="supporting-copy">Edit each child on the Children tab, sessions on the Schedule tab, and everything else in <a href="manage.html">Family info</a>.</p></article><article class="panel secondary-panel"><h2 class="section-title">Notification preferences</h2><p class="supporting-copy">Notification controls will appear here as they become available.</p></article></section>` : `${sitterProfile()}<div class="account-slot account-slot-wide" data-account-panel></div>`,
+        eyebrow: "", title: "Profile", intro: "",
+        // Identity, personal information and account settings, then Log out / Delete (the
+        // account panel, js/auth.js), then the sitter's public-profile form.
+        body: `<div class="profile-page"><div class="profile-summary" data-profile-summary>${profileSummary(ctx)}</div><div class="account-slot" id="account" data-account-panel></div>${ctx && ctx.role === "parent" ? "" : sitterProfile()}</div>`,
       },
     }[page];
     if (!views) return;
     document.title = `CareNest — ${views.title}`;
-    root.innerHTML = page === "schedule" || page === "carelog" ? views.body : `<header class="secondary-header"><p class="page-eyebrow">${views.eyebrow}</p><h1>${views.title}</h1><p>${views.intro}</p></header>${views.body}`;
+    root.innerHTML = page === "schedule" || page === "carelog" || page === "profile" ? views.body : `<header class="secondary-header"><p class="page-eyebrow">${views.eyebrow}</p><h1>${views.title}</h1><p>${views.intro}</p></header>${views.body}`;
     if (page === "schedule") {
       // SI-71: the sitter's checklist (schedule.html, filled by js/app.js) sits under Current Shift.
       const slot = root.querySelector("[data-checklist-slot]");

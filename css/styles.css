@@ -5407,3 +5407,327 @@ body[data-page="children"]:has(.children-header--detail) {
 .schedule-checklist {
   margin-top: 24px;
 }
+
+/* Profile tab (Figma 316:2252, 316:2360): identity, personal information, account settings,
+   then Log out / Delete and the sitter's public-profile form, on Cloud with borderless cards. */
+body[data-page="profile"] {
+  background: var(--cloud);
+}
+
+body[data-page="profile"] .secondary-main {
+  align-items: center;
+}
+
+.profile-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: var(--detail-width);
+}
+
+.profile-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.profile-identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.profile-identity > div {
+  min-width: 0;
+}
+
+.profile-identity h1 {
+  margin: 0;
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: 24px;
+  line-height: 31.6px;
+  font-weight: var(--weight-bold);
+  overflow-wrap: anywhere;
+}
+
+.profile-identity p {
+  margin: 0;
+  color: var(--grey);
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.profile-id-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #dce7ef;
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+}
+
+.profile-id-avatar--empty {
+  background: #eff1fa;
+}
+
+.profile-id-avatar--empty img {
+  width: 28px;
+  height: 28px;
+}
+
+.profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scroll-margin-top: 24px;
+}
+
+.profile-section-title,
+.profile-page .account-panel > .section-title {
+  margin: 0;
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: var(--weight-bold);
+}
+
+.profile-block {
+  margin: 0;
+  padding: 0 16px;
+  border-radius: var(--radius);
+  background: var(--card);
+  list-style: none;
+}
+
+.profile-info-row,
+.profile-info-empty {
+  padding: 16px 0;
+}
+
+.profile-info-row + .profile-info-row,
+.profile-info-empty + .profile-info-row {
+  border-top: 1px solid var(--line);
+}
+
+.profile-info-row p,
+.profile-info-empty p {
+  margin: 0;
+}
+
+.profile-info-label {
+  color: var(--grey);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.profile-info-value {
+  color: var(--blue);
+  font-size: 16px;
+  line-height: 24px;
+  overflow-wrap: anywhere;
+}
+
+.profile-info-missing {
+  color: var(--grey);
+}
+
+.profile-info > .profile-info-missing {
+  margin: 0;
+  padding: 16px 0;
+  font-size: 14px;
+}
+
+.profile-info-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--grey);
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.profile-info-empty .profile-info-empty-title {
+  color: var(--blue);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: var(--weight-bold);
+}
+
+.profile-info-empty .profile-info-empty-note {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.profile-settings-list li + li {
+  border-top: 1px solid var(--line);
+}
+
+.profile-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 69px;
+  padding: 14px 0;
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.profile-settings-row:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.profile-settings-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--blue);
+}
+
+.profile-settings-icon img {
+  width: 24px;
+  height: 24px;
+}
+
+.profile-settings-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.profile-settings-title {
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: var(--weight-semibold);
+}
+
+.profile-settings-sub {
+  color: var(--grey);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.profile-settings-chevron {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  opacity: 0.6;
+}
+
+.profile-household-links {
+  margin: 0;
+  color: var(--grey);
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.profile-household-links a {
+  color: var(--accent-strong);
+  font-weight: var(--weight-semibold);
+}
+
+/* Account panel (js/auth.js): no card, the buttons sit on Cloud as in Figma. */
+.profile-page .account-slot {
+  scroll-margin-top: 24px;
+}
+
+.profile-page .account-slot:empty {
+  display: none;
+}
+
+.profile-page .account-panel {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.profile-page .account-panel .account-who {
+  color: var(--blue);
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.profile-page .account-panel .account-meta,
+.profile-page .account-panel .account-links {
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.profile-page .account-panel .photo-source-btn,
+.profile-page .account-panel .danger-btn {
+  min-height: 44px;
+  padding: 9px 16px;
+  border-radius: 10px;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: var(--weight-semibold);
+}
+
+.profile-page .account-panel [data-sign-out] {
+  margin-top: 8px;
+  border-color: var(--accent-strong);
+  background: #eff1fa;
+  color: var(--accent-strong);
+}
+
+.profile-page .account-panel [data-sign-out]:hover,
+.profile-page .account-panel [data-sign-out]:focus-visible {
+  background: var(--card);
+}
+
+.profile-page .account-panel .danger-btn {
+  margin-top: 8px;
+  border-color: var(--danger);
+  background: #ffeeee;
+  color: var(--danger);
+}
+
+.profile-page .account-panel .danger-btn:hover,
+.profile-page .account-panel .danger-btn:focus-visible {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+/* The sitter's public-profile form: one column, borderless white cards. */
+.profile-page .profile-settings-layout {
+  grid-template-columns: 1fr;
+  gap: 24px;
+  scroll-margin-top: 24px;
+}
+
+.profile-page .secondary-panel {
+  border: 0;
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+
+.profile-page .profile-preview {
+  position: static;
+}
+
+.profile-page #profile-updates {
+  scroll-margin-top: 24px;
+}
+
+@media (max-width: 767px) {
+  body[data-page="profile"] .app {
+    padding-top: 24px;
+  }
+}
