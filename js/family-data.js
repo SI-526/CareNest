@@ -187,6 +187,8 @@
       end_time: formatTaskTime(appointment.end_time),
       note: appointment.note || "",
       activities: Array.isArray(appointment.activities) ? appointment.activities : [],
+      // SI-75: which children the session is for (ids from data.children).
+      childIds: Array.isArray(appointment.child_ids) ? appointment.child_ids : [],
     }));
     // Open "Request Schedule" reminders. The requester's name comes from the household roster.
     data.scheduleRequests = (rows.scheduleRequests || []).map((request) => {
@@ -291,7 +293,7 @@
         .limit(1),
       client
         .from("appointments")
-        .select("id, appointment_date, start_time, end_time, note, activities")
+        .select("id, appointment_date, start_time, end_time, note, activities, child_ids")
         .eq("household_id", householdId)
         .order("appointment_date", { ascending: true })
         .order("start_time", { ascending: true }),
@@ -341,7 +343,7 @@
     if (rows.household) Object.assign(ctx.household, rows.household);
     apply(ctx, rows);
     const plan = rows.plan ? [rows.plan].concat(rows.plan.tasks || []) : [];
-    shownIds = new Set(rows.contacts.concat(rows.careItems, rows.children, plan).map((r) => r.id));
+    shownIds = new Set(rows.contacts.concat(rows.careItems, rows.children, plan, rows.appointments).map((r) => r.id));
     return true;
   }
 
@@ -384,7 +386,8 @@
   // deletes arrive unfiltered: refetch only when a row on screen was deleted (as day notes do).
   // Tasks get no DELETE listener: clients cannot delete a task, and a task goes only by cascade
   // from a plan or family-space delete, which the plans DELETE or households event already shows.
-  // Appointments and schedule requests likewise: clients never delete them (only cascades do).
+  // Schedule requests likewise: clients never delete them (only cascades do). Parents delete
+  // appointments (SI-79), so those get a DELETE listener like the care info tables.
   function watch(ctx) {
     const client = ctx.client;
     const householdId = ctx.household.id;
@@ -440,6 +443,7 @@
       ["appointments", "schedule_requests"].forEach((table) => {
         channel.on("postgres_changes", changes(table, `household_id=eq.${householdId}`), scheduleReload);
       });
+      channel.on("postgres_changes", { event: "DELETE", schema: "public", table: "appointments" }, onDelete);
       if (channelPlanId) {
         channel.on("postgres_changes", changes("tasks", `plan_id=eq.${channelPlanId}`), scheduleReload);
       }

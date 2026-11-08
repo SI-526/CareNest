@@ -807,7 +807,7 @@ test("day notes: parents write, members read, and the database stamps who edited
   assert.equal(removed.data.length, 1);
 });
 
-test("appointments: parents book and edit in their own plan, members read, nothing moves or is deleted", async () => {
+test("appointments: parents book and edit in their own plan, members read, nothing moves, only parents delete", async () => {
   const a = await newFamily("appt-a", 1);
   const b = await newFamily("appt-b", 1);
   const p = a.parent.client;
@@ -893,7 +893,7 @@ test("appointments: parents book and edit in their own plan, members read, nothi
   assert.equal(edited.data.note, "Pickup at 1:30");
   assert.deepEqual(edited.data.activities, [{ title: "Park" }]);
 
-  // An appointment never moves to another family space or plan, and nobody deletes one.
+  // An appointment never moves to another family space or plan.
   for (const values of [
     { plan_id: b.planId },
     { household_id: b.householdId },
@@ -905,16 +905,64 @@ test("appointments: parents book and edit in their own plan, members read, nothi
       `parent updated ${Object.keys(values)[0]}`,
     );
   }
-  assertPermissionDenied(
-    await p.from("appointments").delete().eq("id", appt.id).select(),
-    "parent deleted an appointment",
+  const { data: kept } = await admin.from("appointments").select("household_id, plan_id").eq("id", appt.id).single();
+  assert.deepEqual(kept, { household_id: a.householdId, plan_id: a.planId });
+
+  // SI-75: a session records its children, only children of its own family space.
+  const kidsA = await admin.from("children").select("id").eq("household_id", a.householdId);
+  const kidsB = await admin.from("children").select("id").eq("household_id", b.householdId);
+  assert.ifError(kidsA.error);
+  assert.ifError(kidsB.error);
+  const childA = kidsA.data[0].id;
+  const childB = kidsB.data[0].id;
+  const picked = await p
+    .from("appointments")
+    .update({ child_ids: [childA], activities: [{ title: "Park", childIds: [childA] }] })
+    .eq("id", appt.id)
+    .select("child_ids, activities")
+    .single();
+  assert.ifError(picked.error);
+  assert.deepEqual(picked.data.child_ids, [childA]);
+  assert.deepEqual(picked.data.activities, [{ title: "Park", childIds: [childA] }]);
+  for (const [label, ids] of [["another family's child", [childB]], ["an unknown id", [randomUUID()]], ["a mix", [childA, childB]]]) {
+    const refused = await p.from("appointments").update({ child_ids: ids }).eq("id", appt.id).select();
+    assert.ok(refused.error, `parent picked ${label}`);
+    assert.match(refused.error.message, /child_not_found/);
+  }
+  const refusedInsert = await p
+    .from("appointments")
+    .insert(row(a, { appointment_date: isoDate(11), child_ids: [childB] }))
+    .select();
+  assert.ok(refusedInsert.error, "parent booked a session for another family's child");
+  assert.match(refusedInsert.error.message, /child_not_found/);
+  assertDenied(
+    await c.from("appointments").update({ child_ids: [] }).eq("id", appt.id).select(),
+    "caretaker changed a session's children",
   );
-  assertPermissionDenied(
+  // The refused updates left the session's children as they were.
+  const { data: still } = await admin.from("appointments").select("child_ids").eq("id", appt.id).single();
+  assert.deepEqual(still.child_ids, [childA]);
+
+  // SI-79: only a parent of the family space deletes a session. Refusals are zero rows (RLS).
+  assertDenied(
     await c.from("appointments").delete().eq("id", appt.id).select(),
     "caretaker deleted an appointment",
   );
-  const { data: kept } = await admin.from("appointments").select("household_id, plan_id").eq("id", appt.id).single();
-  assert.deepEqual(kept, { household_id: a.householdId, plan_id: a.planId });
+  for (const [label, user] of [["parent B", b.parent], ["outsider", outsider]]) {
+    assertDenied(
+      await user.client.from("appointments").delete().eq("id", appt.id).select(),
+      `${label} deleted A's appointment`,
+    );
+  }
+  const anonDelete = await anon.from("appointments").delete().eq("id", appt.id).select();
+  assert.ok(anonDelete.error || (anonDelete.data ?? []).length === 0, "anon deleted an appointment");
+  const { data: survived } = await admin.from("appointments").select("id").eq("id", appt.id);
+  assert.equal(survived.length, 1, "a refused delete removed the appointment");
+  const deleted = await p.from("appointments").delete().eq("id", appt.id).select("id");
+  assert.ifError(deleted.error);
+  assert.deepEqual(deleted.data.map((r) => r.id), [appt.id]);
+  const { data: gone } = await admin.from("appointments").select("id").eq("id", appt.id);
+  assert.deepEqual(gone, []);
 });
 
 test("appointments: the update policy refuses a plan from another family space even if plan_id were updatable", async (t) => {
@@ -2532,7 +2580,7 @@ test("every relation in public has RLS (tables), invoker rights (views), and gra
                'insert, update') as checked_by_write,
              has_table_privilege('authenticated', 'public.task_checks', 'update')
                as task_checks_update,
-             has_table_privilege('authenticated', 'public.appointments', 'update, delete, truncate')
+             has_table_privilege('authenticated', 'public.appointments', 'update, truncate')
                as appointments_table_write,
              has_column_privilege('authenticated', 'public.appointments', 'plan_id', 'update')
                as appointments_plan_update,

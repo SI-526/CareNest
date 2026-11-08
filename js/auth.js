@@ -38,6 +38,8 @@
     // person is already in this family.
     already_member: "Already a member of this family space.",
     not_parent: "Only a parent can do that.",
+    // Schedule Details (SI-75): a picked child was deleted, or is not in this family space.
+    child_not_found: "One of the children picked was removed. Reload the page and pick again.",
     photos_remaining: "A photo was added while your account was being deleted. Please try again.",
     invalid_email: "Please enter a valid email address.",
     invite_not_found: "We couldn't find this invite. Check that you opened the whole link.",
