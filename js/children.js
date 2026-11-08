@@ -83,13 +83,20 @@
     const current = now || new Date();
     const today = localKey(current);
     const nowMinutes = current.getHours() * 60 + current.getMinutes();
+    const yesterday = localKey(new Date(current.getFullYear(), current.getMonth(), current.getDate() - 1));
+    // An end before the start ends the next day (SI-80): yesterday's 7:00 PM - 1:00 AM sit is
+    // still under way at 12:30 AM, and today's is until 1:00 AM tomorrow.
+    const overnight = (item) => item.end !== null && item.end < item.start;
     const upcoming = (appointments || [])
       .map((item) => ({ date: item.date, start: minutesOf(item.start_time), end: minutesOf(item.end_time) }))
       .filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.date || "") && item.start !== null)
-      .filter((item) => item.date > today || (item.date === today && (item.end === null ? item.start : item.end) > nowMinutes))
+      .filter((item) => item.date > today
+        || (item.date === today && (overnight(item) || (item.end === null ? item.start : item.end) > nowMinutes))
+        || (item.date === yesterday && overnight(item) && item.end > nowMinutes))
       .sort((a, b) => (a.date === b.date ? a.start - b.start : a.date < b.date ? -1 : 1));
     const next = upcoming[0];
     if (!next) return null;
+    if (next.date === yesterday) return { text: `Now until ${clock(next.end)}`, soon: true };
     const tomorrow = localKey(new Date(current.getFullYear(), current.getMonth(), current.getDate() + 1));
     const time = clock(next.start);
     if (next.date === today) return { text: `Today ${time}`, soon: true };

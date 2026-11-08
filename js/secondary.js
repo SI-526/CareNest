@@ -104,7 +104,16 @@
     return data.schedule.map((item) => `<li class="secondary-row"><span class="secondary-time">${esc(item.time || "Any time")}</span><span><strong>${esc(item.title)}</strong><small>${esc(item.detail || item.location || "Details available in the session")}</small></span>${editable ? `<button class="photo-source-btn secondary-row-action" type="button" data-edit="task" data-id="${esc(item.id)}">Edit</button>` : ""}</li>`).join("");
   }
 
-  const { dateKey, parseDate, addDays } = window.CareNestDates;
+  const { dateKey, parseDate, addDays, clockMinutes, endsNextDay, sessionLength, formatLength, sessionsOverlap, isUnderWay } = window.CareNestDates;
+  // A saved session ({ date, start_time, end_time }) in the shape CareNestDates reads.
+  const sessionTimes = (item) => ({ date: item.date, start: item.start_time, end: item.end_time });
+  // Activities in session order: an overnight session's 12:30am (up to its end) comes after its
+  // 9:00pm. Otherwise activities sort by time of day, as before.
+  const sessionOrder = (time, start, end) => {
+    const at = clockMinutes(time);
+    if (at === null) return Number.MAX_SAFE_INTEGER;
+    return endsNextDay(start, end) && at < clockMinutes(start) && at <= clockMinutes(end) ? at + 24 * 60 : at;
+  };
   const timeValue = (value) => {
     const match = /^(\d{1,2}):(\d{2})\s*(am|pm)?$/i.exec(value || "");
     if (!match) return Number.MAX_SAFE_INTEGER;
@@ -115,7 +124,8 @@
   };
   const displayDate = (key, includeYear) => parseDate(key).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", ...(includeYear ? { year: "numeric" } : {}) });
   const displayMonth = (key) => parseDate(key).toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  const sessionHours = (item) => `${item.start_time || ""}${item.end_time ? ` – ${item.end_time}` : ""}`;
+  // "7:00pm – 1:00am (next day)" for an overnight session (SI-80).
+  const sessionHours = (item) => `${item.start_time || ""}${item.end_time ? ` – ${item.end_time}${endsNextDay(item.start_time, item.end_time) ? " (next day)" : ""}` : ""}`;
   const initials = (name) => String(name || "CareNest").split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
   // "3:00 PM" or "3:00pm" to "15:00" for an <input type="time">; anything else gives the fallback.
   const inputTime = (value, fallback) => {
@@ -330,7 +340,13 @@
     const today = pageEl.dataset.today;
     // A day can hold more than one session (the table is unique on plan, date, and start time).
     const dayAppointments = (date) => appointments.filter((item) => item.date === date).sort((a, b) => timeValue(a.start_time) - timeValue(b.start_time));
-    const sortedActivities = (appointment) => (Array.isArray(appointment.activities) ? appointment.activities : []).slice().sort((a, b) => timeValue(a.time) - timeValue(b.time));
+    const sortedActivities = (appointment) => (Array.isArray(appointment.activities) ? appointment.activities : []).slice().sort((a, b) => sessionOrder(a.time, appointment.start_time, appointment.end_time) - sessionOrder(b.time, appointment.start_time, appointment.end_time));
+    // Today's sessions, after any overnight session from yesterday still under way (SI-80): a
+    // 7:00pm – 1:00am session is the current one until 1:00am, then it is over.
+    const currentSessions = () => appointments
+      .filter((item) => item.date === addDays(today, -1) && endsNextDay(item.start_time, item.end_time) && isUnderWay(sessionTimes(item), new Date()))
+      .concat(dayAppointments(today));
+    const currentHours = (item) => (item.date === today ? sessionHours(item) : `${item.start_time} yesterday – ${item.end_time}`);
     const eventDates = () => new Set(appointments.map((item) => item.date));
     const openRequest = (date) => requests.find((item) => item.date === date);
     const parentFirst = () => String(data.parentName || "").trim().split(/\s+/)[0] || "";
@@ -385,15 +401,15 @@
     function render() {
       const isToday = selected === today;
       // The current card follows today's real booking, whichever day the list has selected.
-      const booked = dayAppointments(today);
-      pageEl.querySelector("[data-current-session-time]").textContent = booked.length ? booked.map(sessionHours).join(", ") : "No session today";
+      const booked = currentSessions();
+      pageEl.querySelector("[data-current-session-time]").textContent = booked.length ? booked.map(currentHours).join(", ") : "No session today";
       const todayIds = new Set(booked.flatMap((item) => sessionChildren(item).map((child) => child.id)));
       const todayKids = familyChildren().filter((child) => !booked.length || todayIds.has(child.id));
       const currentChildren = pageEl.querySelector("[data-current-children]");
       if (currentChildren) currentChildren.innerHTML = childAvatars(todayKids);
       label.textContent = view === "calendar" ? displayMonth(selected) : `${displayDate(selected)}${isToday ? " (Today)" : ""}`;
       content.innerHTML = view === "list" ? listHtml() : calendarHtml();
-      upcomingEl.innerHTML = appointments.filter((item) => item.date > today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4).map(appointmentHtml).join("") || '<p class="schedule-no-upcoming">No upcoming shifts scheduled.</p>';
+      upcomingEl.innerHTML = appointments.filter((item) => item.date > today).sort((a, b) => a.date.localeCompare(b.date) || timeValue(a.start_time) - timeValue(b.start_time)).slice(0, 4).map(appointmentHtml).join("") || '<p class="schedule-no-upcoming">No upcoming shifts scheduled.</p>';
       pageEl.querySelectorAll("[data-view]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.view === view)));
       if (notices) notices.innerHTML = requests.map(noticeHtml).join("");
     }
@@ -459,7 +475,7 @@
       const dialog = document.createElement("dialog");
       dialog.className = "confirm-dialog manage-dialog";
       dialog.setAttribute("aria-labelledby", "schedule-details-title");
-      dialog.innerHTML = `<form class="confirm-dialog-body schedule-details-form" method="dialog"><div class="schedule-details-header"><button class="schedule-close" type="button" aria-label="Close without saving">×</button><h2 class="panel-title" id="schedule-details-title">Schedule Details</h2><button class="schedule-save" value="save">Save</button></div><label class="field-label" for="appointment-date">Date</label><input class="text-input" id="appointment-date" name="date" type="date" required min="${today}" value="${esc(existing ? existing.date : date || selected)}"><div class="schedule-time-fields"><div class="field-label"><span>Start time</span>${timeWheelHtml("start", startValue, "Start time")}</div><div class="field-label"><span>End time</span>${timeWheelHtml("end", endValue, "End time")}</div></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Children</strong>${kids.length > 1 ? "<small>Select all that apply</small>" : ""}</div>${childrenGroup}</div><div class="schedule-detail-group"><strong>Caregiver</strong><div class="schedule-caregiver-choice"><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span>${esc(data.babysitter && data.babysitter.name || "Caregiver")} <span>›</span></div></div><div class="schedule-detail-group"><strong id="schedule-activities-title">Activities</strong><div class="schedule-editor-activities" data-activity-list aria-labelledby="schedule-activities-title"></div><button class="schedule-add-activity" type="button" data-add-activity>＋ Add Activity</button></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Today’s Notes</strong><small>Optional</small></div><textarea class="text-input manage-textarea" name="note" rows="3" placeholder="Anything else the caregiver should know?">${esc(existing && existing.note || "")}</textarea></div><p class="form-error" hidden data-form-error></p>${existing ? '<button type="button" class="danger-btn schedule-delete" data-delete-schedule>Delete Schedule</button>' : ""}<p class="visually-hidden" role="status" data-dialog-status></p></form>`;
+      dialog.innerHTML = `<form class="confirm-dialog-body schedule-details-form" method="dialog"><div class="schedule-details-header"><button class="schedule-close" type="button" aria-label="Close without saving">×</button><h2 class="panel-title" id="schedule-details-title">Schedule Details</h2><button class="schedule-save" value="save">Save</button></div><label class="field-label" for="appointment-date">Date</label><input class="text-input" id="appointment-date" name="date" type="date" required min="${today}" value="${esc(existing ? existing.date : date || selected)}"><div class="schedule-time-fields"><div class="field-label"><span>Start time</span>${timeWheelHtml("start", startValue, "Start time")}</div><div class="field-label"><span>End time</span>${timeWheelHtml("end", endValue, "End time")}</div></div><p class="schedule-session-length" data-session-length aria-live="polite"></p><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Children</strong>${kids.length > 1 ? "<small>Select all that apply</small>" : ""}</div>${childrenGroup}</div><div class="schedule-detail-group"><strong id="schedule-activities-title">Activities</strong><div class="schedule-editor-activities" data-activity-list aria-labelledby="schedule-activities-title"></div><button class="schedule-add-activity" type="button" data-add-activity>＋ Add Activity</button></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Today’s Notes</strong><small>Optional</small></div><textarea class="text-input manage-textarea" name="note" rows="3" placeholder="Anything else the caregiver should know?">${esc(existing && existing.note || "")}</textarea></div><p class="form-error" hidden data-form-error></p>${existing ? '<button type="button" class="danger-btn schedule-delete" data-delete-schedule>Delete Schedule</button>' : ""}<p class="visually-hidden" role="status" data-dialog-status></p></form>`;
       document.body.appendChild(dialog);
       const form = dialog.querySelector("form");
       const errorEl = dialog.querySelector("[data-form-error]");
@@ -469,7 +485,8 @@
 
       function renderActivities() {
         const list = dialog.querySelector("[data-activity-list]");
-        const rows = activityList.slice().sort((a, b) => timeValue(a.time) - timeValue(b.time));
+        const start = readTimeWheel(dialog, "start"), end = readTimeWheel(dialog, "end");
+        const rows = activityList.slice().sort((a, b) => sessionOrder(a.time, start, end) - sessionOrder(b.time, start, end));
         list.innerHTML = rows.length
           ? rows.map((item) => {
             const forWhom = activityFor(item, activityChoices());
@@ -589,10 +606,13 @@
         values.start = readTimeWheel(dialog, "start");
         values.end = readTimeWheel(dialog, "end");
         const chosen = sessionIds.filter((id) => kidIds.includes(id));
-        const missing = !values.date ? "Enter a date." : kids.length && !chosen.length ? "Select at least one child." : values.end <= values.start ? "End time must be after the start time." : "";
+        // An end before the start ends the next day (SI-80); the same time is not a session.
+        const missing = !values.date ? "Enter a date." : kids.length && !chosen.length ? "Select at least one child." : !sessionLength(values.start, values.end) ? "End time must be different from the start time." : "";
         if (missing) return showError(missing);
-        const clash = appointments.find((other) => other.date === values.date && !(existing && other.id === existing.id) && inputTime(other.start_time, "") < values.end && values.start < inputTime(other.end_time, ""));
-        if (clash) return showError(`This overlaps the ${sessionHours(clash)} session that day.`);
+        // Across midnight too: an overnight session clashes with an early session the next day.
+        const draft = { date: values.date, start: values.start, end: values.end };
+        const clash = appointments.find((other) => !(existing && other.id === existing.id) && sessionsOverlap(draft, sessionTimes(other)));
+        if (clash) return showError(`This overlaps the ${sessionHours(clash)} session ${clash.date === values.date ? "that day" : `on ${displayDate(clash.date)}`}.`);
         // An activity keeps only children still on the session; one left with none is for all of them.
         const activities = activityList.map((activity) => {
           const ids = (activity.childIds || []).filter((id) => chosen.includes(id));
@@ -657,6 +677,21 @@
         }
         if (button.hasAttribute("data-delete-schedule")) deleteSchedule(button);
       });
+      // The session's length under the time pickers, and "ends the next day" for an end before the
+      // start (SI-80). Activities re-sort too, since their order follows the session's start.
+      function renderLength() {
+        const start = readTimeWheel(dialog, "start"), end = readTimeWheel(dialog, "end");
+        const length = sessionLength(start, end);
+        dialog.querySelector("[data-session-length]").textContent = !length
+          ? "Pick an end time different from the start time."
+          : `${formatLength(length)}${endsNextDay(start, end) ? `, ends ${formatTime(end)} the next day` : ""}`;
+      }
+      dialog.addEventListener("change", (event) => {
+        if (!event.target.closest('[data-time-wheel="start"], [data-time-wheel="end"]')) return;
+        renderLength();
+        renderActivities();
+      });
+      renderLength();
       renderActivities();
       dialog.showModal();
     }
