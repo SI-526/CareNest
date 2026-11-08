@@ -146,8 +146,10 @@
   }
 
   // Every entry of the session, oldest first: Care Log entries (about a child) and the details
-  // logged under completed tasks. children: the family's children ({ id, name }); a child who was
-  // removed keeps the name the entry was written under (care_logs.child_name).
+  // logged under completed tasks. children: the family's children ({ id, name }). A child still in
+  // that list shows their current name, or "Child" while the name is blank (create_household
+  // makes the first child with name ''). A child no longer in it was removed: the entry keeps
+  // the name it was written under (care_logs.child_name), else reads "A removed child".
   function sessionEntries(state, children, schedule) {
     const kids = children || [];
     const checks = (state && state.checks) || {};
@@ -156,7 +158,8 @@
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((log) => {
         const child = log.childId ? kids.find((c) => c.id === log.childId) : null;
-        const childName = (child && child.name) || log.childName || "";
+        const childName = String((child ? child.name : log.childName) || "").trim();
+        const childLabel = childName ? firstName(childName) : child ? "Child" : "A removed child";
         let taskTitle = null;
         if (log.taskId) {
           const check = checks[log.taskId];
@@ -171,6 +174,8 @@
           kind: log.taskId ? "task" : "entry",
           childName,
           childFirst: firstName(childName),
+          childLabel,
+          childRemoved: !child,
           taskTitle,
           category: log.category,
           facts: facts.filter(Boolean),
@@ -201,8 +206,9 @@
         const subject =
           e.kind === "task"
             ? `${escapeHtml(e.taskTitle)}<span class="session-log-kind"> · ${escapeHtml(CATEGORY_LABELS[e.category] || "Care")}</span>`
-            : escapeHtml(e.childFirst || "A removed child");
-        const label = e.kind === "task" ? `Task details: ${e.taskTitle}` : `Entry about ${e.childName || "a removed child"}`;
+            : escapeHtml(e.childLabel);
+        const about = e.childName || (e.childRemoved ? "a removed child" : "your child");
+        const label = e.kind === "task" ? `Task details: ${e.taskTitle}` : `Entry about ${about}`;
         return `<li class="session-log-entry" data-entry-id="${escapeHtml(e.id)}">
           <article class="session-log-card" aria-label="${escapeHtml(label)}">
             <div class="session-log-entry-head">

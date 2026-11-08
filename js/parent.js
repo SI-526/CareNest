@@ -1,5 +1,6 @@
 // Parent home (parent.html): today's shift at a glance (status, progress, schedule with no-photo
-// check-off, end/reopen), a live feed of this shift's proofs and moments, replies, saving photos,
+// check-off, end/reopen), a live feed of this shift's proofs and moments (with any replies already
+// written under a photo, read-only: new replies went away with Messages, SI-66), saving photos,
 // removing photos, and an album of saved photos.
 // Data comes from js/shift-data.js (CareNestShift): Supabase when signed in, js/store.js in demo.
 // Realtime there refetches; this file diffs each new state to raise in-app alerts.
@@ -374,7 +375,6 @@
         <article class="msg-card feed-card${item.kind === "moment" ? " moment-card" : ""}" id="item-${id}" tabindex="-1" aria-labelledby="item-${id}-title">
           <div class="feed-body"></div>
           <div class="feed-actions">
-            <button type="button" class="photo-source-btn" data-reply aria-expanded="false" aria-controls="reply-${id}">Reply</button>
             <button type="button" class="primary-btn feed-save" data-save>Save photo</button>
             <button type="button" class="danger-btn feed-remove" data-remove>Remove photo</button>
           </div>
@@ -383,14 +383,6 @@
             <button type="button" class="text-btn" data-unsave>Remove from album</button>
           </div>
           <p class="feed-status" data-status hidden></p>
-          <form class="feed-reply-form" id="reply-${id}" data-reply-form novalidate hidden>
-            <label class="feed-reply-label" for="reply-input-${id}"></label>
-            <div class="message-form">
-              <input class="complete-note message-input" id="reply-input-${id}" type="text" maxlength="1000" autocomplete="off" enterkeyhint="send" />
-              <button type="submit" class="primary-btn message-send">Send</button>
-              <p class="photo-upload-error message-error" data-reply-error role="alert" hidden></p>
-            </div>
-          </form>
         </article>`;
       const article = li.querySelector("article");
       const entry = {
@@ -401,29 +393,13 @@
         sig: "",
         item,
         refs: {
-          replyBtn: li.querySelector("[data-reply]"),
           saveBtn: li.querySelector("[data-save]"),
           removeBtn: li.querySelector("[data-remove]"),
           albumRow: li.querySelector("[data-album-row]"),
           unsaveBtn: li.querySelector("[data-unsave]"),
           status: li.querySelector("[data-status]"),
-          form: li.querySelector("[data-reply-form]"),
-          input: li.querySelector("input"),
-          error: li.querySelector("[data-reply-error]"),
-          label: li.querySelector("label"),
         },
       };
-      entry.refs.label.textContent = `Reply to ${item.senderName} about this photo`;
-      entry.refs.input.placeholder = `Reply to ${item.senderName}`;
-
-      entry.refs.replyBtn.addEventListener("click", () => toggleReply(entry));
-      entry.refs.form.addEventListener("submit", (e) => {
-        e.preventDefault();
-        sendReply(entry);
-      });
-      entry.refs.form.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") toggleReply(entry, false);
-      });
       entry.refs.saveBtn.addEventListener("click", () => savePhoto(entry));
       entry.refs.removeBtn.addEventListener("click", () => removePhoto(entry));
       entry.refs.unsaveBtn.addEventListener("click", async () => {
@@ -527,38 +503,6 @@
             }));
           });
       });
-    }
-
-    // ---------- reply ----------
-
-    function toggleReply(entry, open) {
-      const { form, replyBtn, input, error } = entry.refs;
-      const show = typeof open === "boolean" ? open : form.hidden;
-      form.hidden = !show;
-      replyBtn.setAttribute("aria-expanded", String(show));
-      error.hidden = true;
-      if (show) input.focus();
-      else replyBtn.focus();
-    }
-
-    async function sendReply(entry) {
-      const { input, error } = entry.refs;
-      error.hidden = true;
-      if (!input.value.trim()) {
-        error.textContent = "Type a reply first.";
-        error.hidden = false;
-        input.focus();
-        return;
-      }
-      try {
-        await shift.sendChat(input.value, entry.id);
-        input.value = "";
-        toggleReply(entry, false);
-        announce(`Reply sent to ${entry.item.senderName}.`);
-      } catch (err) {
-        error.textContent = shift.errorMessage(err) || "Reply not sent. Please try again.";
-        error.hidden = false;
-      }
     }
 
     // ---------- save ----------
@@ -669,7 +613,7 @@
       try {
         await shift.removePhoto(item.id);
         announce(`${item.title} photo removed.`);
-        (entry.refs.replyBtn.isConnected ? entry.refs.replyBtn : title).focus();
+        (entry.article.isConnected ? entry.article : title).focus();
       } catch (err) {
         setStatus(entry, shift.errorMessage(err), true);
         if (err.retry) offerRetry(entry, err.retry);
@@ -688,7 +632,7 @@
         try {
           await retry();
           setStatus(entry, `${entry.item.title} photo removed.`);
-          (entry.refs.replyBtn.isConnected ? entry.refs.replyBtn : title).focus();
+          (entry.article.isConnected ? entry.article : title).focus();
         } catch (err) {
           setStatus(entry, shift.errorMessage(err), true);
           if (err.retry) offerRetry(entry, err.retry);

@@ -160,6 +160,25 @@ test("sessionEntries lists entries and task details oldest first, each with its 
   assert.deepEqual(careLog.timeline(state, []).flatMap((r) => r.logs.map((l) => l.id)), ["a"]);
 });
 
+test("sessionEntries tells a child with a blank name apart from a removed child", () => {
+  const state = {
+    logs: [
+      { id: "blank", taskId: null, childId: "first", childName: "", category: "note", note: "Nap", createdAt: 1 },
+      { id: "gone", taskId: null, childId: null, childName: "", category: "note", note: "Snack", createdAt: 2 },
+      { id: "kept", taskId: null, childId: null, childName: "Baby Thomas", category: "note", note: "Bath", createdAt: 3 },
+      { id: "renamed", taskId: null, childId: "kid", childName: "Old name", category: "note", note: "Park", createdAt: 4 },
+    ],
+  };
+  const children = [{ id: "first", name: "  " }, { id: "kid", name: "Jack Thomas" }];
+  const entries = careLog.sessionEntries(state, children, []);
+  assert.deepEqual(entries.map((e) => e.childLabel), ["Child", "A removed child", "Baby", "Jack"]);
+  assert.deepEqual(entries.map((e) => e.childRemoved), [false, true, true, false]);
+  const html = careLog.sessionLogHtml(entries);
+  assert.match(html, /aria-label="Entry about your child"/);
+  assert.match(html, /aria-label="Entry about a removed child"/);
+  assert.equal((html.match(/A removed child/g) || []).length, 1, "only the entry whose child is gone");
+});
+
 test("sessionLogHtml escapes user text", () => {
   const html = careLog.sessionLogHtml(
     careLog.sessionEntries(

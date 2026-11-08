@@ -76,6 +76,9 @@
     care_logs_note_check: "Keep the note to 1000 characters or fewer.",
     // Care Log page entries (SI-63, 20261109000000_carenest_care_log_entries.sql).
     child_not_found: "That child is no longer in this family space. Reload the page and pick again.",
+    // The child was deleted while the entry was being saved: the composite foreign key fails
+    // (23503) before stamp_care_log's own child_not_found check can see it.
+    care_logs_child_fkey: "That child is no longer in this family space. Reload the page and pick again.",
     child_required: "Choose which child this entry is about.",
   };
 
@@ -767,17 +770,6 @@
         if (!rows || !rows.length) throw friendly("This task couldn't be unchecked. Reload the page.");
         await load();
       },
-      async sendChat(body, replyTo) {
-        const text = String(body || "").trim();
-        if (!text) return null;
-        // No sender, role, or time: the database stamps them.
-        const row = { household_id: householdId, kind: "chat", body: text };
-        if (replyTo) row.reply_to = replyTo;
-        const { error } = await client.from("messages").insert(row);
-        if (error) throw error;
-        await load();
-        return true;
-      },
       async postMoment({ dataUrl, body }) {
         requireActive();
         const path = await uploadPhoto(dataUrlToBlob(dataUrl));
@@ -1135,9 +1127,6 @@
       async uncheckTask(taskId) {
         const task = data.schedule.find((s) => s.id === taskId);
         store.uncheckTask(taskId, task ? task.title : null);
-      },
-      async sendChat(body, replyTo) {
-        return store.sendChat(body, role === "parent" ? "parent" : "sitter", replyTo || null);
       },
       async postMoment({ dataUrl, body }) {
         const message = store.postMoment({ photoDataUrl: dataUrl, body });

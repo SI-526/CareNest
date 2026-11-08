@@ -261,20 +261,6 @@
       return log;
     },
 
-    // replyTo = id of the task_proof/moment message being replied to (a reply_to FK).
-    sendChat(body, sender = "sitter", replyTo = null) {
-      const text = String(body || "").trim();
-      if (!text) return null;
-      const state = read();
-      const message = { id: newId(), kind: "chat", body: text, sender, sentAt: Date.now() };
-      if (replyTo) {
-        if (!isPhotoMessage(state, replyTo)) throw new Error("That photo is no longer available.");
-        message.replyTo = replyTo;
-      }
-      state.messages.push(message);
-      write(state);
-      return message;
-    },
 
     // Moment = BeReal-style prompt. Pending while the shift is active, the prompt time
     // has passed, and nothing has been posted for this shift yet.

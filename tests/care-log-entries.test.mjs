@@ -343,3 +343,53 @@ test("deleting a child keeps that child's entries, with the name they were writt
   assert.ifError(kept.error);
   assert.deepEqual(kept.data, { child_id: null, child_name: "Baby Thomas", note: "Bottle at 4." });
 });
+
+test("stamp_care_log runs as its owner with an empty search_path", () => {
+  const rows = localSql(`
+    select p.prosecdef as definer, array_to_string(p.proconfig, ',') as config
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'stamp_care_log'`);
+  assert.equal(rows.length, 1, "one stamp_care_log");
+  assert.equal(rows[0].definer, true, "SECURITY DEFINER");
+  assert.equal(rows[0].config, 'search_path=""', "search_path pinned to empty");
+});
+
+test("care_logs is published to Realtime, so entries reach the other phone live", () => {
+  const rows = localSql(`
+    select count(*)::int as n from pg_publication_tables
+     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'care_logs'`);
+  assert.equal(Number(rows[0].n), 1);
+});
+
+// A family with an open shift and an entry about each child (one by the sitter, one by the parent).
+async function familyWithEntries(label) {
+  const f = await newFamily(label, ["Ava Lee", "Ben Lee"]);
+  const v = await f.sitter.client.from("visits").insert({ plan_id: f.planId, visit_date: isoDate(0) }).select().single();
+  assert.ifError(v.error);
+  assert.ifError((await addEntry(f.sitter, { visit_id: v.data.id, child_id: f.children[0].id, note: "Nap" })).error);
+  assert.ifError((await addEntry(f.parent, { visit_id: v.data.id, child_id: f.children[1].id, note: "Snack" })).error);
+  assert.equal(await countIn("care_logs", f.householdId), 2);
+  return f;
+}
+
+async function countIn(table, householdId) {
+  const { count, error } = await admin.from(table).select("*", { count: "exact", head: true }).eq("household_id", householdId);
+  assert.ifError(error);
+  return count;
+}
+
+test("deleting a family space with entries about its children removes the entries too", async () => {
+  const f = await familyWithEntries("cle-delh");
+  assert.ifError((await admin.from("households").delete().eq("id", f.householdId)).error);
+  assert.equal(await countIn("care_logs", f.householdId), 0, "the entries are gone");
+  assert.equal(await countIn("children", f.householdId), 0, "the children are gone");
+  assert.ok((await countIn("care_logs", fam.householdId)) > 0, "other families' entries are untouched");
+});
+
+test("a sole parent's delete_my_account takes the family space and its entries about children", async () => {
+  const f = await familyWithEntries("cle-dela");
+  assert.ifError((await f.parent.client.rpc("delete_my_account")).error);
+  assert.equal(await countIn("care_logs", f.householdId), 0, "the entries are gone");
+  const { count } = await admin.from("households").select("*", { count: "exact", head: true }).eq("id", f.householdId);
+  assert.equal(count, 0, "the family space is gone");
+});
