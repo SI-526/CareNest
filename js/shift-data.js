@@ -34,7 +34,7 @@
   const family = window.CareNestFamily;
   const careLog = window.CareNestCareLog;
   const page = document.body.dataset.page;
-  if (!store || !["home", "messages", "parent", "gallery", "schedule"].includes(page)) return;
+  if (!store || !["home", "messages", "parent", "gallery", "schedule", "carelog"].includes(page)) return;
 
   const MOMENT_WINDOW_MS = 2 * 60 * 1000;
   const THREAD_LIMIT = 300;
@@ -331,7 +331,7 @@
               .select("message_id, text, message:messages!inner(household_id)")
               .eq("message.household_id", householdId)
           : none,
-        visit && (page === "home" || page === "parent")
+        visit && (page === "home" || page === "parent" || page === "carelog")
           ? client
               .from("care_logs")
               .select("id, task_id, category, note, meal_amount, bottle_oz, author_id, author_role, created_at")

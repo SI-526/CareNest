@@ -147,7 +147,14 @@
 
   function initCareLog() {
     if (!careLog || !document.getElementById("log-modal")) return;
-    careLog.initModal({ shift, ageLabel: () => data.child.age, announce });
+    careLog.initModal({
+      shift,
+      ageLabel: () => data.child.age,
+      // Display only: the form's child strip, allergy notice, and today's session window.
+      children: () => data.children || [],
+      shiftWindow: () => careLog.shiftWindowText(data.appointments) || data.child.shiftTime || "",
+      announce,
+    });
   }
 
   // ---------- What's next (SI-70): the one upcoming activity ----------

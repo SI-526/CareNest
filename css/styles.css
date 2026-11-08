@@ -3672,16 +3672,86 @@ body.modal-open {
   padding: 0;
 }
 
-.care-log-task {
-  padding: 12px 0;
-  border-top: 1px solid var(--line-soft);
+/* Timeline (Figma 303:634): a 2px rail with a dark category dot, one card per task. */
+.care-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.care-log-task:first-child {
-  border-top: 0;
+.care-log-task {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.care-log-task::before {
+  content: "";
+  position: absolute;
+  top: 30px;
+  bottom: -16px;
+  left: 14px;
+  width: 2px;
+  background: var(--line);
+}
+
+.care-log-task:last-child::before {
+  display: none;
+}
+
+.care-log-dot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-top: 14px;
+  border-radius: 50%;
+  background: var(--blue);
+  color: #ffffff;
+}
+
+.care-log-item {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: 0 2px 8px rgba(0, 50, 78, 0.06);
 }
 
 .care-log-task-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.care-log-task-title {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  line-height: 1.375;
+  color: var(--blue);
+  overflow-wrap: anywhere;
+}
+
+.care-log-time {
+  flex: none;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--grey);
+  white-space: nowrap;
+}
+
+.care-log-task-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3689,9 +3759,8 @@ body.modal-open {
   gap: 8px 12px;
 }
 
-.care-log-task-main {
-  min-width: 0;
-  flex: 1 1 160px;
+.care-log-task-foot .schedule-check-meta {
+  margin: 0;
 }
 
 .care-log-add {
@@ -3703,14 +3772,12 @@ body.modal-open {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 8px;
 }
 
 .care-log-entry {
-  padding: 8px 12px;
-  border-left: 3px solid var(--accent);
+  padding: 10px 12px;
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: var(--cloud);
 }
 
 .care-log-entry-head {
@@ -3723,8 +3790,8 @@ body.modal-open {
   color: var(--blue);
 }
 
-.care-log-cat {
-  font-weight: var(--weight-semibold);
+.care-log-fact {
+  font-weight: var(--weight-bold);
 }
 
 .care-log-update {
@@ -3737,16 +3804,288 @@ body.modal-open {
 
 .care-log-note {
   margin: 4px 0 0;
-  font-size: var(--text-sm);
+  font-size: 0.875rem;
   line-height: var(--leading-snug);
   color: var(--blue);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
+.care-log-entry .schedule-check-meta {
+  margin-top: 4px;
+}
+
 .care-log-empty {
   margin: 0;
-  padding: 12px 0;
+  padding: 24px 0;
+  font-family: var(--font);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  line-height: 26px;
+  color: var(--blue);
+}
+
+.care-log-empty--filtered {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  color: var(--grey);
+}
+
+/* Care Log tab (care-log.html, Figma 303:634 / 303:886) */
+.care-log-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: var(--detail-width);
+  margin: 0 auto;
+  padding-bottom: 24px;
+}
+
+.care-log-child-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  border: 1px solid var(--line-soft);
+  border-radius: 24px;
+  background: var(--card);
+}
+
+.care-log-kids,
+.care-log-strip-kids {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.care-log-kid {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.care-log-avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--line-strong);
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+}
+
+.care-log-avatar--sm {
+  width: 40px;
+  height: 40px;
+  font-size: var(--text-sm);
+}
+
+.care-log-kid-text {
+  min-width: 0;
+}
+
+.care-log-kid-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  line-height: 24px;
+  color: var(--blue);
+}
+
+.care-log-live {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.care-log-kid-sub {
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+  line-height: 20px;
+  color: var(--grey);
+}
+
+.care-log-shift {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-bold);
+  line-height: 16px;
+  color: var(--blue);
+}
+
+.care-log-shift .care-log-icon {
+  color: var(--accent-strong);
+}
+
+.care-log-shift-status {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--grey);
+}
+
+.care-log-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.care-log-activity-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 8px 24px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #ffffff;
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.care-log-activity-btn:hover {
+  background: var(--accent-strong);
+}
+
+.care-log-activity-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.care-log-activity-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.care-log-action-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--grey);
+  text-align: center;
+}
+
+.care-log-filter .tag-options {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 2px;
+  scrollbar-width: none;
+}
+
+.care-log-filter .tag-option span {
+  gap: 6px;
+  min-height: 36px;
+  border-color: var(--line);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.care-log-filter .tag-option input:checked + span {
+  background: var(--blue);
+  border-color: var(--blue);
+  font-weight: var(--weight-bold);
+}
+
+.care-log-heading-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.care-log-heading-row h2,
+.care-log-more h2 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  line-height: 24px;
+  color: var(--blue);
+}
+
+.care-log-count {
+  margin: 0;
+  font-size: 0.6875rem;
+  line-height: 16px;
+  color: var(--grey);
+}
+
+.care-log-logged-by {
+  margin: 16px 0 0;
+  font-size: var(--text-xs);
+  color: var(--grey);
+}
+
+.care-log-more ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.care-log-more li + li {
+  border-top: 1px solid var(--line-soft);
+}
+
+.care-log-more a,
+.care-log-more-static {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 16px;
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.care-log-more a span,
+.care-log-more-static span {
+  font-weight: var(--weight-semibold);
+}
+
+.care-log-more a span::after {
+  content: " \203A";
+  color: var(--accent-strong);
+}
+
+.care-log-more small {
+  font-size: var(--text-xs);
+  color: var(--grey);
+}
+
+.care-log-more a:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--focus);
+  border-radius: var(--radius);
 }
 
 .care-log-modal-section {
@@ -3758,12 +4097,10 @@ body.modal-open {
 .care-log-modal-section[hidden],
 .care-log-field[hidden],
 .care-log-form button[hidden],
-.care-log-form .tag-picker[hidden] {
+.care-log-form .tag-picker[hidden],
+.care-log-strip[hidden],
+.care-log-allergy[hidden] {
   display: none;
-}
-
-.care-log-modal-section .care-log-entries {
-  margin-top: 0;
 }
 
 .care-log-modal-section .care-log-add {
@@ -3774,7 +4111,7 @@ body.modal-open {
 .care-log-field {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .care-log-field {
@@ -3783,6 +4120,276 @@ body.modal-open {
 
 .care-log-oz {
   max-width: 140px;
+}
+
+/* Log Care Activity form (#log-modal, Figma 303:1139) */
+.care-log-sheet-head {
+  display: grid;
+  grid-template-columns: 64px 1fr 64px;
+  align-items: center;
+  gap: 8px;
+}
+
+.care-log-sheet-head .complete-heading {
+  text-align: center;
+  font-family: var(--font);
+  font-size: var(--text-lg);
+}
+
+.care-log-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.care-log-head-save {
+  justify-self: end;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #ffffff;
+  font-family: var(--font);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.care-log-close:focus-visible,
+.care-log-head-save:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.care-log-head-save:disabled {
+  opacity: 0.6;
+}
+
+.care-log-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.care-log-strip-kids li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.care-log-strip-name {
+  font-family: var(--font);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--blue);
+}
+
+.care-log-age-chip {
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--cloud);
+  font-size: var(--text-xs);
+  color: var(--grey);
+}
+
+.care-log-strip-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.care-log-live-pill {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.6875rem;
+  font-weight: var(--weight-bold);
+}
+
+.care-log-legend,
+.care-log-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 0;
+}
+
+.care-log-label-row {
+  margin-bottom: 0;
+}
+
+.care-log-sheet .complete-note-label {
+  font-weight: var(--weight-semibold);
+}
+
+.care-log-hint {
+  font-size: var(--text-xs);
+  color: var(--grey);
+}
+
+.care-log-hint--required {
+  color: var(--accent-strong);
+}
+
+.care-log-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.care-log-tile span {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 88px;
+  padding: 12px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: var(--weight-semibold);
+  text-align: center;
+}
+
+.care-log-tile .care-log-tile-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--cloud);
+  color: var(--blue);
+}
+
+.care-log-tile input:checked + span {
+  box-shadow: 0 0 0 2px var(--accent-strong);
+}
+
+.care-log-tile input:checked + span .care-log-tile-icon {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.care-log-allergy {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--severe);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+}
+
+.care-log-allergy-icon {
+  flex: none;
+  color: var(--danger);
+}
+
+.care-log-allergy-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-family: var(--font);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--blue);
+}
+
+.care-log-severe {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--severe);
+  color: var(--danger);
+  font-family: var(--font-body);
+  font-size: 0.6875rem;
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.care-log-allergy-text {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  color: var(--blue);
+}
+
+.care-log-amounts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.care-log-amounts .tag-option span {
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+}
+
+.care-log-sheet #log-note {
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--cloud);
+  font-size: var(--text-base);
+}
+
+.care-log-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  border-radius: var(--radius);
+  background: var(--blue);
+}
+
+.care-log-submit:hover:not(:disabled) {
+  background: #00243a;
+}
+
+.care-log-foot {
+  margin: -6px 0 0;
+  font-size: 0.6875rem;
+  color: var(--grey);
+  text-align: center;
+}
+
+/* Phones: the form is a full-height sheet (Figma 303:1139). */
+@media (max-width: 599px) {
+  #log-modal {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  #log-modal .care-log-sheet {
+    max-width: none;
+    max-height: none;
+    height: 100%;
+    border-radius: 0;
+    padding: 16px 16px 24px;
+  }
 }
 
 /* Visible at once on open (the fade stays) so focus can move into the dialog synchronously. */

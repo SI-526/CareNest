@@ -315,9 +315,9 @@
         body: schedulePage(ctx, Boolean(ctx && ctx.role === "parent")),
       },
       carelog: {
-        eyebrow: "CURRENT SESSION", title: "Care log", intro: "Notes, photos, and handoff details from the care session.",
-        // Both roles land here, so each link goes to that role's side of the page.
-        body: `<section class="secondary-grid"><article class="panel secondary-panel"><h2 class="section-title">Current session log</h2><p class="supporting-copy">Completed activities and care updates appear here during the session.</p><a class="secondary-link" href="${isParent ? "parent.html#today" : "index.html#log"}">Open today’s activity</a></article><article class="panel secondary-panel"><h2 class="section-title">Messages</h2><p class="supporting-copy">${isParent ? "Your conversation with your sitter, including photo messages." : "Your conversation with the family, including photo messages."}</p><a class="secondary-link" href="${isParent ? "messages.html?as=parent" : "messages.html"}">Open messages</a></article><article class="panel secondary-panel"><h2 class="section-title">Photo updates</h2><p class="supporting-copy">Photos and moments shared with the care team.</p><a class="secondary-link" href="${isParent ? "gallery.html?as=parent" : "gallery.html"}">Open photo updates</a></article><article class="panel secondary-panel"><h2 class="section-title">Past sessions</h2><p class="supporting-copy">Review prior care sessions and their shared updates.</p></article></section>`,
+        eyebrow: "", title: "Care Log", intro: "",
+        // Filled by bindCareLog() once the shift has loaded (js/care-log.js mountPage).
+        body: `<p class="supporting-copy care-log-loading">Loading the care log…</p>`,
       },
       profile: {
         eyebrow: "PROFILE & SETTINGS", title: ctx && ctx.role === "parent" ? "Your CareNest settings" : "Your sitter profile", intro: ctx && ctx.role === "parent" ? "Manage your details and the family space with confidence." : "Choose what parents can see, and keep your personal preferences in one place.",
@@ -326,7 +326,7 @@
     }[page];
     if (!views) return;
     document.title = `CareNest — ${views.title}`;
-    root.innerHTML = page === "schedule" ? views.body : `<header class="secondary-header"><p class="page-eyebrow">${views.eyebrow}</p><h1>${views.title}</h1><p>${views.intro}</p></header>${views.body}`;
+    root.innerHTML = page === "schedule" || page === "carelog" ? views.body : `<header class="secondary-header"><p class="page-eyebrow">${views.eyebrow}</p><h1>${views.title}</h1><p>${views.intro}</p></header>${views.body}`;
     if (page === "schedule") {
       // SI-71: the sitter's checklist (schedule.html, filled by js/app.js) sits under Current Shift.
       const slot = root.querySelector("[data-checklist-slot]");
@@ -334,9 +334,30 @@
       if (slot && checklist) slot.replaceWith(checklist);
       bindSchedule(ctx, Boolean(ctx && ctx.role === "parent"));
     }
+    if (page === "carelog") bindCareLog(isParent);
     if (editable) bindEditors(ctx);
     if (page === "profile" && (!ctx || ctx.role !== "parent")) bindSitterProfile(ctx || {});
     if (page === "profile") auth.mountAccountPanel(root.querySelector("[data-account-panel]"), ctx);
+  }
+
+  // The Care Log tab: this shift's timeline, read from js/shift-data.js like parent.html's panel.
+  function bindCareLog(isParent) {
+    const careLog = window.CareNestCareLog;
+    const fail = () => {
+      root.innerHTML = `<header class="schedule-topnav"><h1>Care Log</h1></header><p class="locked-note">We couldn’t load this shift’s care log. Reload the page to try again.</p>`;
+    };
+    if (!careLog || !window.CareNestShift) return fail();
+    window.CareNestShift.ready.then((shift) => {
+      if (!shift) return fail();
+      careLog.mountPage(root, {
+        shift,
+        data: window.CareNestData,
+        isParent,
+        logHref: "index.html#checklist",
+        messagesHref: isParent ? "messages.html?as=parent" : "messages.html",
+        galleryHref: isParent ? "gallery.html?as=parent" : "gallery.html",
+      });
+    }, fail);
   }
 
   function bindSchedule(ctx, editable) {
