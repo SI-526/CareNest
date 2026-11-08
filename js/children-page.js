@@ -70,6 +70,8 @@
   }
 
   function render() {
+    // A live update arriving mid-switch must not bring the previous family's children back.
+    if (switching) return;
     if (!ctx || !ctx.household) {
       root.innerHTML = noFamilyHtml();
       return;
@@ -122,11 +124,8 @@
       ? `<div class="children-none"><p>No children added yet.</p><p>Add each child so your sitter sees their own food, preferences, and instructions.</p></div>`
       : '<div class="children-none"><p>No children added yet.</p><p>The family hasn’t added their children.</p></div>';
     return `<header class="children-header"><h1>Children</h1></header>
-      <section class="family-card" aria-labelledby="family-card-name">
-        <div class="family-card-top">
-          <h2 id="family-card-name">${esc(name)}</h2>
-          ${sitTag}
-        </div>
+      ${pinHtml(name, sitTag)}
+      <section class="family-card" aria-labelledby="family-card-name" data-household="${esc(ctx.household.id)}">
         ${familyDetailsHtml(family)}
         <h3 class="children-count">Children (${children.length})</h3>
         ${children.length ? `<ul class="children-list">${rows}</ul>` : empty}
@@ -135,6 +134,99 @@
       </section>
       ${editable() ? familyWideHtml(family) : ""}`;
   }
+
+  // ---------------------------------------------------------------- pinned household (SI-68)
+  //
+  // The household this care session is for stays pinned to the top of the list while the
+  // children scroll under it. A sitter in several families can switch household from the pin (or
+  // the family bar) without leaving this page: the pin shows the new household straight away and
+  // the old family's children are cleared before the page reloads with the new family's data, so
+  // a child from the previous family is never shown under the new household's name.
+
+  // The caller's other families, for the pin's switcher. Empty with one family.
+  function otherFamilies() {
+    const list = (ctx && ctx.memberships) || [];
+    return list.length > 1 ? list : [];
+  }
+
+  function familyName(membership) {
+    return (membership && membership.households && membership.households.name) || "Family space";
+  }
+
+  function pinHtml(name, sitTag) {
+    const families = otherFamilies();
+    const label = isParent() ? "Your household" : "Current household";
+    const switcher = families.length
+      ? `<label class="household-pin-switch">
+          <span class="visually-hidden">Switch household</span>
+          <select data-household-switch>
+            ${families
+              .map((m) => `<option value="${esc(m.household_id)}"${m.household_id === ctx.household.id ? " selected" : ""}>${esc(familyName(m))}</option>`)
+              .join("")}
+          </select>
+        </label>`
+      : "";
+    return `<section class="household-pin" aria-labelledby="family-card-name" data-household="${esc(ctx.household.id)}">
+        <div class="household-pin-text">
+          <p class="household-pin-label">${label}</p>
+          <h2 id="family-card-name">${esc(name)}</h2>
+          ${sitTag}
+        </div>
+        ${switcher}
+      </section>`;
+  }
+
+  // While a switch is under way: the new household pinned, and no children until its data loads.
+  function switchingHtml(membership) {
+    return `<header class="children-header"><h1>Children</h1></header>
+      <section class="household-pin" aria-labelledby="family-card-name" data-household="${esc(membership.household_id)}">
+        <div class="household-pin-text">
+          <p class="household-pin-label">${isParent() ? "Your household" : "Current household"}</p>
+          <h2 id="family-card-name">${esc(familyName(membership))}</h2>
+          <p class="sit-tag">Loading…</p>
+        </div>
+      </section>
+      <section class="family-card children-switching" aria-busy="true" aria-live="polite">
+        <p class="family-details-empty">Loading ${esc(familyName(membership))}’s children…</p>
+      </section>`;
+  }
+
+  let switching = null;
+
+  // Same choice js/auth.js's switchFamily records, but stays on the Children list.
+  function switchHousehold(householdId) {
+    if (!ctx || !ctx.household || householdId === ctx.household.id || switching) return;
+    const target = (ctx.memberships || []).find((m) => m.household_id === householdId);
+    if (!target) return;
+    switching = target;
+    document.querySelectorAll("#family-bar-select, [data-household-switch]").forEach((select) => {
+      select.value = householdId;
+      select.disabled = true;
+    });
+    root.innerHTML = switchingHtml(target);
+    if (ctx.demo) {
+      if (demo && demo.switchTo) demo.switchTo(householdId);
+    } else if (window.CareNestFamilies && ctx.user) {
+      window.CareNestFamilies.remember(ctx.user.id, householdId);
+    }
+    window.location.replace(hrefFor(null));
+  }
+
+  // The family bar (js/auth.js) sends every other page to that family's home; on the Children
+  // page it switches in place instead, so the sitter keeps their place on this tab. Capture runs
+  // before the bar's own listener.
+  document.addEventListener(
+    "change",
+    (event) => {
+      const select = event.target;
+      if (!(select instanceof HTMLSelectElement)) return;
+      if (select.id !== "family-bar-select" && !select.hasAttribute("data-household-switch")) return;
+      if (!ctx || !ctx.household) return;
+      event.stopImmediatePropagation();
+      switchHousehold(select.value);
+    },
+    true
+  );
 
   // Parents only: the family-wide info, editable where it is listed. Sitters reach it through
   // Good to know on each child's page.
