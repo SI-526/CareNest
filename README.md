@@ -40,6 +40,16 @@ start date's own heading. Parents pick the date for each note in the "Important 
 `manage.html`. The notes refresh live (Realtime), and if they
 fail to load only that section says so.
 The shift (start, end, reopen, history), task check-offs with photo proofs, moments, and the message thread are in Supabase (`js/shift-data.js`: Postgres, the private `photos` Storage bucket, and Realtime) for both roles; `?demo=1` keeps them in this browser (`js/store.js`). The parent's Today page (`parent.html`) shows today's shift status (not started / active / reopened / ended) with its history, "x of y done", the schedule (a parent can mark a task done without a photo, "Done by <name>", and end or reopen the shift), and a live feed of the shift's proofs and moments (Late, "Added after reopen", "Photo removed by <name>", replies, "New" until seen via `message_reads`). New photos (proofs, moments, and the sitter's photo messages) and shift events raise an in-app banner and a polite live announcement (no push notifications); View scrolls to a new feed photo, or opens the Gallery when only photo messages are new (they stay out of the Today feed). Save photo uses the Web Share API with files on touch devices, otherwise a JPEG download, and adds it to the parent's Album (`#album`, `photo_saves`). Remove photo calls `remove_photo` and then deletes the object from Storage. The concept alert (`concept_flags`) and "Bring moment forward" (`trigger_moment_now`) are demo controls shown only on localhost; the concept alert is labelled "Concept — not real analysis". The Gallery (`gallery.html`, both roles; parents at `gallery.html?as=parent`) shows every photo of the family's shifts, oldest first with the newest at the bottom, under a heading per shift date, each labelled Task update, Photo message, or Moment, with a filter (native radios styled as chips); removed photos are skipped. The sitter's "+" (Add a photo) opens the phone's camera or library (`<input type="file" accept="image/*">`), then a dialog with the preview and an optional caption, and sends a photo message; it is disabled with the reason when the shift isn't open. A shift takes up to 20 photo messages; past that the sitter sees "Photo limit reached for this shift." Parents get "Remove photo" on each photo. Photo messages also show in the Messages thread. On `manage.html`, "Remove from schedule" archives a task (`archived_at`, stamped by the database); past shifts keep it.
+Parents book and edit sessions on the Schedule tab (`schedule.html`) in Schedule Details. Times
+are picked with hour, minute (5-minute steps), and AM/PM selects, which phones show as scroll
+wheels; a new activity starts at the session's start time. Parents pick which children a session
+is for (every child by default, and for sessions saved before children were recorded) and which of
+those children each activity is for; the sitter sees "For Jack" on an activity that is for only
+some of the session's children. Adding, editing, or deleting an activity shows in the list at
+once and is kept when the parent taps Save (closing without saving discards it); an activity
+still being typed when Save is tapped is added, and Enter in the activity's name adds it rather
+than saving the whole session. Delete Schedule removes the whole session, after a confirmation,
+for everyone in the family.
 Outside demo mode the bundled sample family is discarded before anything renders, so a
 signed-in person never sees sample content; an empty family shows "No information provided".
 A parent's edits (schedule, care info, contacts, children) reach every open page of the
@@ -188,7 +198,7 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 | `contacts` | People and places to call (including the hospital, with address), shared by the family space; at most one primary contact per family space (`is_primary`, a deferrable exclusion constraint, so one update can move primary to another contact) | Parents |
 | `day_notes` | "Important today": notes for one calendar date (category, title, detail); who wrote and last edited each, and when | Parents add, edit, delete; members read. Authorship and edit times are set by the database (a trigger), so "Updated" cannot be forged; a note never moves to another family space |
 | `plans`, `tasks` | The child's day (one plan per family space): ordered tasks with time, detail, location, care note, usual hours | Parents; clients update only a plan's `schedule` (its household and title are fixed); archived tasks are frozen |
-| `appointments` | Care booked ahead on the plan: date, start and end time, note, activities | Parents book and edit the date, times, note, and activities; members read. Household and plan are fixed (an appointment never moves to another family space or plan); nobody deletes |
+| `appointments` | Care booked ahead on the plan: date, start and end time, note, activities (each with the children it is for), and the children the session is for (`child_ids`) | Parents book and edit the date, times, note, activities, and children, and delete a session; members read. Household and plan are fixed (an appointment never moves to another family space or plan). Every id in `child_ids` must be a child of the same family space (a trigger, `child_not_found`) |
 | `schedule_requests` | A sitter's "Request Schedule" reminder: family space, date, who asked, when, and when it was resolved | Caretakers ask (today or later in the app; the database accepts yesterday UTC up to a year ahead, never for a day that already has an appointment; one open request per day); members read; parents dismiss (set `resolved_at`). `requested_by` is set by the database. Booking or moving an appointment onto that date resolves it (a trigger). Nobody deletes |
 | `visits` | One babysitting shift per plan per date (yesterday, today, or tomorrow); start, handoff note, current end, moment time | Members start and write the note (dates in the window only); any member can `end_visit` and `reopen_visit` |
 | `task_checks` | Which tasks are done in a shift, by whom, and when (`checked_at`) | Only `complete_task` (photo required for caretakers, optional for parents), while the shift is open and in the window; members uncheck |
@@ -422,8 +432,9 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   to `messages` and `care_logs` (one random UUID each; clients never delete messages or care
   logs, so only cascades emit them), to `day_notes` (one random UUID per deleted note), and to
   `contacts`, `care_items`, `plans`, `tasks`, `households`, `children`, `appointments`, and
-  `schedule_requests` (one random UUID per deleted row; clients never delete appointments or
-  schedule requests, so only cascades emit them;
+  `schedule_requests` (one random UUID per deleted row; clients never delete schedule requests,
+  so only cascades emit them; parents delete appointments, and the app refetches only when the
+  deleted id is one it is showing;
   with RLS on, a DELETE event carries only the primary key whatever the replica identity, so no
   content is sent; it stays default because FULL adds write-ahead-log volume for no benefit).
   `tasks` go only by cascade from a plan or family-space delete, so those cascades still emit task
