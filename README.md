@@ -21,9 +21,13 @@ right one. The Profile tab shows the signed-in account and signs out or deletes 
 the schedule, care info (Good to know, food and allergies, emergency steps) and contacts come from
 the family space in Supabase (`js/family-data.js` loads them into the shape `js/data.js` defines);
 parents edit them on `manage.html` ("Family info" in the parent nav).
-The Children tab (`children.html`, both roles) shows the family card (family name, next sit,
-primary contact, phone, and home address) and each child, with their age, stage, pinned note, and
-any severe allergies. Tapping a child (`children.html?child=<id>`) shows that child's food and
+The Children tab (`children.html`, both roles) pins the current household (family name and next
+sit) to the top of the page while the list scrolls under it (SI-68), then shows the family card
+(primary contact, phone, and home address) and each child, with their age, stage, pinned note, and
+any severe allergies. A sitter in several families switches household from the pinned card or the
+family bar without leaving the tab: the pin shows the new household at once and the previous
+family's children are cleared until the new family's load. Each child's page keeps the family name
+pinned in its header. Tapping a child (`children.html?child=<id>`) shows that child's food and
 allergies, preferences, and instructions, the family's contacts, and links to where things are and
 emergency steps, which stay family-wide. A category with nothing in it says "No information
 provided". Parents add, edit, and delete children and each child's items there too, and set the

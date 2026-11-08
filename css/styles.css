@@ -4007,6 +4007,77 @@ body:not([data-role="parent"]) .gallery-list {
   outline-offset: 2px;
 }
 
+/* SI-68: the household for this care session stays pinned to the top while the children scroll
+   under it (js/children-page.js). Same surface and type as the family card it heads. */
+.household-pin {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-surface);
+}
+
+.household-pin-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.household-pin-label {
+  margin: 0;
+  color: var(--grey);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.household-pin h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  color: var(--blue);
+  overflow-wrap: anywhere;
+}
+
+.household-pin-switch {
+  flex: none;
+  max-width: 50%;
+}
+
+.household-pin-switch select {
+  width: 100%;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--blue);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.household-pin-switch select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.children-header--detail {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg);
+}
+
 .family-card {
   display: flex;
   flex-direction: column;
@@ -4014,20 +4085,6 @@ body:not([data-role="parent"]) .gallery-list {
   padding: 16px 8px;
   border-radius: var(--radius-sm);
   background: var(--surface);
-}
-
-.family-card-top {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 0 4px;
-}
-
-.family-card-top h2 {
-  font-size: var(--text-lg);
-  font-weight: var(--weight-bold);
-  color: var(--blue);
 }
 
 .sit-tag,
