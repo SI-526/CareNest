@@ -43,6 +43,18 @@ re-checked at local midnight); while a shift that started on an earlier local da
 start date's own heading. Parents pick the date for each note in the "Important today" card on
 `manage.html`. The notes refresh live (Realtime), and if they
 fail to load only that section says so.
+Below it, the sitter's Home (SI-69) shows "What's next": the one next activity, with its name and
+time, which is the earliest task not yet checked off whose time is now or later (re-checked every
+minute, so a 3:00pm activity gives way to the next one at 3:01pm; tasks with no time are left out;
+`js/next-activity.js`). After the last one it says "No more activities scheduled for today.", and
+"Full schedule" opens the Schedule tab. Then the Checklist: the day's tasks with "x of y done",
+checked off the usual way (a photo, an optional tag and note, then the "Add details" prompt). The
+Schedule tab shows the same checklist under Current Shift for the sitter; both read the shift's
+task checks, so a task checked or unchecked on one page shows on the other. With no tasks it says
+"No checklist items for today." The side column has the emergency entry, the family's primary
+contact only (`contacts.is_primary`, with a call button; "All contacts" opens the first child's
+page on the Children tab, which lists every contact), or "No primary contact yet.", and the Good to
+Know tiles. Home no longer previews the care log.
 The shift (start, end, reopen, history), task check-offs with photo proofs, moments, and the message thread are in Supabase (`js/shift-data.js`: Postgres, the private `photos` Storage bucket, and Realtime) for both roles; `?demo=1` keeps them in this browser (`js/store.js`). The parent's Today page (`parent.html`) shows today's shift status (not started / active / reopened / ended) with its history, "x of y done", the schedule (a parent can mark a task done without a photo, "Done by <name>", and end or reopen the shift), and a live feed of the shift's proofs and moments (Late, "Added after reopen", "Photo removed by <name>", replies, "New" until seen via `message_reads`). New photos (proofs, moments, and the sitter's photo messages) and shift events raise an in-app banner and a polite live announcement (no push notifications); View scrolls to a new feed photo, or opens the Gallery when only photo messages are new (they stay out of the Today feed). Save photo uses the Web Share API with files on touch devices, otherwise a JPEG download, and adds it to the parent's Album (`#album`, `photo_saves`). Remove photo calls `remove_photo` and then deletes the object from Storage. The concept alert (`concept_flags`) and "Bring moment forward" (`trigger_moment_now`) are demo controls shown only on localhost; the concept alert is labelled "Concept — not real analysis". The Gallery (`gallery.html`, both roles; parents at `gallery.html?as=parent`) shows every photo of the family's shifts, oldest first with the newest at the bottom, under a heading per shift date, each labelled Task update, Photo message, or Moment, with a filter (native radios styled as chips); removed photos are skipped. The sitter's "+" (Add a photo) opens the phone's camera or library (`<input type="file" accept="image/*">`), then a dialog with the preview and an optional caption, and sends a photo message; it is disabled with the reason when the shift isn't open. A shift takes up to 20 photo messages; past that the sitter sees "Photo limit reached for this shift." Parents get "Remove photo" on each photo. Photo messages also show in the Messages thread. On `manage.html`, "Remove from schedule" archives a task (`archived_at`, stamped by the database); past shifts keep it.
 Parents book and edit sessions on the Schedule tab (`schedule.html`) in Schedule Details. Times
 are picked with hour, minute (5-minute steps), and AM/PM selects, which phones show as scroll
@@ -143,7 +155,7 @@ npm install          # pinned Supabase CLI + supabase-js
 npm run db:start     # local stack; ports are 553xx so it never collides with Carekeeper's 543xx
 npm run db:reset     # applies migrations, then supabase/seed.sql
 npm run test:rls     # authorization tests (refuse to run against a non-local URL)
-npm run test:unit    # care-log age parser, config port override (no database needed)
+npm run test:unit    # care-log age parser, config port override, next activity, ... (no database needed)
 npm run db:lint      # supabase db lint
 npm run db:stop
 npm run db:env       # which stack this checkout uses, and its ports

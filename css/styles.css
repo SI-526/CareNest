@@ -4495,3 +4495,83 @@ body:not([data-role="parent"]) .gallery-list {
 .family-wide > .child-section-title {
   padding: 0 4px;
 }
+
+/* Sitter Home (SI-69): "What's next" shows the one upcoming activity. */
+.next-activity-card {
+  padding: 8px;
+}
+
+.next-activity-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 8px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease;
+}
+
+.next-activity-item:hover {
+  background: var(--accent-soft);
+}
+
+.next-activity-item:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.next-activity-time {
+  flex-shrink: 0;
+  min-width: 72px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
+  color: var(--accent-strong);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.next-activity-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.next-activity-title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  color: var(--blue);
+}
+
+.next-activity-detail {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  color: var(--grey);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.next-activity-chevron {
+  flex-shrink: 0;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--grey);
+}
+
+.next-activity-card .empty-state,
+.checklist-panel .empty-state {
+  padding: 20px 12px;
+}
+
+/* The sitter's Schedule page shows the same checklist as Home (SI-71), under Current Shift. */
+.schedule-checklist {
+  margin-top: 24px;
+}

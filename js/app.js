@@ -54,6 +54,14 @@
           initDayNotes(ctx);
         } else initMessages();
       });
+    } else if (page === "schedule" && window.CareNestShift && !(ctx && ctx.role === "parent")) {
+      // SI-71: the sitter's Schedule page shows the same checklist as Home (js/secondary.js
+      // places the panel). Parents check tasks off on their Today page instead.
+      window.CareNestShift.ready.then((backend) => {
+        if (!backend) return;
+        shift = backend;
+        initScheduleChecklist();
+      });
     } else if (page === "food") {
       renderFood();
       onFamilyChange(renderFood);
@@ -73,6 +81,7 @@
   function initHome() {
     renderSitterNav("home");
     initNavigation();
+    if (window.CareNestTaskModals) window.CareNestTaskModals.ensure();
     renderHomeFamily();
     renderShiftControls();
     renderKnowTiles(document.getElementById("know-grid"));
@@ -82,14 +91,33 @@
     initEndShiftDialog();
     initShiftButtons();
     renderDevTools();
+    initNextActivityClock();
 
     shift.subscribe(() => {
       renderShiftControls();
       renderSchedule(document.getElementById("schedule-list"));
-      renderCareLog();
+      renderNextActivity();
       applyShiftLockToCompleteModal();
     });
     onFamilyChange(renderHomeFamily);
+  }
+
+  // SI-71: the Schedule page's copy of the checklist. Same tasks, checks, and check-off flow as
+  // Home (the shift backend), so checking a task on one page shows on the other.
+  function initScheduleChecklist() {
+    const panel = document.getElementById("checklist");
+    if (!panel) return;
+    if (window.CareNestTaskModals) window.CareNestTaskModals.ensure();
+    panel.hidden = false;
+    initModal();
+    initCompleteModal();
+    const render = () => {
+      renderSchedule(document.getElementById("schedule-list"));
+      applyShiftLockToCompleteModal();
+    };
+    render();
+    shift.subscribe(render);
+    onFamilyChange(render);
   }
 
   // Everything on the home page drawn from the family's data (sitter, child, schedule, contacts).
@@ -108,27 +136,60 @@
     }
     renderShift();
     renderSchedule(document.getElementById("schedule-list"));
-    renderCareLog();
+    renderNextActivity();
     renderEmergencyEntry(document.getElementById("emergency-entry"));
     renderContacts(document.getElementById("contacts-list"));
   }
 
-  // ---------- care log (SI-28): completed tasks in check-time order with their details ----------
+  // ---------- care log details (SI-28, SI-34) ----------
+  // Home no longer previews the care log (SI-67); the "Add details" dialog still opens after a
+  // task is checked off and from a completed task's details.
 
   function initCareLog() {
-    const list = document.getElementById("care-log-list");
-    if (!careLog || !list) return;
+    if (!careLog || !document.getElementById("log-modal")) return;
     careLog.initModal({ shift, ageLabel: () => data.child.age, announce });
-    list.addEventListener("click", (e) => {
-      const btn = e.target.closest("[data-log-task]");
-      if (btn) careLog.openModal(careLogTask(btn.dataset.logTask), btn);
-    });
   }
 
-  function renderCareLog() {
-    const list = document.getElementById("care-log-list");
-    if (!careLog || !list) return;
-    list.innerHTML = careLog.timelineHtml(shift.state, { canAdd: shift.state.canLog, schedule: data.schedule });
+  // ---------- What's next (SI-70): the one upcoming activity ----------
+
+  function renderNextActivity() {
+    const el = document.getElementById("next-activity");
+    if (!el || !shift) return;
+    const picker = window.CareNestNext;
+    const item = picker ? picker.nextActivity(scheduleRows(), new Date()) : null;
+    // Redraw only when the pick changes: the card is a live region and the clock ticks each minute.
+    const key = item ? JSON.stringify([item.id, item.time, item.title, item.location, item.detail]) : "none";
+    if (el.dataset.key === key) return;
+    el.dataset.key = key;
+    if (!item) {
+      el.innerHTML = `<div class="empty-state next-activity-empty"><p>No more activities scheduled for today.</p></div>`;
+      return;
+    }
+    const where = item.location || item.detail || "";
+    el.innerHTML = `
+      <button type="button" class="next-activity-item" data-next-id="${escapeHtml(item.id)}" aria-label="View details for ${escapeHtml(item.title)} at ${escapeHtml(item.time)}">
+        <span class="next-activity-time">${escapeHtml(item.time)}</span>
+        <span class="next-activity-body">
+          <span class="next-activity-title">${escapeHtml(item.title)}</span>
+          ${where ? `<span class="next-activity-detail">${escapeHtml(where)}</span>` : ""}
+        </span>
+        <span class="next-activity-chevron" aria-hidden="true">›</span>
+      </button>`;
+    el.querySelector("[data-next-id]").addEventListener("click", (e) => openModal(item, e.currentTarget));
+  }
+
+  // Re-pick at each new minute, so a passed activity gives way to the next one without a reload,
+  // and on return to the tab (timers are throttled in the background).
+  function initNextActivityClock() {
+    const untilNextMinute = () => 60000 - (Date.now() % 60000) + 50;
+    const tick = () => {
+      renderNextActivity();
+      setTimeout(tick, untilNextMinute());
+    };
+    setTimeout(tick, untilNextMinute());
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) renderNextActivity();
+    });
   }
 
   // What the log modal shows about the task: the check's snapshot, as on the schedule.
@@ -888,9 +949,14 @@
       lockNote.hidden = !text;
     }
     const items = scheduleRows();
+    const countEl = document.getElementById("checklist-count");
+    if (countEl) {
+      countEl.textContent = `${items.filter((item) => item.completed).length} of ${items.length} done`;
+      countEl.hidden = !items.length;
+    }
 
     if (!items.length) {
-      el.innerHTML = `<li>${emptyStateHtml("")}</li>`;
+      el.innerHTML = `<li><div class="empty-state checklist-empty"><p>No checklist items for today.</p></div></li>`;
       return;
     }
 
@@ -979,7 +1045,11 @@
   // Why the schedule can't be checked off right now, or "" when it can.
   function lockText(st) {
     if (st.loadError || st.noPlan || st.active) return "";
-    if (!st.visit) return "Start your shift to check off tasks.";
+    if (!st.visit) {
+      return page === "schedule"
+        ? "Start your shift on Home to check off tasks."
+        : "Start your shift to check off tasks.";
+    }
     if (st.tooOld) {
       return `This shift was on ${dayLabel(st.visit.date)} and is read-only now. Shifts before yesterday can't be changed.`;
     }
@@ -996,13 +1066,22 @@
     return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   }
 
+  // SI-72: Home shows only the family's primary contact; every contact is on each child's page.
   function renderContacts(el) {
     if (!el) return;
-    if (!data.contacts.length) {
-      el.innerHTML = emptyStateHtml();
+    const allLink = document.querySelector("#contacts .panel-link");
+    const firstChild = (data.children || []).find((child) => child && child.id);
+    if (allLink) {
+      allLink.href = firstChild ? `children.html?child=${encodeURIComponent(firstChild.id)}` : "children.html";
+      allLink.hidden = !data.contacts.length;
+    }
+    // contacts.is_primary signed in (js/family-data.js), primaryContactId in demo (js/data.js).
+    const primary = data.primaryContact || null;
+    if (!primary) {
+      el.innerHTML = `<div class="card empty-state contacts-empty"><p>No primary contact yet.</p></div>`;
       return;
     }
-    el.innerHTML = data.contacts
+    el.innerHTML = [primary]
       .map(
         (contact) => `
       <article class="contact-card">
