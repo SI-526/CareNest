@@ -80,7 +80,23 @@
     return span.from <= current && current < span.to;
   };
 
-  const api = { dateKey, parseDate, addDays, clockMinutes, endsNextDay, sessionLength, formatLength, sessionSpan, sessionsOverlap, isUnderWay };
+  // Yesterday's overnight sessions still under way at `now`: at 12:30 AM, last night's 7:00 PM to
+  // 1:00 AM session, which today's list shows as "Continues from yesterday". `times` maps an item
+  // to { date, start, end } (the default reads those fields), and the items come back as given.
+  const continuingSessions = (items, now, times) => {
+    const read = times || ((item) => item);
+    const yesterday = addDays(dateKey(now), -1);
+    return (items || []).filter((item) => {
+      const session = read(item);
+      return session && session.date === yesterday && endsNextDay(session.start, session.end) && isUnderWay(session, now);
+    });
+  };
+  // A session longer than this asks "Save it?" first: 9:00 AM to 5:00 AM is more likely an AM/PM
+  // slip for 9:00 AM to 5:00 PM than a 20-hour booking.
+  const LONG_SESSION_MINUTES = 12 * 60;
+  const isLongSession = (start, end) => sessionLength(start, end) > LONG_SESSION_MINUTES;
+
+  const api = { dateKey, parseDate, addDays, clockMinutes, endsNextDay, sessionLength, formatLength, sessionSpan, sessionsOverlap, isUnderWay, continuingSessions, LONG_SESSION_MINUTES, isLongSession };
 
   if (root) root.CareNestDates = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

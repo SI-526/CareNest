@@ -66,7 +66,11 @@ hours. Sessions may not overlap, across midnight too (Friday's 7:00 PM – 1:00 
 Saturday's 12:30 AM); the app checks this (`js/schedule-dates.js`), the database does not. An
 overnight session's activities after midnight sort after its evening ones, and the Current
 Session/Shift card (and the Children tab's next-sit tag, "Now until 1:00 AM") keep showing it
-after midnight until it ends. There is no caregiver picker: a session is not assigned to a sitter
+after midnight until it ends, updating each minute without a reload. While it is under way, today's
+list starts with "Continues from yesterday until 1:00am" (tap it to see that session) and offers
+no Request Schedule, and the Current Session pencil edits that session (its own date stays
+allowed). Saving a session longer than 12 hours asks first ("This session is 20 hours long,
+ending 5:00am the next day. Save it?"), to catch an AM/PM slip. There is no caregiver picker: a session is not assigned to a sitter
 yet. Parents pick which children a session
 is for (every child by default, and for sessions saved before children were recorded) and which of
 those children each activity is for; the sitter sees "For Jack" on an activity that is for only

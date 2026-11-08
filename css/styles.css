@@ -732,6 +732,11 @@ button {
 .schedule-session-empty { margin: 0; padding: 13px 12px; color: #6d6d72; font-size: var(--text-sm); }
 .schedule-notes { margin-top: 10px; padding: 16px; border-radius: var(--radius-sm); background: #f7f7f7; color: #1a1a1a; font-size: var(--text-sm); }
 .schedule-notes strong { color: var(--accent-strong); }
+/* SI-80: last night's overnight session, still under way, at the top of today's list. */
+.schedule-continues { display: block; width: 100%; min-height: 44px; margin-bottom: 8px; padding: 12px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--accent-strong); text-align: left; }
+.schedule-continues strong { display: block; font-size: var(--text-sm); }
+.schedule-continues small { display: block; margin-top: 4px; color: #4f5b8f; font-size: var(--text-xs); }
+.schedule-empty.schedule-empty--after { min-height: 120px; }
 .schedule-notes p { margin-top: 8px; }
 .schedule-calendar { padding: 8px 14px 18px; }
 .calendar-weekdays, .calendar-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; text-align: center; }

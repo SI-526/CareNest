@@ -104,7 +104,7 @@
     return data.schedule.map((item) => `<li class="secondary-row"><span class="secondary-time">${esc(item.time || "Any time")}</span><span><strong>${esc(item.title)}</strong><small>${esc(item.detail || item.location || "Details available in the session")}</small></span>${editable ? `<button class="photo-source-btn secondary-row-action" type="button" data-edit="task" data-id="${esc(item.id)}">Edit</button>` : ""}</li>`).join("");
   }
 
-  const { dateKey, parseDate, addDays, clockMinutes, endsNextDay, sessionLength, formatLength, sessionsOverlap, isUnderWay } = window.CareNestDates;
+  const { dateKey, parseDate, addDays, clockMinutes, endsNextDay, sessionLength, formatLength, sessionsOverlap, continuingSessions, isLongSession } = window.CareNestDates;
   // A saved session ({ date, start_time, end_time }) in the shape CareNestDates reads.
   const sessionTimes = (item) => ({ date: item.date, start: item.start_time, end: item.end_time });
   // Activities in session order: an overnight session's 12:30am (up to its end) comes after its
@@ -216,8 +216,8 @@
     // Filled by bindSchedule's render(): the children of today's sessions.
     const people = `<div class="schedule-people"><span class="schedule-people-children" data-current-children></span><span class="schedule-avatar schedule-avatar--sitter">${esc(initials(data.babysitter && data.babysitter.name))}</span></div>`;
     const current = editable
-      ? `<section class="current-shift-card current-session-card"><div class="current-session-title"><div><p class="schedule-card-title">Current Session</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span data-current-session-time></span></p></div><button type="button" class="schedule-icon-button" data-edit-schedule aria-label="Edit current session">✎</button></div><div class="current-session-people"><div><strong>Children</strong>${people}</div><div><strong>Caregiver</strong><span class="caregiver-name">${esc(sharedSitter && sharedSitter.display_name || data.babysitter && data.babysitter.name || "Caregiver")}</span>${caregiverDetails()}</div></div></section>`
-      : `<section class="current-shift-card"><div><p class="schedule-card-title">Current Shift</p><p class="schedule-card-meta"><strong>${esc(displayDate(today))}</strong><span data-current-session-time></span></p></div>${people}</section>`;
+      ? `<section class="current-shift-card current-session-card"><div class="current-session-title"><div><p class="schedule-card-title">Current Session</p><p class="schedule-card-meta"><strong data-current-date>${esc(displayDate(today))}</strong><span data-current-session-time></span></p></div><button type="button" class="schedule-icon-button" data-edit-schedule aria-label="Edit current session">✎</button></div><div class="current-session-people"><div><strong>Children</strong>${people}</div><div><strong>Caregiver</strong><span class="caregiver-name">${esc(sharedSitter && sharedSitter.display_name || data.babysitter && data.babysitter.name || "Caregiver")}</span>${caregiverDetails()}</div></div></section>`
+      : `<section class="current-shift-card"><div><p class="schedule-card-title">Current Shift</p><p class="schedule-card-meta"><strong data-current-date>${esc(displayDate(today))}</strong><span data-current-session-time></span></p></div>${people}</section>`;
     return `<section class="schedule-page${editable ? " schedule-page--parent" : ""}" data-schedule-page data-parent="${editable}" data-today="${today}" data-appointments="${esc(JSON.stringify(appointments))}">
       ${editable ? '<div class="schedule-request-notices" data-request-notices aria-live="polite"></div>' : ""}
       ${current}
@@ -337,15 +337,18 @@
     const upcomingEl = pageEl.querySelector("[data-upcoming-shifts]");
     const label = pageEl.querySelector("[data-date-label]");
     const status = pageEl.querySelector("[data-request-status]");
-    const today = pageEl.dataset.today;
+    // Today from the clock: the page can stay open past midnight, and the minute check below moves
+    // it on (SI-80), so a parent at 12:30 AM sees last night's session as the current one.
+    let today = dateKey(new Date());
     // A day can hold more than one session (the table is unique on plan, date, and start time).
     const dayAppointments = (date) => appointments.filter((item) => item.date === date).sort((a, b) => timeValue(a.start_time) - timeValue(b.start_time));
     const sortedActivities = (appointment) => (Array.isArray(appointment.activities) ? appointment.activities : []).slice().sort((a, b) => sessionOrder(a.time, appointment.start_time, appointment.end_time) - sessionOrder(b.time, appointment.start_time, appointment.end_time));
     // Today's sessions, after any overnight session from yesterday still under way (SI-80): a
     // 7:00pm – 1:00am session is the current one until 1:00am, then it is over.
-    const currentSessions = () => appointments
-      .filter((item) => item.date === addDays(today, -1) && endsNextDay(item.start_time, item.end_time) && isUnderWay(sessionTimes(item), new Date()))
-      .concat(dayAppointments(today));
+    const continuing = () => continuingSessions(appointments, new Date(), sessionTimes)
+      .filter((item) => item.date === addDays(today, -1))
+      .sort((a, b) => timeValue(a.start_time) - timeValue(b.start_time));
+    const currentSessions = () => continuing().concat(dayAppointments(today));
     const currentHours = (item) => (item.date === today ? sessionHours(item) : `${item.start_time} yesterday – ${item.end_time}`);
     const eventDates = () => new Set(appointments.map((item) => item.date));
     const openRequest = (date) => requests.find((item) => item.date === date);
@@ -374,15 +377,25 @@
         : '<p class="schedule-session-empty">No activities added yet.</p>';
       return `${heading}${list}${notes}${editable ? `<button type="button" class="schedule-edit-button" data-edit-schedule="${id}">Edit Schedule</button>` : ""}`;
     }
+    // Today's list after midnight (SI-80): last night's session still under way, as one line that
+    // opens yesterday's list, where its activities are.
+    function continuesHtml(item) {
+      return `<button type="button" class="schedule-continues" data-show-date="${esc(item.date)}"><strong>Continues from yesterday until ${esc(item.end_time)}</strong><small>Session ${esc(sessionHours(item))} · View</small></button>`;
+    }
     function listHtml() {
       const sessions = dayAppointments(selected);
-      if (!sessions.length) return emptyHtml();
-      if (sessions.length === 1) return sessionHtml(sessions[0], false);
-      return sessions.map((appointment) => `<section class="schedule-session">${sessionHtml(appointment, true)}</section>`).join("");
+      const carried = selected === today ? continuing() : [];
+      const lead = carried.map(continuesHtml).join("");
+      if (!sessions.length) return lead + emptyHtml(carried.length > 0);
+      if (sessions.length === 1) return lead + sessionHtml(sessions[0], false);
+      return lead + sessions.map((appointment) => `<section class="schedule-session">${sessionHtml(appointment, true)}</section>`).join("");
     }
-    function emptyHtml() {
+    // carried: last night's session is still under way, so today is not without a schedule and
+    // there is nothing to request yet.
+    function emptyHtml(carried) {
       const parent = parentFirst();
       let action;
+      if (carried) return `<div class="schedule-empty schedule-empty--after"><p>Nothing else scheduled today.</p>${editable ? '<button class="schedule-empty-button" type="button" data-book-appointment>Add Schedule</button>' : ""}</div>`;
       if (editable) action = '<button class="schedule-empty-button" type="button" data-book-appointment>Add Schedule</button>';
       // Past days cannot get a schedule (booking starts today), so there is nothing to request.
       else if (selected < today) action = "";
@@ -402,6 +415,7 @@
       const isToday = selected === today;
       // The current card follows today's real booking, whichever day the list has selected.
       const booked = currentSessions();
+      pageEl.querySelector("[data-current-date]").textContent = displayDate(today);
       pageEl.querySelector("[data-current-session-time]").textContent = booked.length ? booked.map(currentHours).join(", ") : "No session today";
       const todayIds = new Set(booked.flatMap((item) => sessionChildren(item).map((child) => child.id)));
       const todayKids = familyChildren().filter((child) => !booked.length || todayIds.has(child.id));
@@ -466,6 +480,9 @@
       const activityList = existing && Array.isArray(existing.activities)
         ? existing.activities.map((item) => ({ ...item, childIds: Array.isArray(item.childIds) ? item.childIds.filter((id) => kidIds.includes(id)) : [] }))
         : [];
+      // Booking starts today, but a session already under way from yesterday (an overnight one at
+      // 12:30 AM) keeps its own date, or the browser would refuse to save it.
+      const minDate = existing && existing.date < today ? existing.date : today;
       const startValue = inputTime(existing && existing.start_time, "15:00");
       const endValue = inputTime(existing && existing.end_time, "19:00");
       const childChip = (child, attr, pressed) => `<button type="button" class="schedule-choice${pressed ? " selected" : ""}" ${attr}="${esc(child.id)}" aria-pressed="${pressed}"><span class="schedule-avatar" aria-hidden="true">${esc(initials(child.name))}</span>${esc(firstName(child))}</button>`;
@@ -475,7 +492,7 @@
       const dialog = document.createElement("dialog");
       dialog.className = "confirm-dialog manage-dialog";
       dialog.setAttribute("aria-labelledby", "schedule-details-title");
-      dialog.innerHTML = `<form class="confirm-dialog-body schedule-details-form" method="dialog"><div class="schedule-details-header"><button class="schedule-close" type="button" aria-label="Close without saving">×</button><h2 class="panel-title" id="schedule-details-title">Schedule Details</h2><button class="schedule-save" value="save">Save</button></div><label class="field-label" for="appointment-date">Date</label><input class="text-input" id="appointment-date" name="date" type="date" required min="${today}" value="${esc(existing ? existing.date : date || selected)}"><div class="schedule-time-fields"><div class="field-label"><span>Start time</span>${timeWheelHtml("start", startValue, "Start time")}</div><div class="field-label"><span>End time</span>${timeWheelHtml("end", endValue, "End time")}</div></div><p class="schedule-session-length" data-session-length aria-live="polite"></p><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Children</strong>${kids.length > 1 ? "<small>Select all that apply</small>" : ""}</div>${childrenGroup}</div><div class="schedule-detail-group"><strong id="schedule-activities-title">Activities</strong><div class="schedule-editor-activities" data-activity-list aria-labelledby="schedule-activities-title"></div><button class="schedule-add-activity" type="button" data-add-activity>＋ Add Activity</button></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Today’s Notes</strong><small>Optional</small></div><textarea class="text-input manage-textarea" name="note" rows="3" placeholder="Anything else the caregiver should know?">${esc(existing && existing.note || "")}</textarea></div><p class="form-error" hidden data-form-error></p>${existing ? '<button type="button" class="danger-btn schedule-delete" data-delete-schedule>Delete Schedule</button>' : ""}<p class="visually-hidden" role="status" data-dialog-status></p></form>`;
+      dialog.innerHTML = `<form class="confirm-dialog-body schedule-details-form" method="dialog"><div class="schedule-details-header"><button class="schedule-close" type="button" aria-label="Close without saving">×</button><h2 class="panel-title" id="schedule-details-title">Schedule Details</h2><button class="schedule-save" value="save">Save</button></div><label class="field-label" for="appointment-date">Date</label><input class="text-input" id="appointment-date" name="date" type="date" required min="${minDate}" value="${esc(existing ? existing.date : date || selected)}"><div class="schedule-time-fields"><div class="field-label"><span>Start time</span>${timeWheelHtml("start", startValue, "Start time")}</div><div class="field-label"><span>End time</span>${timeWheelHtml("end", endValue, "End time")}</div></div><p class="schedule-session-length" data-session-length aria-live="polite"></p><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Children</strong>${kids.length > 1 ? "<small>Select all that apply</small>" : ""}</div>${childrenGroup}</div><div class="schedule-detail-group"><strong id="schedule-activities-title">Activities</strong><div class="schedule-editor-activities" data-activity-list aria-labelledby="schedule-activities-title"></div><button class="schedule-add-activity" type="button" data-add-activity>＋ Add Activity</button></div><div class="schedule-detail-group"><div class="schedule-detail-label"><strong>Today’s Notes</strong><small>Optional</small></div><textarea class="text-input manage-textarea" name="note" rows="3" placeholder="Anything else the caregiver should know?">${esc(existing && existing.note || "")}</textarea></div><p class="form-error" hidden data-form-error></p>${existing ? '<button type="button" class="danger-btn schedule-delete" data-delete-schedule>Delete Schedule</button>' : ""}<p class="visually-hidden" role="status" data-dialog-status></p></form>`;
       document.body.appendChild(dialog);
       const form = dialog.querySelector("form");
       const errorEl = dialog.querySelector("[data-form-error]");
@@ -613,6 +630,17 @@
         const draft = { date: values.date, start: values.start, end: values.end };
         const clash = appointments.find((other) => !(existing && other.id === existing.id) && sessionsOverlap(draft, sessionTimes(other)));
         if (clash) return showError(`This overlaps the ${sessionHours(clash)} session ${clash.date === values.date ? "that day" : `on ${displayDate(clash.date)}`}.`);
+        // AM/PM slip guard: over 12 hours is more likely 9:00 AM to 5:00 AM picked for 5:00 PM.
+        // Asked again only when the times change, not on every save of a long session.
+        const sameTimes = existing && clockMinutes(existing.start_time) === clockMinutes(values.start) && clockMinutes(existing.end_time) === clockMinutes(values.end);
+        if (isLongSession(values.start, values.end) && !sameTimes) {
+          const confirmed = await auth.confirmDialog({
+            title: "Is this session right?",
+            body: `This session is ${formatLength(sessionLength(values.start, values.end))} long, ending ${formatTime(values.end)}${endsNextDay(values.start, values.end) ? " the next day" : ""}. Save it?`,
+            confirmLabel: "Save session",
+          });
+          if (!confirmed) return dialog.showModal(); // back to Schedule Details, nothing saved
+        }
         // An activity keeps only children still on the session; one left with none is for all of them.
         const activities = activityList.map((activity) => {
           const ids = (activity.childIds || []).filter((id) => chosen.includes(id));
@@ -700,13 +728,15 @@
       if (target.dataset.view) { view = target.dataset.view; render(); }
       if (target.dataset.date) { selected = addDays(selected, target.dataset.date === "next" ? 1 : -1); render(); }
       if (target.dataset.calendarDate) { selected = target.dataset.calendarDate; render(); }
+      if (target.dataset.showDate) { selected = target.dataset.showDate; render(); }
       if (target.matches("[data-request-schedule]")) requestSchedule(target);
       if (target.dataset.requestAdd) { selected = target.dataset.requestAdd; view = "list"; render(); openBooking(null, selected); }
       if (target.dataset.requestDismiss && live) dismissRequest(target);
       if (target.matches("[data-book-appointment]")) openBooking(null, selected);
       if (target.matches("[data-edit-schedule]")) {
-        // The Current Session pencil has no id: it means today's first session, or a new one today.
-        const id = target.dataset.editSchedule || (dayAppointments(today)[0] || {}).id;
+        // The Current Session pencil has no id: it means the session the card shows (last night's
+        // overnight one while it is under way, else today's first), or a new one today.
+        const id = target.dataset.editSchedule || (currentSessions()[0] || {}).id;
         if (id) openBooking(id); else openBooking(null, today);
       }
     });
@@ -719,6 +749,26 @@
       if (!editable && !openRequest(selected) && !status.classList.contains("is-error")) setStatus("");
       render();
     };
+    // Each minute, and on return to the tab: redraw only when today or the current sessions
+    // changed (midnight, or an overnight session ending at 1:00 AM), as js/app.js's What's next
+    // does. A list showing today follows to the new day; another selected day stays put.
+    const clockKey = () => JSON.stringify([today, currentSessions().map((item) => item.id)]);
+    let lastClockKey = clockKey();
+    const recheck = () => {
+      const now = dateKey(new Date());
+      if (now !== today) {
+        if (selected === today) selected = now;
+        today = now;
+      }
+      const key = clockKey();
+      if (key === lastClockKey) return;
+      lastClockKey = key;
+      render();
+    };
+    const untilNextMinute = () => 60000 - (Date.now() % 60000) + 50;
+    const tick = () => { recheck(); setTimeout(tick, untilNextMinute()); };
+    setTimeout(tick, untilNextMinute());
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) recheck(); });
     render();
   }
 

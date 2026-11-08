@@ -16,6 +16,11 @@
 --     and triggers are unchanged; this migration adds no function.
 --   * Existing rows all have end_time > start_time, so they satisfy the new rule, and the
 --     current site (which still refuses an end before the start itself) keeps working.
+--   * The constraint swap takes an exclusive lock on appointments. lock_timeout makes it give up
+--     (and the migration fail, to be retried) rather than wait behind a long transaction while
+--     every app read of appointments queues behind it.
+set lock_timeout = '5s';
+
 alter table public.appointments drop constraint appointments_check;
 
 alter table public.appointments

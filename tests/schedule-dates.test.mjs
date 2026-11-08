@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 process.env.TZ = "America/New_York";
 
 const require = createRequire(import.meta.url);
-const { addDays, clockMinutes, endsNextDay, sessionLength, formatLength, sessionSpan, sessionsOverlap, isUnderWay } = require("../js/schedule-dates.js");
+const { addDays, clockMinutes, endsNextDay, sessionLength, formatLength, sessionSpan, sessionsOverlap, isUnderWay, continuingSessions, isLongSession } = require("../js/schedule-dates.js");
 
 test("the test runs where Nov 1 2026 is a 25-hour day", () => {
   const hours = (new Date(2026, 10, 2) - new Date(2026, 10, 1)) / 3600000;
@@ -94,4 +94,32 @@ test("isUnderWay keeps an overnight session current after midnight until it ends
   assert.equal(isUnderWay(night, new Date(2026, 10, 14, 0, 30)), true, "after midnight");
   assert.equal(isUnderWay(night, new Date(2026, 10, 14, 1, 0)), false, "at its end");
   assert.equal(isUnderWay({ date: "2026-11-13", start: "15:00", end: "19:00" }, new Date(2026, 10, 13, 16, 0)), true);
+});
+
+test("continuingSessions: yesterday's overnight session until it ends, and nothing else", () => {
+  const night = { id: "night", date: "2026-11-13", start_time: "7:00pm", end_time: "1:00am" };
+  const evening = { id: "evening", date: "2026-11-13", start_time: "3:00pm", end_time: "7:00pm" };
+  const tonight = { id: "tonight", date: "2026-11-14", start_time: "7:00pm", end_time: "1:00am" };
+  const items = [night, evening, tonight];
+  const times = (item) => ({ date: item.date, start: item.start_time, end: item.end_time });
+  assert.deepEqual(continuingSessions(items, new Date(2026, 10, 14, 0, 30), times), [night], "12:30 AM: returned as given");
+  assert.deepEqual(continuingSessions(items, new Date(2026, 10, 14, 1, 0), times), [], "over at 1:00 AM");
+  assert.deepEqual(continuingSessions(items, new Date(2026, 10, 13, 22, 0), times), [], "the same evening is today's session, not a continuation");
+  assert.equal(continuingSessions([{ date: "2026-11-13", start: "19:00", end: "01:00" }], new Date(2026, 10, 14, 0, 59)).length, 1, "default reads date/start/end");
+  assert.deepEqual(continuingSessions(null, new Date()), []);
+});
+
+test("continuingSessions across the fall-back night", () => {
+  // Oct 31 7:00 PM to Nov 1 1:00 AM: at 12:30 AM on the 25-hour day it is still under way.
+  const night = { date: "2026-10-31", start: "19:00", end: "01:00" };
+  assert.equal(continuingSessions([night], new Date(2026, 10, 1, 0, 30)).length, 1);
+});
+
+test("isLongSession: longer than 12 hours, overnight or not", () => {
+  assert.equal(isLongSession("09:00", "05:00"), true, "9:00 AM to 5:00 AM is 20 hours");
+  assert.equal(isLongSession("07:00", "20:00"), true, "13 hours the same day");
+  assert.equal(isLongSession("09:00", "21:00"), false, "exactly 12 hours");
+  assert.equal(isLongSession("19:00", "01:00"), false, "a 6-hour overnight");
+  assert.equal(isLongSession("19:00", "19:00"), false, "not a session");
+  assert.equal(isLongSession("9:00 AM", "5:00 AM"), true, "display format");
 });
