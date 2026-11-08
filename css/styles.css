@@ -4222,6 +4222,77 @@ body:not([data-role="parent"]) .gallery-list {
   outline-offset: 2px;
 }
 
+/* SI-68: the household for this care session stays pinned to the top while the children scroll
+   under it (js/children-page.js). Same surface and type as the family card it heads. */
+.household-pin {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-surface);
+}
+
+.household-pin-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.household-pin-label {
+  margin: 0;
+  color: var(--grey);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.household-pin h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  color: var(--blue);
+  overflow-wrap: anywhere;
+}
+
+.household-pin-switch {
+  flex: none;
+  max-width: 50%;
+}
+
+.household-pin-switch select {
+  width: 100%;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--blue);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.household-pin-switch select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.children-header--detail {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg);
+}
+
 .family-card {
   display: flex;
   flex-direction: column;
@@ -4229,20 +4300,6 @@ body:not([data-role="parent"]) .gallery-list {
   padding: 16px 8px;
   border-radius: var(--radius-sm);
   background: var(--surface);
-}
-
-.family-card-top {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 0 4px;
-}
-
-.family-card-top h2 {
-  font-size: var(--text-lg);
-  font-weight: var(--weight-bold);
-  color: var(--blue);
 }
 
 .sit-tag,
@@ -4652,4 +4709,84 @@ body:not([data-role="parent"]) .gallery-list {
 
 .family-wide > .child-section-title {
   padding: 0 4px;
+}
+
+/* Sitter Home (SI-69): "What's next" shows the one upcoming activity. */
+.next-activity-card {
+  padding: 8px;
+}
+
+.next-activity-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 8px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease;
+}
+
+.next-activity-item:hover {
+  background: var(--accent-soft);
+}
+
+.next-activity-item:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.next-activity-time {
+  flex-shrink: 0;
+  min-width: 72px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
+  color: var(--accent-strong);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.next-activity-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.next-activity-title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  color: var(--blue);
+}
+
+.next-activity-detail {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  color: var(--grey);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.next-activity-chevron {
+  flex-shrink: 0;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--grey);
+}
+
+.next-activity-card .empty-state,
+.checklist-panel .empty-state {
+  padding: 20px 12px;
+}
+
+/* The sitter's Schedule page shows the same checklist as Home (SI-71), under Current Shift. */
+.schedule-checklist {
+  margin-top: 24px;
 }

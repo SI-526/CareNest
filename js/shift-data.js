@@ -35,7 +35,7 @@
   const family = window.CareNestFamily;
   const careLog = window.CareNestCareLog;
   const page = document.body.dataset.page;
-  if (!store || !["home", "carelog", "parent", "gallery"].includes(page)) return;
+  if (!store || !["home", "carelog", "parent", "gallery", "schedule"].includes(page)) return;
 
   const MOMENT_WINDOW_MS = 2 * 60 * 1000;
   const THREAD_LIMIT = 300;
@@ -1191,6 +1191,10 @@
   const readySource = window.CareNestFamily || window.CareNestAuth;
   const ready = (readySource ? readySource.ready : Promise.resolve(null)).then(async (ctx) => {
     const data = window.CareNestData;
+    // The Schedule page needs the shift only for the sitter's checklist (SI-71).
+    const asParentHere =
+      (ctx && ctx.role === "parent") || new URLSearchParams(window.location.search).get("as") === "parent";
+    if (page === "schedule" && asParentHere) return null;
     let backend;
     if (ctx && !ctx.demo && ctx.household && ctx.client && !demoMode()) {
       backend = createSupabaseBackend(ctx, data);

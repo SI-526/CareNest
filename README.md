@@ -21,9 +21,13 @@ right one. The Profile tab shows the signed-in account and signs out or deletes 
 the schedule, care info (Good to know, food and allergies, emergency steps) and contacts come from
 the family space in Supabase (`js/family-data.js` loads them into the shape `js/data.js` defines);
 parents edit them on `manage.html` ("Family info" in the parent nav).
-The Children tab (`children.html`, both roles) shows the family card (family name, next sit,
-primary contact, phone, and home address) and each child, with their age, stage, pinned note, and
-any severe allergies. Tapping a child (`children.html?child=<id>`) shows that child's food and
+The Children tab (`children.html`, both roles) pins the current household (family name and next
+sit) to the top of the page while the list scrolls under it (SI-68), then shows the family card
+(primary contact, phone, and home address) and each child, with their age, stage, pinned note, and
+any severe allergies. A sitter in several families switches household from the pinned card or the
+family bar without leaving the tab: the pin shows the new household at once and the previous
+family's children are cleared until the new family's load. Each child's page keeps the family name
+pinned in its header. Tapping a child (`children.html?child=<id>`) shows that child's food and
 allergies, preferences, and instructions, the family's contacts, and links to where things are and
 emergency steps, which stay family-wide. A category with nothing in it says "No information
 provided". Parents add, edit, and delete children and each child's items there too, and set the
@@ -39,6 +43,18 @@ re-checked at local midnight); while a shift that started on an earlier local da
 start date's own heading. Parents pick the date for each note in the "Important today" card on
 `manage.html`. The notes refresh live (Realtime), and if they
 fail to load only that section says so.
+Below it, the sitter's Home (SI-69) shows "What's next": the one next activity, with its name and
+time, which is the earliest task not yet checked off whose time is now or later (re-checked every
+minute, so a 3:00pm activity gives way to the next one at 3:01pm; tasks with no time are left out;
+`js/next-activity.js`). After the last one it says "No more activities scheduled for today.", and
+"Full schedule" opens the Schedule tab. Then the Checklist: the day's tasks with "x of y done",
+checked off the usual way (a photo, an optional tag and note, then the "Add details" prompt). The
+Schedule tab shows the same checklist under Current Shift for the sitter; both read the shift's
+task checks, so a task checked or unchecked on one page shows on the other. With no tasks it says
+"No checklist items for today." The side column has the emergency entry, the family's primary
+contact only (`contacts.is_primary`, with a call button; "All contacts" opens the first child's
+page on the Children tab, which lists every contact), or "No primary contact yet.", and the Good to
+Know tiles. Home no longer previews the care log.
 The Care Log tab (`care-log.html`, both roles; parents at `care-log.html?as=parent`, and
 `js/auth.js` sends each role to its side) is the current session's log: the family's latest shift,
 its entries oldest first, each with the child it is about (initials and first name), what happened,
@@ -160,7 +176,7 @@ npm install          # pinned Supabase CLI + supabase-js
 npm run db:start     # local stack; ports are 553xx so it never collides with Carekeeper's 543xx
 npm run db:reset     # applies migrations, then supabase/seed.sql
 npm run test:rls     # authorization tests (refuse to run against a non-local URL)
-npm run test:unit    # care-log age parser, config port override (no database needed)
+npm run test:unit    # care-log age parser, config port override, next activity, ... (no database needed)
 npm run db:lint      # supabase db lint
 npm run db:stop
 npm run db:env       # which stack this checkout uses, and its ports
