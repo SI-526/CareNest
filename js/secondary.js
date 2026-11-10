@@ -1,4 +1,4 @@
-// Schedule, care log, and profile/settings pages (children.html is js/children-page.js). Parents see the same
+// Schedule and profile/settings pages (children.html is js/children-page.js, care-log.html is js/care-log-page.js). Parents see the same
 // information as sitters and can edit family-owned information in place.
 (function () {
   const data = window.CareNestData;
@@ -21,8 +21,8 @@
 
   ready.then(async (ctx) => {
     const isParent = ctx && ctx.role === "parent";
-    if (isParent) ui.renderParentNav(page === "carelog" ? "care-log" : page);
-    else ui.renderSitterNav(page === "carelog" ? "care-log" : page);
+    if (isParent) ui.renderParentNav(page);
+    else ui.renderSitterNav(page);
     if (page === "profile" && !isParent) sitterProfileState = await loadSitterProfile(ctx);
     if (page === "schedule" && isParent) sharedSitter = await loadSharedSitter(ctx);
     render(ctx);
@@ -361,11 +361,6 @@
         eyebrow: "", title: "Schedule", intro: "",
         body: schedulePage(ctx, Boolean(ctx && ctx.role === "parent")),
       },
-      carelog: {
-        eyebrow: "", title: "Care Log", intro: "",
-        // Filled by bindCareLog() once the shift has loaded (js/care-log.js mountPage).
-        body: `<p class="supporting-copy care-log-loading">Loading the care log…</p>`,
-      },
       profile: {
         eyebrow: "", title: "Profile", intro: "",
         // Identity, personal information and account settings, then Log out / Delete (the
@@ -375,7 +370,7 @@
     }[page];
     if (!views) return;
     document.title = `CareNest — ${views.title}`;
-    root.innerHTML = page === "schedule" || page === "carelog" || page === "profile" ? views.body : `<header class="secondary-header"><p class="page-eyebrow">${views.eyebrow}</p><h1>${views.title}</h1><p>${views.intro}</p></header>${views.body}`;
+    root.innerHTML = page === "schedule" || page === "profile" ? views.body : `<header class="secondary-header"><p class="page-eyebrow">${views.eyebrow}</p><h1>${views.title}</h1><p>${views.intro}</p></header>${views.body}`;
     if (page === "schedule") {
       // SI-71: the sitter's checklist (schedule.html, filled by js/app.js) sits under Current Shift.
       const slot = root.querySelector("[data-checklist-slot]");
@@ -383,29 +378,9 @@
       if (slot && checklist) slot.replaceWith(checklist);
       bindSchedule(ctx, Boolean(ctx && ctx.role === "parent"));
     }
-    if (page === "carelog") bindCareLog(isParent);
     if (editable) bindEditors(ctx);
     if (page === "profile" && (!ctx || ctx.role !== "parent")) bindSitterProfile(ctx || {});
     if (page === "profile") auth.mountAccountPanel(root.querySelector("[data-account-panel]"), ctx);
-  }
-
-  // The Care Log tab: this shift's timeline, read from js/shift-data.js like parent.html's panel.
-  function bindCareLog(isParent) {
-    const careLog = window.CareNestCareLog;
-    const fail = () => {
-      root.innerHTML = `<header class="schedule-topnav"><h1>Care Log</h1></header><p class="locked-note">We couldn’t load this shift’s care log. Reload the page to try again.</p>`;
-    };
-    if (!careLog || !window.CareNestShift) return fail();
-    window.CareNestShift.ready.then((shift) => {
-      if (!shift) return fail();
-      careLog.mountPage(root, {
-        shift,
-        data: window.CareNestData,
-        isParent,
-        logHref: "index.html#checklist",
-        galleryHref: isParent ? "gallery.html?as=parent" : "gallery.html",
-      });
-    }, fail);
   }
 
   function bindSchedule(ctx, editable) {

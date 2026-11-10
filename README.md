@@ -13,8 +13,8 @@ step). There is deliberately **no `package.json` at the repo root**; database to
 Pages: `signin.html` (Google sign-in, the data notice), `onboarding.html` (create a family space;
 requires ticking the at-your-own-risk acknowledgement), `people.html` (parents: invite a sitter,
 revoke invites, remove sitters), `invite.html#<token>` (accept an invite), and `privacy.html` /
-`terms.html`. Every app page (`index`, `parent`, `people`, `messages`, `gallery`, `info`,
-`food-allergies`) loads `js/auth.js`, which keeps the page hidden until it has checked the
+`terms.html`. Every app page (`index`, `parent`, `people`, `manage`, `schedule`, `care-log`,
+`children`, `profile`, `gallery`, `info`, `food-allergies`) loads `js/auth.js`, which keeps the page hidden until it has checked the
 session: signed out goes to `signin.html`, no family space goes to `onboarding.html`, a parent's
 home is `parent.html`, a sitter's is `index.html`, and a page for the other role redirects to the
 right one. The Profile tab shows the signed-in account and signs out or deletes the account and its data. The children,
@@ -55,7 +55,27 @@ task checks, so a task checked or unchecked on one page shows on the other. With
 contact only (`contacts.is_primary`, with a call button; "All contacts" opens the first child's
 page on the Children tab, which lists every contact), or "No primary contact yet.", and the Good to
 Know tiles. Home no longer previews the care log.
-The shift (start, end, reopen, history), task check-offs with photo proofs, moments, and the message thread are in Supabase (`js/shift-data.js`: Postgres, the private `photos` Storage bucket, and Realtime) for both roles; `?demo=1` keeps them in this browser (`js/store.js`). The parent's Today page (`parent.html`) shows today's shift status (not started / active / reopened / ended) with its history, "x of y done", the schedule (a parent can mark a task done without a photo, "Done by <name>", and end or reopen the shift), and a live feed of the shift's proofs and moments (Late, "Added after reopen", "Photo removed by <name>", replies, "New" until seen via `message_reads`). New photos (proofs, moments, and the sitter's photo messages) and shift events raise an in-app banner and a polite live announcement (no push notifications); View scrolls to a new feed photo, or opens the Gallery when only photo messages are new (they stay out of the Today feed). Save photo uses the Web Share API with files on touch devices, otherwise a JPEG download, and adds it to the parent's Album (`#album`, `photo_saves`). Remove photo calls `remove_photo` and then deletes the object from Storage. The concept alert (`concept_flags`) and "Bring moment forward" (`trigger_moment_now`) are demo controls shown only on localhost; the concept alert is labelled "Concept — not real analysis". The Gallery (`gallery.html`, both roles; parents at `gallery.html?as=parent`) shows every photo of the family's shifts, oldest first with the newest at the bottom, under a heading per shift date, each labelled Task update, Photo message, or Moment, with a filter (native radios styled as chips); removed photos are skipped. The sitter's "+" (Add a photo) opens the phone's camera or library (`<input type="file" accept="image/*">`), then a dialog with the preview and an optional caption, and sends a photo message; it is disabled with the reason when the shift isn't open. A shift takes up to 20 photo messages; past that the sitter sees "Photo limit reached for this shift." Parents get "Remove photo" on each photo. Photo messages also show in the Messages thread. On `manage.html`, "Remove from schedule" archives a task (`archived_at`, stamped by the database); past shifts keep it.
+The Care Log tab (`care-log.html`, both roles; parents at `care-log.html?as=parent`, and
+`js/auth.js` sends each role to its side) is the current session's log: the family's latest shift,
+its entries oldest first, each with the child it is about (initials and first name), what happened,
+the time, and who wrote it; details logged under completed tasks are listed in the same order,
+labelled with the task. With no entries it says "No entries yet". The sitter's "New entry"
+(`care-log.html#new`, so the phone's back button closes it) picks the child (skipped when the
+family has one child) and takes a note of up to 1000 characters; the entry is saved to
+`care_logs` (in demo mode, to the tab's sessionStorage) and shows for everyone in the family
+live. If saving fails the form says "Your entry wasn't saved" with the reason and keeps what was
+typed, so Save can be tapped again. New entry is offered only while the shift's date is in the
+window (open or ended); before the sitter starts a shift the page says to start it on Home, and an
+older session is read-only. Parents read the log and do not add to it.
+Messages was removed (SI-66): there is no chat screen and no Messages item in the navigation.
+`messages.html` is now a tiny page that sends old links and bookmarks to `care-log.html`, keeping
+the query (`?as=parent`, `?demo=1`; `js/messages-redirect.js`, with a meta refresh as the
+fallback), chosen over a `vercel.json` redirect because it also works with the local
+`python3 -m http.server` and needs no extra CSP rule. The `messages` table and its data stay: photo
+messages, task proofs, and moments are rows of it. Parents can no longer reply under a photo (no
+sitter screen showed replies once Messages was gone); replies written before stay under their
+photo in the parent's Today feed, read-only.
+The shift (start, end, reopen, history), task check-offs with photo proofs, moments, photo messages, and care logs are in Supabase (`js/shift-data.js`: Postgres, the private `photos` Storage bucket, and Realtime) for both roles; `?demo=1` keeps them in this browser (`js/store.js`). The parent's Today page (`parent.html`) shows today's shift status (not started / active / reopened / ended) with its history, "x of y done", the schedule (a parent can mark a task done without a photo, "Done by <name>", and end or reopen the shift), and a live feed of the shift's proofs and moments (Late, "Added after reopen", "Photo removed by <name>", earlier replies (read-only), "New" until seen via `message_reads`). New photos (proofs, moments, and the sitter's photo messages) and shift events raise an in-app banner and a polite live announcement (no push notifications); View scrolls to a new feed photo, or opens the Gallery when only photo messages are new (they stay out of the Today feed). Save photo uses the Web Share API with files on touch devices, otherwise a JPEG download, and adds it to the parent's Album (`#album`, `photo_saves`). Remove photo calls `remove_photo` and then deletes the object from Storage. The concept alert (`concept_flags`) and "Bring moment forward" (`trigger_moment_now`) are demo controls shown only on localhost; the concept alert is labelled "Concept — not real analysis". The Gallery (`gallery.html`, both roles; parents at `gallery.html?as=parent`) shows every photo of the family's shifts, oldest first with the newest at the bottom, under a heading per shift date, each labelled Task update, Photo message, or Moment, with a filter (native radios styled as chips); removed photos are skipped. The sitter's "+" (Add a photo) opens the phone's camera or library (`<input type="file" accept="image/*">`), then a dialog with the preview and an optional caption, and sends a photo message; it is disabled with the reason when the shift isn't open. A shift takes up to 20 photo messages; past that the sitter sees "Photo limit reached for this shift." Parents get "Remove photo" on each photo. On `manage.html`, "Remove from schedule" archives a task (`archived_at`, stamped by the database); past shifts keep it.
 Parents book and edit sessions on the Schedule tab (`schedule.html`) in Schedule Details. Times
 are picked with hour, minute (5-minute steps), and AM/PM selects, which phones show as scroll
 wheels; a new activity starts at the session's start time. An end time earlier than the start
@@ -96,8 +116,9 @@ Open **`demo.html`** and pick **Try as the babysitter** (`index.html?demo=1`) or
 
 Each family has a profile, care info (food and allergies, preferences, where things are,
 instructions, emergency steps, contacts), today's schedule, upcoming sessions, and today's care
-log already started (two tasks done, with care log entries and a few messages). Testers can check
-off tasks, add care logs and photos, send messages, edit the sitter profile, and, as the parent,
+log already started (two tasks done, with care log details on them). Testers can check
+off tasks, add care log details and photos, add Care Log entries about each child on the Care Log
+tab, edit the sitter profile, and, as the parent,
 add, edit, and delete children and their care info, contacts, where things are, and emergency
 steps on the Children tab, and schedule sessions on the Schedule tab. Everything is kept in the
 tab's sessionStorage, so closing the tab resets the demo for the next tester. The parent's
@@ -111,7 +132,8 @@ demo clears the flag). Sign-in, `invite.html`, and `onboarding.html` also clear 
 reads the database (signed-out requests can read nothing anyway) and never reads an account's
 device data.
 
-Demo data (`js/store.js`, `?demo=1` only: task photos, moments, messages, check-offs, care logs)
+Demo data (`js/store.js`, `?demo=1` only: task photos, moments, messages, check-offs, care logs
+and Care Log entries)
 is in sessionStorage under `carenest:demo:v1:<family>`, with the demo family's edits under
 `carenest:demo:data:<family>`; all of it ends with the tab. Signed-in people's photos and messages
 are not kept on the device. Each account's device key is `carenest:v1:<user id>`, picked by the
@@ -232,8 +254,8 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 | `visits` | One babysitting shift per plan per date (yesterday, today, or tomorrow); start, handoff note, current end, moment time | Members start and write the note (dates in the window only); any member can `end_visit` and `reopen_visit` |
 | `task_checks` | Which tasks are done in a shift, by whom, and when (`checked_at`) | Only `complete_task` (photo required for caretakers, optional for parents), while the shift is open and in the window; members uncheck |
 | `shift_events` | Append-only shift history: ends, reopens, and unchecks of original-shift tasks after a reopen, with who, which task, and when | Nobody directly; only `end_visit`, `reopen_visit`, and the uncheck trigger write it. Members read |
-| `care_logs` | Structured care details on a task completed in a shift: `meal` (amount all/most/some/none and/or a note), `bottle` (ounces, optional note), or `care` (a note); who wrote it, their role, and when | Members add logs to a checked task while the shift's date is in the window (open or ended). Author, role, household, and time are set by the database. Append-only: nobody edits or deletes; an edit is a new row |
-| `messages` | Chat, photo messages (chat with a photo and its shift, caption optional), task proofs (photo, note, tag), and moments (photo, `late`); replies to a photo | Members post chat; sitters post photo messages and the shift's moment; proofs only via `complete_task`. Sender, role, time, and `late` are set by the database. Clients never edit or delete; a parent can remove a photo with `remove_photo` (the message stays, marked "Photo removed by …") |
+| `care_logs` | A shift's care log. Details on a task completed in the shift: `meal` (amount all/most/some/none and/or a note), `bottle` (ounces, optional note), or `care` (a note). Care Log page entries (SI-63): `note`, no task, about one child (`child_id`, with the child's name kept in `child_name`). Who wrote it, their role, and when | Members add task details to a checked task, and entries about a child of the same family space, while the shift's date is in the window (open or ended); the app offers New entry to sitters only. Author, role, household, time, and the child's name are set by the database. A composite foreign key keeps the child in the same family space; deleting a child keeps its entries (`child_id` becomes null, the name stays). Append-only: nobody edits or deletes; an edit is a new row |
+| `messages` | Chat, photo messages (chat with a photo and its shift, caption optional), task proofs (photo, note, tag), and moments (photo, `late`); replies to a photo (since Messages was removed the app writes no text-only chat or replies; existing replies are shown read-only) | Members post chat; sitters post photo messages and the shift's moment; proofs only via `complete_task`. Sender, role, time, and `late` are set by the database. Clients never edit or delete; a parent can remove a photo with `remove_photo` (the message stays, marked "Photo removed by …") |
 | `message_reads` | Which messages a user has seen | Each user, for themselves; private |
 | `photo_saves` | A parent's saved-photo album | Each parent, for themselves; private |
 | `concept_flags` | **Concept only**: the demo "child seems off" alert on a photo; nothing analyses photos | Parents set and clear; members read |
@@ -249,7 +271,7 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
 - Signed-in users get only the table and column privileges the app needs, and RLS narrows rows
   to their own household. Only parents change care info, contacts, plans, and tasks. Caretakers
   read everything in their household, start shifts, check and uncheck tasks, add care logs to
-  checked tasks, and write the handoff note. Later migrations start closed too: new tables, sequences, and functions in
+  checked tasks and Care Log entries about the family's children, and write the handoff note. Later migrations start closed too: new tables, sequences, and functions in
   `public` get no anon/authenticated privileges (schema-scoped default privileges revoked).
   Postgres also gives every new function `EXECUTE` to `PUBLIC` in every schema by default, which
   a schema-scoped revoke cannot remove, so the migration additionally revokes that globally for
@@ -363,6 +385,31 @@ Seeds run only on a local `supabase db reset`; never run `seed.sql` against a ho
   limitation below applies: one random UUID per log removed with a family space).
   `delete_my_account` cascades a sole parent's logs away; a departed sitter's logs stay without
   their name.
+- **Care Log entries (SI-63, `20261109000000_carenest_care_log_entries.sql`).** The Care Log
+  page's entries are `care_logs` rows with category `note`, no task, and a child. Every rule above
+  still applies: the same `stamp_care_log` trigger (replaced, with the task path unchanged)
+  requires a signed-in member of the shift's family space (`not_authenticated`,
+  `visit_not_found`) and the shift's date in the window, open or ended (`visit_too_old`; the same
+  window as a task log and the handoff note, so an end-of-session recap is allowed), and sets the
+  household, author, role, and time. It also checks the child: one of the shift's family space
+  (`child_not_found`, also enforced by the composite foreign key `(child_id, household_id)` ->
+  `children (id, household_id)`), required for a `note` (`child_required`), and copies the
+  child's name into `child_name`. Clients may insert `child_id` but not `child_name`. A CHECK
+  (`care_logs_task_category`) pairs the shapes: a `note` has no task and meal/bottle/care need
+  one, and a `note` needs a non-blank note (`care_logs_not_empty`). Deleting a child sets its
+  entries' `child_id` to null (only that column) and keeps the name, so past sessions stay
+  readable. The deployed client's task logs (no child) are accepted exactly as before, so the
+  migration can be pushed before the page ships. Members read every entry of their household;
+  anon nothing. Tests: `tests/care-log-entries.test.mjs`.
+  Decision record: extend `care_logs` instead of a new table, so one append-only log carries one
+  set of grants, one trigger, one Realtime publication, and one read query per shift (the
+  standard: one table per kind of record, with the rules in the database). Rejected: a parallel
+  `session_entries` table, which would copy the trigger, grants, and Realtime wiring and split the
+  session log across two reads. What breaks next: `task_id` is now nullable, so any new code that
+  assumes a log has a task must check `category`; and a family space with no children cannot
+  have entries. Reversal: a later migration can move `note` rows into their own table (insert
+  ... select, then delete them and restore `task_id not null` and the old CHECKs); no client
+  depends on the shared table beyond the `care_logs` select in `js/shift-data.js`.
 - Each check stores a snapshot of the task as it was when it was checked (`task_title`,
   `task_time_of_day`, `task_detail`, `task_location`, `task_care_note`), filled by the database.
   **Frontend: past shifts render the snapshot, not the live task.** Archived tasks are frozen

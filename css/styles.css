@@ -862,13 +862,6 @@ body[data-page="schedule"] .app > #checklist { display: none; }
 .schedule-delete:hover { background: var(--danger-soft); }
 .schedule-delete:disabled { opacity: 0.6; cursor: default; }
 @media (min-width: 768px) { .schedule-topnav h1 { text-align: left; } }
-/* Care Log reuses the top bar: align it with the page's single column on desktop, and run it
-   edge to edge under the banner on phones (the page keeps the default 24px gutters). */
-body[data-page="carelog"] .schedule-topnav { width: 100%; max-width: var(--detail-width); margin-inline: auto; }
-@media (max-width: 767px) {
-  body[data-page="carelog"] .app { padding-top: 0; }
-  body[data-page="carelog"] .schedule-topnav { width: auto; max-width: none; margin-inline: -24px; }
-}
 @media (max-width: 767px) {
   body[data-page="schedule"] .app { padding-top: 0; padding-right: 16px; padding-left: 16px; }
   .schedule-page { margin-top: 0; max-width: 640px; }
@@ -2616,25 +2609,6 @@ body.modal-open {
   background: var(--card);
 }
 
-.message-form {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  align-items: stretch;
-}
-
-.message-input {
-  min-height: 44px;
-}
-
-.message-send {
-  width: auto;
-  padding: 10px 18px;
-}
-
-.message-error {
-  grid-column: 1 / -1;
-}
 
 .dev-tools {
   border: 1px dashed var(--accent);
@@ -2932,17 +2906,7 @@ body.modal-open {
   color: var(--danger);
 }
 
-.feed-reply-form {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.feed-reply-label {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-}
-
+/* Replies already written under a photo (read-only since Messages was removed, SI-66) */
 .feed-replies {
   list-style: none;
   margin: 0;
@@ -2968,24 +2932,6 @@ body.modal-open {
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-}
-
-/* Reply reference inside a chat bubble (Messages) */
-.msg-reply-ref {
-  display: block;
-  margin-bottom: 4px;
-  padding-left: 8px;
-  border-left: 3px solid currentColor;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-  opacity: 0.85;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.msg-reply-ref:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
 }
 
 .dev-link {
@@ -3825,7 +3771,8 @@ body.modal-open {
   margin-top: 4px;
 }
 
-.care-log-empty {
+/* The task timeline's empty state (parent.html); main's Care Log page (.session-log-empty) keeps its own. */
+.care-log-empty:not(.session-log-empty) {
   margin: 0;
   padding: 24px 0;
   font-family: var(--font);
@@ -3842,28 +3789,7 @@ body.modal-open {
   color: var(--grey);
 }
 
-/* Care Log tab (care-log.html, Figma 303:634 / 303:886) */
-.care-log-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  width: 100%;
-  max-width: var(--detail-width);
-  margin: 0 auto;
-  padding-bottom: 24px;
-}
-
-.care-log-child-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 20px;
-  border: 1px solid var(--line-soft);
-  border-radius: 24px;
-  background: var(--card);
-}
-
-.care-log-kids,
+/* Child strip in the log modal (index.html) */
 .care-log-strip-kids {
   list-style: none;
   margin: 0;
@@ -3871,12 +3797,6 @@ body.modal-open {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.care-log-kid {
-  display: flex;
-  align-items: center;
-  gap: 14px;
 }
 
 .care-log-avatar {
@@ -3901,37 +3821,6 @@ body.modal-open {
   font-size: var(--text-sm);
 }
 
-.care-log-kid-text {
-  min-width: 0;
-}
-
-.care-log-kid-name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  font-family: var(--font);
-  font-size: var(--text-lg);
-  font-weight: var(--weight-bold);
-  line-height: 24px;
-  color: var(--blue);
-}
-
-.care-log-live {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--success);
-}
-
-.care-log-kid-sub {
-  margin: 2px 0 0;
-  font-size: var(--text-sm);
-  line-height: 20px;
-  color: var(--grey);
-}
-
 .care-log-shift {
   display: flex;
   align-items: center;
@@ -3945,157 +3834,6 @@ body.modal-open {
 
 .care-log-shift .care-log-icon {
   color: var(--accent-strong);
-}
-
-.care-log-shift-status {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--grey);
-}
-
-.care-log-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-.care-log-activity-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  height: 40px;
-  padding: 8px 24px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--accent);
-  color: #ffffff;
-  font-family: var(--font-body);
-  font-size: var(--text-md);
-  font-weight: var(--weight-semibold);
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.care-log-activity-btn:hover {
-  background: var(--accent-strong);
-}
-
-.care-log-activity-btn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--focus);
-}
-
-.care-log-activity-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.care-log-action-hint {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--grey);
-  text-align: center;
-}
-
-.care-log-filter .tag-options {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  padding: 2px;
-  scrollbar-width: none;
-}
-
-.care-log-filter .tag-option span {
-  gap: 6px;
-  min-height: 36px;
-  border-color: var(--line);
-  font-weight: var(--weight-semibold);
-  white-space: nowrap;
-}
-
-.care-log-filter .tag-option input:checked + span {
-  background: var(--blue);
-  border-color: var(--blue);
-  font-weight: var(--weight-bold);
-}
-
-.care-log-heading-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.care-log-heading-row h2,
-.care-log-more h2 {
-  margin: 0;
-  font-family: var(--font);
-  font-size: var(--text-md);
-  font-weight: var(--weight-bold);
-  line-height: 24px;
-  color: var(--blue);
-}
-
-.care-log-count {
-  margin: 0;
-  font-size: 0.6875rem;
-  line-height: 16px;
-  color: var(--grey);
-}
-
-.care-log-logged-by {
-  margin: 16px 0 0;
-  font-size: var(--text-xs);
-  color: var(--grey);
-}
-
-.care-log-more ul {
-  list-style: none;
-  margin: 10px 0 0;
-  padding: 0;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  background: var(--card);
-}
-
-.care-log-more li + li {
-  border-top: 1px solid var(--line-soft);
-}
-
-.care-log-more a,
-.care-log-more-static {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 12px 16px;
-  color: var(--blue);
-  text-decoration: none;
-}
-
-.care-log-more a span,
-.care-log-more-static span {
-  font-weight: var(--weight-semibold);
-}
-
-.care-log-more a span::after {
-  content: " \203A";
-  color: var(--accent-strong);
-}
-
-.care-log-more small {
-  font-size: var(--text-xs);
-  color: var(--grey);
-}
-
-.care-log-more a:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 2px var(--focus);
-  border-radius: var(--radius);
 }
 
 .care-log-modal-section {
@@ -4405,6 +4143,221 @@ body.modal-open {
 /* Visible at once on open (the fade stays) so focus can move into the dialog synchronously. */
 #log-modal.is-open {
   transition: opacity 0.2s ease;
+}
+
+/* ---------- Care Log page (care-log.html, SI-63): the current session's entries ---------- */
+
+.session-log-main {
+  max-width: var(--detail-width);
+  margin: 0 auto;
+}
+
+.session-log-view,
+.session-entry-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 32px;
+}
+
+.session-log-view[hidden],
+.session-entry-view[hidden],
+.session-log-list[hidden],
+.session-log-add[hidden] {
+  display: none;
+}
+
+.session-log-header h1,
+.session-entry-top h1 {
+  margin: 0;
+  color: var(--blue);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+}
+
+.session-log-sub,
+.session-entry-when {
+  margin: 4px 0 0;
+  color: var(--grey);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.session-entry-when {
+  margin: -8px 0 0 42px;
+}
+
+.session-log-status {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--notice-soft);
+  color: var(--notice);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
+.session-log-add {
+  gap: 6px;
+}
+
+.session-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.session-log-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow-surface);
+}
+
+.session-log-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.session-log-badge {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
+.session-log-badge--task {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.session-log-subject {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--blue);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  overflow-wrap: anywhere;
+}
+
+.session-log-kind {
+  color: var(--grey);
+  font-weight: var(--weight-medium);
+}
+
+.session-log-time {
+  flex: none;
+  color: var(--grey);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.session-log-fact {
+  align-self: flex-start;
+  margin: 0;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--neutral-soft);
+  color: var(--blue);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.session-log-text {
+  margin: 0;
+  color: var(--blue);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.session-log-author {
+  margin: 0;
+  color: var(--grey);
+  font-size: var(--text-xs);
+}
+
+.session-log-empty {
+  padding: 40px 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.session-log-empty[hidden] {
+  display: none;
+}
+
+.session-log-empty p {
+  margin: 0;
+}
+
+.session-log-empty .session-log-empty-title {
+  color: var(--blue);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+}
+
+.session-log-empty .session-log-empty-copy {
+  max-width: 34ch;
+  margin: 6px auto 0;
+  color: var(--grey);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
+.session-entry-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.session-entry-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.session-entry-form .tag-picker[hidden],
+.session-entry-child[hidden] {
+  display: none;
+}
+
+.session-entry-child {
+  margin: 0;
+  color: var(--blue);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.session-entry-note {
+  min-height: 160px;
+  font-size: var(--text-base);
+}
+
+.session-entry-count {
+  margin: 4px 0 0;
+  color: var(--grey);
+  font-size: var(--text-xs);
+  text-align: right;
 }
 
 /* Signed-in sitters have seven nav items (Home, Schedule, Log, Contacts, Messages, Profile,

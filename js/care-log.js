@@ -1,7 +1,8 @@
 // CareNestCareLog — care details logged under completed tasks (SI-28 "Logging Care Details").
 //
-// Shared by the sitter home (index.html: the Care log section, the log modal, the activity modal)
-// and the parent home (parent.html: a read-only Care log). Data comes from js/shift-data.js:
+// Shared by the sitter home (index.html: the log modal, the activity modal), the parent home
+// (parent.html: a read-only Care log), and the Care Log page (care-log.html, js/care-log-page.js:
+// the current session's entries about each child, SI-63). Data comes from js/shift-data.js:
 // state.checks (completed tasks) and state.logs (append-only entries, oldest first), and new
 // entries go through backend.addCareLog(), which checks the same rules again (the database has
 // the final say through CHECK constraints and the stamp_care_log trigger).
@@ -17,8 +18,13 @@
     empty: "No information provided",
     bottleRange: "Enter between 0.5 and 16 oz.",
     noteTooLong: `Keep the note to ${MAX_NOTE} characters or fewer.`,
+    entryChild: "Choose which child this entry is about.",
+    entryNoChildren: "This family space has no children yet, so there is no one to log about.",
+    entryNote: "Write what happened before saving.",
   };
   const CATEGORY_LABELS = { meal: "Meal", bottle: "Bottle", care: "Care" };
+  // A Care Log page entry (care_logs.category 'note'): about a child, not tied to a task.
+  const ENTRY_CATEGORY = "note";
   const AMOUNT_LABELS = { all: "Ate all", most: "Ate most", some: "Ate some", none: "Ate none" };
   const AMOUNTS = ["all", "most", "some", "none"];
 
@@ -91,7 +97,8 @@
   // and is placed by its first log.
   function timeline(state, schedule) {
     const checks = (state && state.checks) || {};
-    const logs = ((state && state.logs) || []).slice().sort((a, b) => a.createdAt - b.createdAt);
+    // Care Log page entries (no task) are listed on that page, not under a task.
+    const logs = ((state && state.logs) || []).filter((l) => l.taskId).sort((a, b) => a.createdAt - b.createdAt);
     const rows = Object.keys(checks).map((taskId) => {
       const check = checks[taskId];
       return {
@@ -115,7 +122,107 @@
   }
 
   function logsFor(state, taskId) {
-    return ((state && state.logs) || []).filter((l) => l.taskId === taskId).sort((a, b) => a.createdAt - b.createdAt);
+    return ((state && state.logs) || []).filter((l) => l.taskId && l.taskId === taskId).sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  // ---------------------------------------------------------------- Care Log page (SI-63)
+
+  // A new entry: { childId, note } checked against the family's children (ids). With one child
+  // the picker is skipped and that child is used. Mirrors stamp_care_log() and the CHECKs
+  // (child_required, child_not_found, care_logs_not_empty, the 1000-character note).
+  function validateEntry(input, childIds) {
+    const ids = Array.isArray(childIds) ? childIds : [];
+    if (!ids.length) return { error: MESSAGES.entryNoChildren };
+    const childId = ids.length === 1 ? ids[0] : input && input.childId;
+    if (!childId || !ids.includes(childId)) return { error: MESSAGES.entryChild, field: "child" };
+    const note = String((input && input.note) || "").trim();
+    if (!note) return { error: MESSAGES.entryNote, field: "note" };
+    if (note.length > MAX_NOTE) return { error: MESSAGES.noteTooLong, field: "note" };
+    return { entry: { childId, note, category: ENTRY_CATEGORY } };
+  }
+
+  function firstName(name) {
+    return String(name || "").trim().split(/\s+/)[0] || "";
+  }
+
+  // Every entry of the session, oldest first: Care Log entries (about a child) and the details
+  // logged under completed tasks. children: the family's children ({ id, name }). A child still in
+  // that list shows their current name, or "Child" while the name is blank (create_household
+  // makes the first child with name ''). A child no longer in it was removed: the entry keeps
+  // the name it was written under (care_logs.child_name), else reads "A removed child".
+  function sessionEntries(state, children, schedule) {
+    const kids = children || [];
+    const checks = (state && state.checks) || {};
+    return ((state && state.logs) || [])
+      .slice()
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((log) => {
+        const child = log.childId ? kids.find((c) => c.id === log.childId) : null;
+        const childName = String((child ? child.name : log.childName) || "").trim();
+        const childLabel = childName ? firstName(childName) : child ? "Child" : "A removed child";
+        let taskTitle = null;
+        if (log.taskId) {
+          const check = checks[log.taskId];
+          const task = (schedule || []).find((t) => t.id === log.taskId);
+          taskTitle = (check && check.snapshot && check.snapshot.title) || (task && task.title) || "Task";
+        }
+        const facts = [];
+        if (log.category === "meal" && log.mealAmount) facts.push(AMOUNT_LABELS[log.mealAmount] || "");
+        if (log.category === "bottle" && log.bottleOz != null) facts.push(formatOz(log.bottleOz));
+        return {
+          id: log.id,
+          kind: log.taskId ? "task" : "entry",
+          childName,
+          childFirst: firstName(childName),
+          childLabel,
+          childRemoved: !child,
+          taskTitle,
+          category: log.category,
+          facts: facts.filter(Boolean),
+          note: log.note || "",
+          authorName: log.authorName || "",
+          createdAt: log.createdAt,
+        };
+      });
+  }
+
+  function initialsOf(name) {
+    const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "?";
+    const letters = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : parts[0].slice(0, 2);
+    return letters.toUpperCase();
+  }
+
+  // The list on the Care Log page. Each entry shows its child (or the task it is about), the
+  // content, and the time.
+  function sessionLogHtml(entries) {
+    return entries
+      .map((e) => {
+        const iso = new Date(e.createdAt).toISOString();
+        const badge =
+          e.kind === "task"
+            ? `<span class="session-log-badge session-log-badge--task" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M9.6 16.2 5.4 12l-1.4 1.4 5.6 5.6 12-12-1.4-1.4z" fill="currentColor"/></svg></span>`
+            : `<span class="session-log-badge" aria-hidden="true">${escapeHtml(initialsOf(e.childName))}</span>`;
+        const subject =
+          e.kind === "task"
+            ? `${escapeHtml(e.taskTitle)}<span class="session-log-kind"> · ${escapeHtml(CATEGORY_LABELS[e.category] || "Care")}</span>`
+            : escapeHtml(e.childLabel);
+        const about = e.childName || (e.childRemoved ? "a removed child" : "your child");
+        const label = e.kind === "task" ? `Task details: ${e.taskTitle}` : `Entry about ${about}`;
+        return `<li class="session-log-entry" data-entry-id="${escapeHtml(e.id)}">
+          <article class="session-log-card" aria-label="${escapeHtml(label)}">
+            <div class="session-log-entry-head">
+              ${badge}
+              <p class="session-log-subject">${subject}</p>
+              <time class="session-log-time" datetime="${iso}">${escapeHtml(shortTime(e.createdAt))}</time>
+            </div>
+            ${e.facts.length ? `<p class="session-log-fact">${escapeHtml(e.facts.join(" · "))}</p>` : ""}
+            ${e.note ? `<p class="session-log-text">${escapeHtml(e.note)}</p>` : ""}
+            ${e.authorName ? `<p class="session-log-author">By ${escapeHtml(e.authorName)}</p>` : ""}
+          </article>
+        </li>`;
+      })
+      .join("");
   }
 
   // ---------------------------------------------------------------- rendering
@@ -234,7 +341,7 @@
 
   // The whole Care log list (Figma 303:634): a rail of category dots, one card per completed
   // task with its time on the right and its details below. opts.canAdd shows the add buttons
-  // (sitter, shift in the window); opts.category narrows the list (care-log.html filter chips).
+  // (sitter, shift in the window); opts.category narrows the list to one category.
   function timelineHtml(state, opts) {
     const options = opts || {};
     const rows = filteredRows(state, options);
@@ -269,135 +376,6 @@
         </li>`;
       })
       .join("")}</ol>`;
-  }
-
-  // ---------------------------------------------------------------- care-log.html page
-
-  // The Care Log tab (Figma 303:634 / 303:886): the current shift's timeline, read-only. Rendered
-  // from the same shift state parent.html uses; nothing on this page writes. options:
-  // { shift, data, isParent, logHref, galleryHref }
-  function mountPage(el, options) {
-    const shift = options.shift;
-    const data = options.data || {};
-    const kids = (typeof window !== "undefined" && window.CareNestChildren) || null;
-    let category = "all";
-
-    el.innerHTML = `<header class="schedule-topnav"><h1>Care Log</h1></header>
-      <div class="care-log-page">
-        <section class="care-log-child-card" aria-label="Current shift" data-cl-child></section>
-        <fieldset class="tag-picker care-log-filter">
-          <legend class="visually-hidden">Show entries</legend>
-          <div class="tag-options" data-cl-chips></div>
-        </fieldset>
-        <section class="care-log-timeline" aria-labelledby="care-log-timeline-heading">
-          <div class="care-log-heading-row">
-            <h2 id="care-log-timeline-heading">Shift Timeline</h2>
-            <p class="care-log-count" data-cl-count role="status" aria-live="polite"></p>
-          </div>
-          <div data-cl-list></div>
-          <p class="care-log-logged-by" data-cl-by hidden></p>
-        </section>
-        <nav class="care-log-more" aria-labelledby="care-log-more-heading">
-          <h2 id="care-log-more-heading">More</h2>
-          <ul>
-            <li><a href="${escapeHtml(options.galleryHref)}"><span>Photo updates</span><small>Photos and moments shared with the care team</small></a></li>
-            <li class="care-log-more-static"><span>Past sessions</span><small>Review prior care sessions and their shared updates. Coming soon.</small></li>
-          </ul>
-        </nav>
-      </div>`;
-
-    const q = (sel) => el.querySelector(sel);
-
-    function childCardHtml(st) {
-      const children = (data.children || []).length ? data.children : [{ name: (data.child && data.child.name) || "Child" }];
-      const windowText = shiftWindowText(data.appointments) || (data.child && data.child.shiftTime) || "";
-      const live = Boolean(st.active);
-      const rows = children
-        .map((child, i) => {
-          const name = kids ? kids.displayName(child) : child.name || "Child";
-          const parts = kids ? kids.displayParts(child) : [];
-          return `<li class="care-log-kid">
-            <span class="care-log-avatar" aria-hidden="true">${escapeHtml(kids ? kids.initials(name) : name.charAt(0))}</span>
-            <div class="care-log-kid-text">
-              <p class="care-log-kid-name">${escapeHtml(name)}${
-                live && i === 0 ? `<span class="care-log-live" title="Shift in progress"><span class="visually-hidden">Shift in progress</span></span>` : ""
-              }</p>
-              ${parts.length ? `<p class="care-log-kid-sub">${escapeHtml(parts.join(" • "))}</p>` : ""}
-            </div>
-          </li>`;
-        })
-        .join("");
-      const status = !st.visit
-        ? "No shift started yet"
-        : st.ended
-          ? "This shift has ended"
-          : "";
-      let action = "";
-      if (!options.isParent) {
-        if (st.canLog && st.visit) {
-          action = `<a class="care-log-activity-btn" href="${escapeHtml(options.logHref)}">${iconSvg("done", 22)}<span>Log Activity</span></a>
-            <p class="care-log-action-hint">Check off a task, then add its details.</p>`;
-        } else {
-          const reason = !st.visit
-            ? "Start today’s shift on Home to log activity."
-            : "This shift is too old to add care details.";
-          action = `<button type="button" class="care-log-activity-btn" disabled aria-describedby="care-log-action-reason">${iconSvg("done", 22)}<span>Log Activity</span></button>
-            <p class="care-log-action-hint" id="care-log-action-reason">${escapeHtml(reason)}</p>`;
-        }
-      }
-      return `<ul class="care-log-kids">${rows}</ul>
-        ${windowText ? `<p class="care-log-shift">${iconSvg("clock", 14)}<span>Shift: ${escapeHtml(windowText)}</span></p>` : ""}
-        ${status ? `<p class="care-log-shift-status">${escapeHtml(status)}</p>` : ""}
-        ${action ? `<div class="care-log-actions">${action}</div>` : ""}`;
-    }
-
-    function chipsHtml(st, total) {
-      const age = data.child && data.child.age;
-      const present = new Set((st.logs || []).map((l) => l.category));
-      const offered = new Set(categoriesFor(age).concat([...present]));
-      const cats = ["meal", "bottle", "care"].filter((c) => offered.has(c));
-      if (category !== "all" && !cats.includes(category)) category = "all";
-      const chip = (value, label) =>
-        `<label class="tag-option"><input type="radio" name="care-log-filter" value="${value}"${value === category ? " checked" : ""} /><span>${
-          value === "all" ? "" : iconSvg(value, 14)
-        }${escapeHtml(label)}</span></label>`;
-      return chip("all", `All (${total})`) + cats.map((c) => chip(c, CATEGORY_LABELS[c])).join("");
-    }
-
-    function render() {
-      const st = shift.state;
-      if (st.loadError) {
-        q("[data-cl-list]").innerHTML = `<p class="locked-note">We couldn’t load this shift’s care log. Reload the page to try again.</p>`;
-        return;
-      }
-      const all = filteredRows(st, { schedule: data.schedule });
-      const focused = document.activeElement && document.activeElement.name === "care-log-filter" ? document.activeElement.value : null;
-      q("[data-cl-child]").innerHTML = childCardHtml(st);
-      q("[data-cl-chips]").innerHTML = chipsHtml(st, all.length);
-      if (focused) {
-        const again = q(`input[name="care-log-filter"][value="${focused}"]`);
-        if (again) again.focus();
-      }
-      const shown = filteredRows(st, { schedule: data.schedule, category });
-      q("[data-cl-count]").textContent = `${shown.length} ${shown.length === 1 ? "entry" : "entries"} logged`;
-      q("[data-cl-list]").innerHTML = timelineHtml(st, { schedule: data.schedule, canAdd: false, category });
-      const authors = [];
-      (st.logs || []).forEach((l) => {
-        const label = `${l.authorName || ""} (${l.authorRole === "parent" ? "Parent" : "Sitter"})`;
-        if (l.authorName && !authors.includes(label)) authors.push(label);
-      });
-      const by = q("[data-cl-by]");
-      by.textContent = authors.length ? `Logged by: ${authors.join(", ")}` : "";
-      by.hidden = !authors.length;
-    }
-
-    q("[data-cl-chips]").addEventListener("change", (e) => {
-      if (e.target.name !== "care-log-filter") return;
-      category = e.target.value;
-      render();
-    });
-    render();
-    if (shift.subscribe) shift.subscribe(render);
   }
 
   // ---------------------------------------------------------------- log modal (sitter page)
@@ -621,6 +599,11 @@
     MESSAGES,
     CATEGORY_LABELS,
     AMOUNT_LABELS,
+    ENTRY_CATEGORY,
+    validateEntry,
+    sessionEntries,
+    sessionLogHtml,
+    initialsOf,
     parseAgeMonths,
     categoriesFor,
     validate,
@@ -630,7 +613,6 @@
     addButtonHtml,
     timelineHtml,
     shiftWindowText,
-    mountPage,
     initModal,
     openModal,
     closeModal,
