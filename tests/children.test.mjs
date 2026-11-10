@@ -128,3 +128,16 @@ test("flatten: care notes and a family with no children", () => {
   assert.deepEqual(none.allergies.items, []);
   assert.equal(kids.findChild(none, "a"), null);
 });
+
+test("nextSit: an overnight sit (end before start) counts until it ends the next day (SI-80)", () => {
+  const night = sit("2026-11-06", "7:00 PM", "1:00 AM");
+  const saturday = sit("2026-11-07", "3:00 PM", "5:00 PM");
+  // 21:00 on Friday: the sit is under way although its end time reads earlier.
+  assert.equal(kids.nextSit([night], new Date(2026, 10, 6, 21, 0)).text, "Today 7:00 PM");
+  // 00:30 on Saturday: Friday's sit is still under way.
+  assert.deepEqual(kids.nextSit([night, saturday], new Date(2026, 10, 7, 0, 30)), { text: "Now until 1:00 AM", soon: true });
+  // 01:00 on Saturday: it is over, so the next one shows.
+  assert.equal(kids.nextSit([night, saturday], new Date(2026, 10, 7, 1, 0)).text, "Today 3:00 PM");
+  // Yesterday's same-day sit never carries over.
+  assert.equal(kids.nextSit([sit("2026-11-06", "3:00 PM", "7:00 PM")], new Date(2026, 10, 7, 0, 30)), null);
+});
