@@ -5243,20 +5243,6 @@ body[data-page="children"]:has(.children-header--detail) {
   overflow-wrap: anywhere;
 }
 
-.child-know-all {
-  color: var(--blue);
-  font-family: var(--font);
-  font-size: 14px;
-  line-height: 21px;
-  font-weight: var(--weight-medium);
-  text-decoration: none;
-}
-
-.child-know-all:hover,
-.child-know-all:focus-visible {
-  text-decoration: underline;
-}
-
 .child-know-tiles {
   display: grid;
   grid-template-columns: 1fr 1fr;

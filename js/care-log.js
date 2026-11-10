@@ -275,7 +275,7 @@
 
   // The Care Log tab (Figma 303:634 / 303:886): the current shift's timeline, read-only. Rendered
   // from the same shift state parent.html uses; nothing on this page writes. options:
-  // { shift, data, isParent, logHref, messagesHref, galleryHref }
+  // { shift, data, isParent, logHref, galleryHref }
   function mountPage(el, options) {
     const shift = options.shift;
     const data = options.data || {};
@@ -300,9 +300,6 @@
         <nav class="care-log-more" aria-labelledby="care-log-more-heading">
           <h2 id="care-log-more-heading">More</h2>
           <ul>
-            <li><a href="${escapeHtml(options.messagesHref)}"><span>Messages</span><small>${
-              options.isParent ? "Your conversation with your sitter" : "Your conversation with the family"
-            }</small></a></li>
             <li><a href="${escapeHtml(options.galleryHref)}"><span>Photo updates</span><small>Photos and moments shared with the care team</small></a></li>
             <li class="care-log-more-static"><span>Past sessions</span><small>Review prior care sessions and their shared updates. Coming soon.</small></li>
           </ul>

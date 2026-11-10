@@ -75,10 +75,6 @@
     return `${url.pathname.split("/").pop()}${url.search}`;
   }
 
-  function infoAllHref() {
-    return new URLSearchParams(window.location.search).get("as") === "parent" ? "info.html?as=parent" : "info.html";
-  }
-
   function infoHref(category) {
     const asParent = new URLSearchParams(window.location.search).get("as") === "parent";
     return `info.html?category=${category}${asParent ? "&as=parent" : ""}`;
@@ -365,7 +361,6 @@
       <section class="child-card-section child-card-section--compact" aria-labelledby="child-know">
         <div class="child-section-head">
           <h2 class="child-section-title" id="child-know">Good to Know</h2>
-          <a class="child-know-all" href="${esc(infoAllHref())}">View all</a>
         </div>
         <div class="child-know-tiles">
           <a class="know-tile" href="${esc(infoHref("where"))}"><img src="assets/orders.svg" alt="" width="24" height="24" /><span>Where things are</span></a>

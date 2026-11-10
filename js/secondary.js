@@ -403,7 +403,6 @@
         data: window.CareNestData,
         isParent,
         logHref: "index.html#checklist",
-        messagesHref: isParent ? "messages.html?as=parent" : "messages.html",
         galleryHref: isParent ? "gallery.html?as=parent" : "gallery.html",
       });
     }, fail);
