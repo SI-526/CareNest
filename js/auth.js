@@ -433,7 +433,7 @@
   // ---------- account panel (Profile page) ----------
 
   // Renders "Your account" into `container` on the Profile page: who is signed in, People and
-  // invites (parents), the family switcher, Sign out, and Delete my account and data.
+  // invites (parents), the family switcher, Log out, and Delete my account and data.
   function mountAccountPanel(container, ctx) {
     if (!container || !ctx || ctx.demo) return;
     const roleLabel = ctx.role === "parent" ? "Parent" : "Sitter";
@@ -454,7 +454,7 @@
         <p class="account-meta">${escapeHtml(roleLabel)}${familyName ? ` in ${escapeHtml(familyName)}` : ""}</p>
         ${ctx.role === "parent" ? '<a class="photo-source-btn" href="people.html">People and invites</a>' : ""}
         ${switcher}
-        <button type="button" class="photo-source-btn" data-sign-out>Sign out</button>
+        <button type="button" class="photo-source-btn" data-sign-out>Log out</button>
         <button type="button" class="danger-btn" data-delete-account>Delete my account and data</button>
         <p class="form-error" role="alert" hidden data-account-error></p>
         <p class="account-links"><a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a></p>

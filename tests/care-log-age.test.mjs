@@ -105,7 +105,7 @@ test("timeline orders completed tasks by check time and nests logs oldest first"
 });
 
 test("timelineHtml escapes user text and shows the neutral states", () => {
-  assert.match(careLog.timelineHtml({ checks: {}, logs: [] }), /No tasks completed yet\./);
+  assert.match(careLog.timelineHtml({ checks: {}, logs: [] }), /No Entries Logged Yet/);
   const html = careLog.timelineHtml({
     checks: { a: { checkedAt: 100, checkedByName: "<b>Ana</b>", snapshot: { title: "<img src=x onerror=1>" } } },
     logs: [{ id: "1", taskId: "a", createdAt: 120, category: "care", note: "<script>x</script>", authorName: "Ana" }],

@@ -49,6 +49,22 @@ test("initials and names", () => {
   assert.deepEqual(kids.detailParts({ age: "Age 3", stage: "Preschooler" }), ["Age 3", "Preschooler"]);
 });
 
+test("ageText, displayParts, familyBase: Children tab display only (Figma hi-fi)", () => {
+  assert.equal(kids.ageText("Age 3"), "3 years old");
+  assert.equal(kids.ageText("Age 1"), "1 year old");
+  assert.equal(kids.ageText("11 months"), "11 months old");
+  assert.equal(kids.ageText("18 mo"), "18 months old");
+  assert.equal(kids.ageText("2 years 6 months"), "2 years old");
+  assert.equal(kids.ageText("Toddler"), "Toddler");
+  assert.equal(kids.ageText(""), "");
+  assert.deepEqual(kids.displayParts({ age: "Age 6", stage: "1st Grader" }), ["6 years old", "1st Grader"]);
+  assert.deepEqual(kids.displayParts({ age: "", stage: "Infant" }), ["Infant"]);
+  assert.equal(kids.familyBase("Thomas family"), "Thomas");
+  assert.equal(kids.familyBase("The Kim Family"), "Kim");
+  assert.equal(kids.familyBase("McDonald"), "McDonald");
+  assert.equal(kids.familyBase("Family"), "Family");
+});
+
 test("sortChildren: position, then oldest, then id, like the database's first child", () => {
   const sorted = kids.sortChildren([
     { id: "b", position: 0, createdAt: "2026-01-02" },

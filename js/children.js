@@ -43,6 +43,53 @@
     return [child && child.age, child && child.stage].map((part) => String(part || "").trim()).filter(Boolean);
   }
 
+  // The age as the Children tab shows it (Figma 210:155): "3 years old", "1 year old", "11 months
+  // old". Display only; the stored label is unchanged. Uses the care log's parser when that page
+  // loaded it, else the same rule locally ("Age 3" is years). Unreadable labels come back as typed.
+  const AGE_PART = /(\d+(?:\.\d+)?)\s*(years?|yrs?|y\.?o\.?|y|months?|mos?|mths?|m|weeks?|wks?|w|days?|d)?(?![a-z])/g;
+  const UNIT_MONTHS = { y: 12, m: 1, w: 12 / 52, d: 12 / 365 };
+  function localAgeMonths(label) {
+    const text = String(label == null ? "" : label).trim().toLowerCase();
+    if (!text) return null;
+    let total = 0;
+    let found = false;
+    let match;
+    AGE_PART.lastIndex = 0;
+    while ((match = AGE_PART.exec(text))) {
+      total += Number(match[1]) * UNIT_MONTHS[match[2] ? match[2].charAt(0) : "y"];
+      found = true;
+    }
+    return found ? total : null;
+  }
+
+  function ageText(label) {
+    const raw = String(label || "").trim();
+    if (!raw) return "";
+    const careLog = root.CareNestCareLog;
+    const months = careLog && careLog.parseAgeMonths ? careLog.parseAgeMonths(raw) : localAgeMonths(raw);
+    if (months === null || !Number.isFinite(months)) return raw;
+    if (months >= 24 || months === 12) {
+      const years = Math.floor(months / 12);
+      return `${years} ${years === 1 ? "year" : "years"} old`;
+    }
+    const whole = Math.floor(months);
+    if (whole < 1) return raw;
+    return `${whole} ${whole === 1 ? "month" : "months"} old`;
+  }
+
+  // detailParts with the age written out, for the Children tab.
+  function displayParts(child) {
+    return [ageText(child && child.age), String((child && child.stage) || "").trim()].filter(Boolean);
+  }
+
+  // "Thomas family" / "The Thomas Family" / "Thomas" -> "Thomas", so the page can say "The Thomas
+  // Family" or "Thomas Family" whichever way the name was stored. Display only.
+  function familyBase(name) {
+    const text = String(name || "").trim();
+    const base = text.replace(/^the\s+/i, "").replace(/\s+family$/i, "").trim();
+    return base || text;
+  }
+
   // Names of this child's food items marked Severe, for the red tag on the list.
   function severeAllergies(child) {
     return ((child && child.food) || []).filter((item) => item.severity === "Severe").map((item) => item.name);
@@ -199,6 +246,9 @@
     displayName,
     firstName,
     detailParts,
+    ageText,
+    displayParts,
+    familyBase,
     severeAllergies,
     hasAnyInfo,
     nextSit,
