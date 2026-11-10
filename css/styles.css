@@ -862,6 +862,13 @@ body[data-page="schedule"] .app > #checklist { display: none; }
 .schedule-delete:hover { background: var(--danger-soft); }
 .schedule-delete:disabled { opacity: 0.6; cursor: default; }
 @media (min-width: 768px) { .schedule-topnav h1 { text-align: left; } }
+/* Care Log reuses the top bar: align it with the page's single column on desktop, and run it
+   edge to edge under the banner on phones (the page keeps the default 24px gutters). */
+body[data-page="carelog"] .schedule-topnav { width: 100%; max-width: var(--detail-width); margin-inline: auto; }
+@media (max-width: 767px) {
+  body[data-page="carelog"] .app { padding-top: 0; }
+  body[data-page="carelog"] .schedule-topnav { width: auto; max-width: none; margin-inline: -24px; }
+}
 @media (max-width: 767px) {
   body[data-page="schedule"] .app { padding-top: 0; padding-right: 16px; padding-left: 16px; }
   .schedule-page { margin-top: 0; max-width: 640px; }
