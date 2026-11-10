@@ -17,14 +17,15 @@
 //   events    shift history [{ kind: ended|reopened|unchecked, at, actorName, taskTitle }]
 //   checks    taskId -> { checkedAt, checkedByName, afterReopen, snapshot, proof }
 //   moment    this shift's moment message, or null
-//   thread    the household's messages, oldest first (messages and parent pages)
+//   thread    the household's messages, oldest first (parent page: photo replies and banners)
 //   feed      this shift's proofs and moments, newest first (parent page)
 //   reads     Set of message ids this person has seen (message_reads)
 //   saves     message id -> saved time (this parent's photo_saves)
 //   album     this parent's saved photo messages, newest save first
 //   flags     message id -> concept flag text (CONCEPT ONLY: typed by a parent, never analysis)
-//   logs      this shift's care logs, oldest first [{ id, taskId, category, note, mealAmount,
-//             bottleOz, authorName, authorRole, createdAt }] (append-only; SI-28)
+//   logs      this shift's care logs, oldest first [{ id, taskId, childId, childName, category,
+//             note, mealAmount, bottleOz, authorName, authorRole, createdAt }] (append-only;
+//             SI-28). A Care Log page entry (SI-63) has no taskId, category 'note', and a child.
 //   canLog    care logs can be added (a shift dated in the window, open or ended)
 //   gallery   the family's photos across shifts, oldest first, removed ones skipped (gallery page):
 //             messages plus source (task|message|moment), title, shiftDate ('YYYY-MM-DD')
@@ -34,7 +35,7 @@
   const family = window.CareNestFamily;
   const careLog = window.CareNestCareLog;
   const page = document.body.dataset.page;
-  if (!store || !["home", "messages", "parent", "gallery", "schedule"].includes(page)) return;
+  if (!store || !["home", "carelog", "parent", "gallery", "schedule"].includes(page)) return;
 
   const MOMENT_WINDOW_MS = 2 * 60 * 1000;
   const THREAD_LIMIT = 300;
@@ -73,6 +74,12 @@
     care_logs_not_empty: "No information provided",
     care_logs_bottle_oz_check: "Enter between 0.5 and 16 oz.",
     care_logs_note_check: "Keep the note to 1000 characters or fewer.",
+    // Care Log page entries (SI-63, 20261109000000_carenest_care_log_entries.sql).
+    child_not_found: "That child is no longer in this family space. Reload the page and pick again.",
+    // The child was deleted while the entry was being saved: the composite foreign key fails
+    // (23503) before stamp_care_log's own child_not_found check can see it.
+    care_logs_child_fkey: "That child is no longer in this family space. Reload the page and pick again.",
+    child_required: "Choose which child this entry is about.",
   };
 
   function friendly(message) {
@@ -182,6 +189,13 @@
     return Object.assign({ taskId: input.taskId }, result.entry);
   }
 
+  function checkEntry(input, childIds) {
+    if (!careLog) throw friendly("Something went wrong. Please reload the page.");
+    const result = careLog.validateEntry(input, childIds);
+    if (result.error) throw friendly(result.error);
+    return result.entry;
+  }
+
   // A photo for the gallery: task update (proof), photo message (chat with a photo), or moment.
   function galleryItem(m, title, shiftDate) {
     const source = m.kind === "task_proof" ? "task" : m.kind === "moment" ? "moment" : "message";
@@ -223,7 +237,7 @@
     const blobCache = new Map(); // Storage path -> Promise<Blob>
     const blobReady = new Map(); // Storage path -> Blob, once downloaded (for a synchronous share)
     const wantParent = page === "parent" && ctx.role === "parent";
-    const wantThread = page === "messages" || wantParent;
+    const wantThread = wantParent;
     const wantGallery = page === "gallery";
     let state = emptyState();
     let loadSeq = 0;
@@ -331,10 +345,10 @@
               .select("message_id, text, message:messages!inner(household_id)")
               .eq("message.household_id", householdId)
           : none,
-        visit && (page === "home" || page === "parent")
+        visit && (page === "home" || page === "parent" || page === "carelog")
           ? client
               .from("care_logs")
-              .select("id, task_id, category, note, meal_amount, bottle_oz, author_id, author_role, created_at")
+              .select("id, task_id, child_id, child_name, category, note, meal_amount, bottle_oz, author_id, author_role, created_at")
               .eq("visit_id", visit.id)
               .order("created_at", { ascending: true })
           : none,
@@ -447,6 +461,8 @@
         logs: (logsRes.data || []).map((r) => ({
           id: r.id,
           taskId: r.task_id,
+          childId: r.child_id || null,
+          childName: r.child_name || "",
           category: r.category,
           note: r.note || "",
           mealAmount: r.meal_amount || null,
@@ -727,6 +743,21 @@
         if (error) throw error;
         await load();
       },
+      // A Care Log page entry (SI-63): about one child of the family, not tied to a task. Same
+      // window as a task log (open or ended, while the shift's date is in the window).
+      async addSessionEntry(input, childIds) {
+        if (!state.visit) throw friendly("Start your shift on Home before adding entries.");
+        if (state.tooOld) throw friendly(ERRORS.visit_too_old);
+        const entry = checkEntry(input, childIds);
+        const { error } = await client.from("care_logs").insert({
+          visit_id: state.visit.id,
+          child_id: entry.childId,
+          category: entry.category,
+          note: entry.note,
+        });
+        if (error) throw error;
+        await load();
+      },
       async uncheckTask(taskId) {
         requireActive();
         const { data: rows, error } = await client
@@ -738,17 +769,6 @@
         if (error) throw error;
         if (!rows || !rows.length) throw friendly("This task couldn't be unchecked. Reload the page.");
         await load();
-      },
-      async sendChat(body, replyTo) {
-        const text = String(body || "").trim();
-        if (!text) return null;
-        // No sender, role, or time: the database stamps them.
-        const row = { household_id: householdId, kind: "chat", body: text };
-        if (replyTo) row.reply_to = replyTo;
-        const { error } = await client.from("messages").insert(row);
-        if (error) throw error;
-        await load();
-        return true;
       },
       async postMoment({ dataUrl, body }) {
         requireActive();
@@ -1026,7 +1046,9 @@
           .filter((l) => l.shiftId === shift.id)
           .map((l) => ({
             id: l.id,
-            taskId: l.taskId,
+            taskId: l.taskId || null,
+            childId: l.childId || null,
+            childName: l.childName || "",
             category: l.category,
             note: l.note || "",
             mealAmount: l.mealAmount || null,
@@ -1095,12 +1117,16 @@
         const entry = checkCareLog(input);
         store.addCareLog(Object.assign({}, entry, { author: role === "parent" ? "parent" : "sitter" }));
       },
+      async addSessionEntry(input, childIds) {
+        const entry = checkEntry(input, childIds);
+        const child = (data.children || []).find((c) => c.id === entry.childId);
+        store.addSessionEntry(
+          Object.assign({}, entry, { childName: child ? child.name : "", author: role === "parent" ? "parent" : "sitter" })
+        );
+      },
       async uncheckTask(taskId) {
         const task = data.schedule.find((s) => s.id === taskId);
         store.uncheckTask(taskId, task ? task.title : null);
-      },
-      async sendChat(body, replyTo) {
-        return store.sendChat(body, role === "parent" ? "parent" : "sitter", replyTo || null);
       },
       async postMoment({ dataUrl, body }) {
         const message = store.postMoment({ photoDataUrl: dataUrl, body });

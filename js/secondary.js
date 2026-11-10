@@ -1,4 +1,4 @@
-// Schedule, care log, and profile/settings pages (children.html is js/children-page.js). Parents see the same
+// Schedule and profile/settings pages (children.html is js/children-page.js, care-log.html is js/care-log-page.js). Parents see the same
 // information as sitters and can edit family-owned information in place.
 (function () {
   const data = window.CareNestData;
@@ -21,8 +21,8 @@
 
   ready.then(async (ctx) => {
     const isParent = ctx && ctx.role === "parent";
-    if (isParent) ui.renderParentNav(page === "carelog" ? "care-log" : page);
-    else ui.renderSitterNav(page === "carelog" ? "care-log" : page);
+    if (isParent) ui.renderParentNav(page);
+    else ui.renderSitterNav(page);
     if (page === "profile" && !isParent) sitterProfileState = await loadSitterProfile(ctx);
     if (page === "schedule" && isParent) sharedSitter = await loadSharedSitter(ctx);
     render(ctx);
@@ -294,11 +294,6 @@
       schedule: {
         eyebrow: "", title: "Schedule", intro: "",
         body: schedulePage(ctx, Boolean(ctx && ctx.role === "parent")),
-      },
-      carelog: {
-        eyebrow: "CURRENT SESSION", title: "Care log", intro: "Notes, photos, and handoff details from the care session.",
-        // Both roles land here, so each link goes to that role's side of the page.
-        body: `<section class="secondary-grid"><article class="panel secondary-panel"><h2 class="section-title">Current session log</h2><p class="supporting-copy">Completed activities and care updates appear here during the session.</p><a class="secondary-link" href="${isParent ? "parent.html#today" : "index.html#log"}">Open today’s activity</a></article><article class="panel secondary-panel"><h2 class="section-title">Messages</h2><p class="supporting-copy">${isParent ? "Your conversation with your sitter, including photo messages." : "Your conversation with the family, including photo messages."}</p><a class="secondary-link" href="${isParent ? "messages.html?as=parent" : "messages.html"}">Open messages</a></article><article class="panel secondary-panel"><h2 class="section-title">Photo updates</h2><p class="supporting-copy">Photos and moments shared with the care team.</p><a class="secondary-link" href="${isParent ? "gallery.html?as=parent" : "gallery.html"}">Open photo updates</a></article><article class="panel secondary-panel"><h2 class="section-title">Past sessions</h2><p class="supporting-copy">Review prior care sessions and their shared updates.</p></article></section>`,
       },
       profile: {
         eyebrow: "PROFILE & SETTINGS", title: ctx && ctx.role === "parent" ? "Your CareNest settings" : "Your sitter profile", intro: ctx && ctx.role === "parent" ? "Manage your details and the family space with confidence." : "Choose what parents can see, and keep your personal preferences in one place.",

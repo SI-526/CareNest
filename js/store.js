@@ -238,20 +238,29 @@
       return log;
     },
 
-    // replyTo = id of the task_proof/moment message being replied to (a reply_to FK).
-    sendChat(body, sender = "sitter", replyTo = null) {
-      const text = String(body || "").trim();
-      if (!text) return null;
+    // Care Log page entry (SI-63): demo mirror of a task-less care_logs row about one child, kept
+    // with the child's name as it was (care_logs.child_name). Never edited or deleted.
+    addSessionEntry({ childId, childName, note, author }) {
       const state = read();
-      const message = { id: newId(), kind: "chat", body: text, sender, sentAt: Date.now() };
-      if (replyTo) {
-        if (!isPhotoMessage(state, replyTo)) throw new Error("That photo is no longer available.");
-        message.replyTo = replyTo;
-      }
-      state.messages.push(message);
+      if (!state.shift) state.shift = newShift(Date.now());
+      const log = {
+        id: newId(),
+        shiftId: state.shift.id,
+        taskId: null,
+        childId,
+        childName: childName || "",
+        category: "note",
+        note: note || "",
+        mealAmount: null,
+        bottleOz: null,
+        author: author === "parent" ? "parent" : "sitter",
+        createdAt: Date.now(),
+      };
+      state.logs = (state.logs || []).concat(log);
       write(state);
-      return message;
+      return log;
     },
+
 
     // Moment = BeReal-style prompt. Pending while the shift is active, the prompt time
     // has passed, and nothing has been posted for this shift yet.

@@ -136,7 +136,7 @@ if (typeof window !== "undefined") (window.CareNestShift ? window.CareNestShift.
   const store = window.CareNestStore;
   const data = window.CareNestData;
   const page = document.body.dataset.page;
-  if (!shift || !store || !data || (page !== "home" && page !== "messages")) return;
+  if (!shift || !store || !data || page !== "home") return;
   if (document.body.dataset.role === "parent") return; // moments are the sitter's prompt
   if (!document.createElement("dialog").showModal) return;
 
