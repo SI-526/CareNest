@@ -6922,29 +6922,32 @@ body[data-page="info"] .info-content {
   gap: 16px;
 }
 
-/* Every category's items as grey tiles, the same as the child page's Preferences and
-   Instructions (.child-note, Figma 255:790), so a topic reads the same on both pages. */
+/* Where things are: rows split by a rule, like Today's Schedule in 4:18. */
 body[data-page="info"] .info-list {
-  gap: 8px;
+  gap: 0;
 }
 
 body[data-page="info"] .info-item {
   gap: 4px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: var(--cloud);
+  padding: 12px 8px;
+  border-radius: 0;
+  background: none;
+}
+
+body[data-page="info"] .info-item + .info-item {
+  border-top: 1px solid var(--divider);
 }
 
 body[data-page="info"] .info-item-title {
-  font-family: var(--font-body);
+  font-family: var(--font);
   font-size: 14px;
   line-height: 21px;
-  font-weight: var(--weight-regular);
+  font-weight: var(--weight-bold);
 }
 
 body[data-page="info"] .info-item-detail {
-  font-size: var(--text-xs);
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 21px;
 }
 
 /* Emergency steps: the numbered steps as ruled rows, the Call 911 callout as an Alert card. */
