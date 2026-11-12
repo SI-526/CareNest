@@ -665,7 +665,8 @@
   function confirmDialog({ title, body, confirmLabel, danger }) {
     return new Promise((resolve) => {
       const dialog = document.createElement("dialog");
-      dialog.className = "confirm-dialog";
+      // Same sheet as the other dialogs (css: .confirm-sheet): a bottom sheet on phones, a card on desktop.
+      dialog.className = "confirm-dialog confirm-sheet";
       dialog.setAttribute("aria-labelledby", "confirm-title");
       dialog.setAttribute("aria-describedby", "confirm-desc");
       dialog.innerHTML = `

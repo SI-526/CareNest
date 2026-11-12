@@ -6,8 +6,10 @@
 
   auth.whenReady((ctx) => {
     if (!ctx || ctx.demo) {
+      if (ctx && ctx.demo && window.CareNestUI) window.CareNestUI.renderParentNav("profile");
       document.querySelector(".people-main").innerHTML =
-        '<p class="signin-note">People and invites need a signed-in parent. <a href="signin.html">Sign in</a></p>';
+        '<header class="detail-nav top-nav"><a class="back-btn" href="profile.html" aria-label="Back to your profile"><img src="assets/top-nav-back.svg" alt="" width="28" height="28" /></a><h1 id="people-title">People</h1></header>' +
+        '<section class="card auth-card"><p class="signin-note">People and invites need a signed-in parent. <a href="signin.html">Sign in</a></p></section>';
       return;
     }
     if (window.CareNestUI) window.CareNestUI.renderParentNav("profile");
@@ -25,6 +27,12 @@
 
     if (new URLSearchParams(window.location.search).has("welcome")) {
       document.getElementById("people-welcome").hidden = false;
+    }
+
+    // Initials, never photos: one or two letters from the name (or the email before the @).
+    function initials(name) {
+      const words = String(name || "").split("@")[0].split(/[\s._-]+/).filter(Boolean);
+      return (words.length > 1 ? words[0][0] + words[1][0] : (words[0] || "?").slice(0, 1)).toUpperCase();
     }
 
     function show(el, text) {
@@ -116,6 +124,7 @@
       list.innerHTML = rows
         .map(
           (row) => `<li class="people-row">
+            <span class="people-avatar people-avatar--pending" aria-hidden="true"><img src="assets/icon-account-circle.svg" alt="" /></span>
             <div class="people-meta">
               <p class="people-name">${esc(row.email)}</p>
               <p class="people-sub">Expires ${esc(new Date(row.expires_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</p>
@@ -147,6 +156,7 @@
           const shownName = (profile && profile.display_name) || row.display_name;
           const name = shownName || row.email;
           return `<li class="people-row">
+            <span class="people-avatar" aria-hidden="true">${esc(initials(name))}</span>
             <div class="people-meta">
               <p class="people-name">${esc(name)}${isMe ? " (you)" : ""}</p>
               <p class="people-sub">${esc(label)}${shownName ? ` · ${esc(row.email)}` : ""}</p>

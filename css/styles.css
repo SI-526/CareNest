@@ -665,47 +665,8 @@ button {
   justify-content: flex-start;
 }
 
-.profile-settings-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.75fr);
-  gap: 20px;
-  align-items: start;
-}
-
-.public-profile-card,
-.profile-preview {
-  min-height: auto;
-}
-
-.profile-settings-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 20px;
-}
-
 .profile-textarea {
   resize: vertical;
-}
-
-.profile-visibility {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 10px 0 0;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-}
-
-.profile-visibility label {
-  color: var(--blue);
-  font-size: var(--text-sm);
-}
-
-.profile-visibility input {
-  accent-color: var(--accent-strong);
 }
 
 .profile-save-row {
@@ -723,24 +684,11 @@ button {
   font-size: var(--text-sm);
 }
 
-.profile-preview {
-  position: sticky;
-  top: 24px;
-}
-
 @media (max-width: 767px) {
   .secondary-header,
   .detail-app > .detail-nav {
     margin-top: 0;
     padding-top: 28px;
-  }
-
-  .profile-settings-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .profile-preview {
-    position: static;
   }
 }
 
@@ -6413,7 +6361,7 @@ body[data-page="profile"] .secondary-main {
 .profile-block {
   margin: 0;
   padding: 0 16px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--card);
   list-style: none;
 }
@@ -6539,18 +6487,6 @@ body[data-page="profile"] .secondary-main {
   opacity: 0.6;
 }
 
-.profile-household-links {
-  margin: 0;
-  color: var(--grey);
-  font-size: 14px;
-  line-height: 21px;
-}
-
-.profile-household-links a {
-  color: var(--accent-strong);
-  font-weight: var(--weight-semibold);
-}
-
 /* Account panel (js/auth.js): no card, the buttons sit on Cloud as in Figma. */
 .profile-page .account-slot {
   scroll-margin-top: 24px;
@@ -6608,23 +6544,6 @@ body[data-page="profile"] .secondary-main {
 .profile-page .account-panel .danger-btn:focus-visible {
   background: var(--danger);
   color: #ffffff;
-}
-
-/* The sitter's public-profile form: one column, borderless white cards. */
-.profile-page .profile-settings-layout {
-  grid-template-columns: 1fr;
-  gap: 24px;
-  scroll-margin-top: 24px;
-}
-
-.profile-page .secondary-panel {
-  border: 0;
-  border-radius: var(--radius);
-  box-shadow: none;
-}
-
-.profile-page .profile-preview {
-  position: static;
 }
 
 .profile-page #profile-updates {
@@ -7664,4 +7583,628 @@ body[data-page="info"] .info-content > .panel:not(:has(.panel-title)) {
 
 .parent-album .feed-actions {
   grid-template-columns: 1fr;
+}
+
+/* ---------- Profile, People, Family info, Personal details and the confirm dialog (slice 5).
+   Profile follows Figma 316:2252 / 316:2360; the other pages have no frame, so they reuse the
+   same Top Nav, white r16 cards, list rows, 48px form fields, switches and buttons. ---------- */
+
+/* Account panel on Profile: Figma shows Log out and Delete with no heading above them. */
+.profile-page .account-panel {
+  gap: 0;
+}
+
+.profile-page .account-panel > .section-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.profile-page .account-panel [data-sign-out] {
+  margin-top: 0;
+  border-width: 1px;
+}
+
+.profile-page .account-panel .danger-btn {
+  margin-top: 20px;
+}
+
+.profile-page .account-panel .account-meta {
+  margin: 0 0 8px;
+  color: var(--grey);
+}
+
+.profile-page .account-panel [data-switch-family] {
+  margin-bottom: 8px;
+}
+
+.profile-page .account-panel .form-error {
+  margin-top: 12px;
+}
+
+.profile-page .account-panel .account-links {
+  margin-top: 16px;
+  color: var(--grey);
+  text-align: center;
+}
+
+.profile-page .account-panel .account-links a {
+  color: var(--accent-strong);
+  font-weight: var(--weight-semibold);
+}
+
+/* The sitter's public profile: a section like Personal information, its form in a white card. */
+.profile-section-note {
+  margin: -4px 0 0;
+  color: var(--grey);
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.profile-page .profile-preview {
+  position: static;
+}
+
+.profile-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+}
+
+.profile-preview-name {
+  margin: 0 0 4px;
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 21px;
+  font-weight: var(--weight-bold);
+}
+
+.profile-preview-line {
+  margin: 0;
+  color: var(--blue);
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.profile-preview-card .profile-private-note {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Shared page form card and field (Profile, People, Family info, Personal details): the children
+   dialogs' field (bold 14/21 label, grey "Optional" on the right, 48px input, #DFE0E9 border). */
+.form-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 16px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-field .field-label,
+.form-card .switch-group > legend,
+.people-main .invite-form > .field-label,
+.people-main .manage-child-picker .field-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  color: #000000;
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: var(--weight-bold);
+}
+
+.form-field .field-optional {
+  color: var(--grey);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: var(--weight-bold);
+}
+
+.form-field input.text-input,
+.form-field select.text-input,
+.people-main .copy-row .text-input {
+  height: 48px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: #000000;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.form-field textarea.text-input {
+  min-height: 86px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: #000000;
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.form-field .text-input::placeholder {
+  color: var(--grey);
+}
+
+.form-field .signin-note,
+.people-main .signin-note {
+  margin: 0;
+  color: var(--grey);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Read-only email: Cloud fill, grey text, the same 48px field. */
+.form-field input.text-input[readonly] {
+  border-color: var(--line);
+  background: var(--cloud);
+  color: var(--grey);
+}
+
+/* Switch rows: a label on the left, the Action Violet switch on the right, #DFE0E9 dividers. */
+.switch-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.switch-group > legend {
+  float: left;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 0;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 52px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--blue);
+  font-size: 14px;
+  line-height: 21px;
+  cursor: pointer;
+}
+
+.switch-row:last-child {
+  border-bottom: 0;
+}
+
+.switch-row-title {
+  min-width: 0;
+}
+
+.switch-row input[role="switch"],
+.account-switch input[role="switch"] {
+  appearance: none;
+  flex-shrink: 0;
+  position: relative;
+  width: 51px;
+  height: 31px;
+  margin: 0;
+  border-radius: 16px;
+  background: #c8c8cf;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.switch-row input[role="switch"]::after,
+.account-switch input[role="switch"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease;
+}
+
+.switch-row input[role="switch"]:checked,
+.account-switch input[role="switch"]:checked {
+  background: var(--accent-strong);
+}
+
+.switch-row input[role="switch"]:checked::after,
+.account-switch input[role="switch"]:checked::after {
+  transform: translateX(20px);
+}
+
+.switch-row input[role="switch"]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch-row input[role="switch"],
+  .switch-row input[role="switch"]::after,
+  .account-switch input[role="switch"],
+  .account-switch input[role="switch"]::after {
+    transition: none;
+  }
+}
+
+.form-card .profile-save-row {
+  margin-top: 4px;
+}
+
+.form-card .profile-save-row .primary-btn,
+.people-main .primary-btn {
+  min-height: 44px;
+  border-radius: var(--radius);
+  font-size: 16px;
+  line-height: 24px;
+}
+
+/* Personal details: the phone switch is a row between dividers, not a grey box. */
+.account-switch {
+  align-items: center;
+  margin: 0;
+  padding: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.account-switch-title {
+  color: var(--blue);
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: var(--weight-semibold);
+}
+
+.account-switch .signin-note {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* People, Family info and Personal details: Top Nav, then white r16 cards on Cloud. */
+.people-main {
+  gap: 24px;
+}
+
+.people-main > .top-nav {
+  margin-bottom: 0;
+}
+
+.people-main .auth-card {
+  gap: 16px;
+  margin: 0;
+  padding: 20px 16px;
+  border-radius: var(--radius-lg);
+}
+
+.people-main .auth-card .panel-title {
+  margin: 0;
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: var(--weight-bold);
+}
+
+.people-main .auth-card > .signin-note,
+.people-main > .signin-note {
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.people-main .auth-card a:not(.primary-btn),
+.people-main .signin-note a {
+  color: var(--accent-strong);
+  font-weight: var(--weight-semibold);
+}
+
+.people-main .auth-status {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--blue);
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.people-main .invite-form {
+  gap: 16px;
+}
+
+.people-main .invite-link {
+  gap: 8px;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: #eff1fa;
+}
+
+.people-main .invite-link-title {
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.people-main .copy-btn {
+  min-height: 48px;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+
+/* List rows: the Profile settings row (DM Sans SemiBold 14 title, 12 grey sub, #DFE0E9
+   dividers), with a 40px initials avatar where the row is a person. */
+.people-main .people-row {
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.people-main .people-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.people-main .people-list:has(.people-row) + .primary-btn,
+.people-main .people-list + .signin-note {
+  margin-top: 0;
+}
+
+.people-main .people-meta {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.people-main .people-name {
+  color: var(--blue);
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: var(--weight-semibold);
+}
+
+.people-main .people-sub {
+  color: var(--grey);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.people-main .people-sub a {
+  color: var(--accent-strong);
+}
+
+.people-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #dce7ef;
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1;
+  font-weight: var(--weight-bold);
+  align-self: flex-start;
+}
+
+.people-avatar--pending {
+  background: #eff1fa;
+}
+
+.people-avatar--pending img {
+  width: 22px;
+  height: 22px;
+}
+
+/* Row actions: a small secondary button (Periwinkle outline) and a quiet red text button. */
+.people-main .people-action {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: var(--weight-semibold);
+}
+
+.people-main .danger-btn.people-action {
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+}
+
+.people-main .danger-btn.people-action:hover,
+.people-main .danger-btn.people-action:focus-visible {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* Family info rows: text first, actions on a line under it (right-aligned). */
+.people-main .manage-row {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.people-main .manage-actions {
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.people-main .manage-actions .danger-btn.people-action {
+  padding: 6px 8px;
+}
+
+.people-main .manage-actions .people-action {
+  flex: 0 0 auto;
+}
+
+.people-main .manage-icon-btn {
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+}
+
+.people-main .manage-icon-btn:disabled:hover {
+  border-color: var(--accent);
+  background: var(--card);
+  color: var(--accent-strong);
+}
+
+.page-intro {
+  margin: 0;
+}
+
+/* Family info editor: the children sheet (Schedule Details header, 48px fields). */
+.child-form .manage-fields {
+  gap: 0;
+}
+
+.child-form .manage-field textarea.text-input {
+  min-height: 86px;
+}
+
+.child-form input[type="time"].text-input,
+.child-form input[type="date"].text-input {
+  appearance: none;
+}
+
+/* Confirm dialog (js/auth.js confirmDialog): the photo sheets' r16 card, centred title and body,
+   a solid red primary for danger, a quiet Cancel. A bottom sheet on phones. */
+.confirm-dialog.confirm-sheet {
+  max-width: 380px;
+  padding: 24px 20px 20px;
+  border-radius: var(--radius-lg);
+}
+
+.confirm-dialog.confirm-sheet::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.confirm-sheet .confirm-dialog-body {
+  gap: 8px;
+}
+
+.confirm-sheet .panel-title {
+  margin: 0;
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: var(--weight-bold);
+  text-align: center;
+}
+
+.confirm-sheet .confirm-desc {
+  margin: 0;
+  color: var(--grey);
+  font-size: 14px;
+  line-height: 21px;
+  text-align: center;
+}
+
+.confirm-sheet .moment-dialog-actions {
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.confirm-sheet .danger-btn,
+.confirm-sheet .primary-btn {
+  min-height: 44px;
+  padding: 10px 24px;
+  border: 0;
+  border-radius: var(--radius);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: var(--weight-semibold);
+}
+
+.confirm-sheet .danger-btn {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+.confirm-sheet .danger-btn:hover,
+.confirm-sheet .danger-btn:focus-visible {
+  background: #990000;
+  color: #ffffff;
+}
+
+.confirm-sheet .primary-btn {
+  background: var(--accent);
+}
+
+.confirm-sheet .primary-btn:hover {
+  background: var(--accent-strong);
+}
+
+.confirm-sheet .photo-source-btn {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: var(--weight-semibold);
+}
+
+.confirm-sheet .photo-source-btn:hover {
+  background: var(--cloud);
+  color: var(--blue);
+}
+
+@media (max-width: 599px) {
+  .confirm-dialog.confirm-sheet {
+    width: 100%;
+    max-width: none;
+    margin: auto 0 0;
+    padding: 28px 16px calc(20px + env(safe-area-inset-bottom));
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+}
+
+/* Desktop: these pages keep the Profile column (560px), centred under a full-width Top Nav. */
+@media (min-width: 768px) {
+  .people-main {
+    align-self: center;
+  }
+}
+
+/* Family info: the same 16px between cards as the Profile sections. */
+.people-main .manage-sections:not([hidden]),
+.people-main #care-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.people-main #care-sections:empty {
+  display: none;
 }
