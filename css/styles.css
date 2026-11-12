@@ -846,7 +846,7 @@ button {
 .current-session-card { display: block; }
 /* Figma 238:687: the title on its own line, then the date and hours with the children on the right. */
 .current-shift-card--sitter { display: block; }
-.current-shift-details { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 8px; }
+.current-shift-details { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .current-shift-details .schedule-card-meta { margin-top: 0; }
 .current-session-title, .schedule-detail-label, .schedule-details-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .current-session-title { align-items: flex-start; }
@@ -896,7 +896,7 @@ button {
 .schedule-notes p { margin-top: 4px; }
 .schedule-calendar { margin-top: 8px; padding: 8px 24px 20px; border-radius: 9.4px; background: var(--card); box-shadow: 0 3px 12.5px rgba(170, 170, 170, 0.03); }
 .calendar-weekdays, .calendar-days { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; }
-.calendar-weekdays { margin-bottom: 8px; color: #000; font-size: 18px; line-height: 27px; font-weight: var(--weight-medium); }
+.calendar-weekdays { margin-bottom: 18px; color: #000; font-size: 18px; line-height: 27px; font-weight: var(--weight-medium); }
 .calendar-days { row-gap: 16px; }
 .calendar-days button { position: relative; width: 32px; height: 32px; justify-self: center; border-radius: 50%; color: var(--grey); font-size: 18px; font-weight: var(--weight-medium); }
 .calendar-days button::before { position: absolute; inset: -6px; content: ""; }
@@ -916,7 +916,7 @@ button {
 .schedule-overview, .schedule-primary-content { min-width: 0; }
 .upcoming-shifts { margin-top: 0; }
 .upcoming-shifts h2 { margin-bottom: 8px; }
-.upcoming-shift { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 72px; margin-top: 8px; padding: 8px 16px; border-radius: 8px; background: var(--cloud); }
+.upcoming-shift { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; margin-top: 8px; padding: 8px 16px; border-radius: 8px; background: var(--cloud); }
 .upcoming-shift p { display: flex; flex-wrap: wrap; gap: 0 8px; color: #000; font-size: 14px; line-height: 21px; }
 .upcoming-shift p span { white-space: nowrap; }
 .schedule-no-upcoming, .schedule-request-status { margin: 0; color: var(--grey); font-size: var(--text-sm); }
