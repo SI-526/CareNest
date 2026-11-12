@@ -165,7 +165,7 @@ if (typeof window !== "undefined") (window.CareNestShift ? window.CareNestShift.
   status.id = "moment-status";
 
   const dialog = document.createElement("dialog");
-  dialog.className = "moment-dialog";
+  dialog.className = "moment-dialog photo-sheet";
   dialog.setAttribute("aria-labelledby", "moment-dialog-title");
   dialog.innerHTML = `
     <div class="moment-dialog-body">

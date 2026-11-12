@@ -198,6 +198,7 @@
         else link.removeAttribute("aria-current");
       });
       const heading = view === "album" ? "Saved photos" : `${childFirst()}'s day`;
+      document.body.classList.toggle("parent-album", view === "album");
       title.textContent = heading;
       document.title = `CareNest — ${heading}`;
       document.getElementById("feed-heading").textContent = view === "album" ? "Album" : "Photos";

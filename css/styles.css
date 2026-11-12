@@ -7257,3 +7257,411 @@ body[data-page="info"] .empty-state {
 body[data-page="info"] .info-content > .panel:not(:has(.panel-title)) {
   padding: 8px;
 }
+
+/* ---------- Photo surfaces (slice 4): Gallery (Figma 174:223), the task photo update
+   (5:417, 76:167), the add-photo and moment sheets, and the parent Album ---------- */
+
+/* Task photo update (#complete-modal): white r10 card, Poppins heading, #FAFCFF task box,
+   Periwinkle-outlined photo and note, a Periwinkle Send. */
+#complete-modal .complete-modal {
+  max-width: 340px;
+  gap: 14px;
+  padding: 25px;
+}
+
+#complete-modal .complete-heading {
+  max-width: 230px;
+  font-family: var(--font);
+  font-size: var(--text-sub2);
+  line-height: 24px;
+}
+
+#complete-modal .complete-task-summary {
+  gap: 6px;
+  padding: 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--section);
+}
+
+#complete-modal .complete-task-time {
+  font-family: var(--font);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+}
+
+#complete-modal .complete-task-title {
+  font-family: var(--font);
+  font-size: var(--text-sub3);
+}
+
+#complete-modal .complete-task-detail {
+  font-family: var(--font);
+  font-size: var(--text-caption);
+}
+
+#complete-modal .photo-preview-frame,
+.photo-sheet .photo-preview-frame {
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--cloud);
+}
+
+#complete-modal #complete-photo-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+#complete-modal .photo-source-btn,
+.photo-sheet .photo-source-actions .photo-source-btn {
+  min-height: 40px;
+  border-color: var(--accent);
+  border-radius: var(--radius);
+  font-size: var(--text-body);
+}
+
+#complete-modal .tag-picker .complete-note-label,
+#complete-modal label.complete-note-label,
+.photo-sheet .complete-note-label {
+  font-family: var(--font);
+  font-size: var(--text-sub3);
+  font-weight: var(--weight-bold);
+  color: var(--blue);
+}
+
+#complete-modal .tag-options {
+  gap: 6px;
+}
+
+#complete-modal .tag-option span {
+  min-height: 32px;
+  padding: 4px 12px;
+  border-color: var(--line);
+  font-size: var(--text-caption);
+}
+
+#complete-modal .complete-note,
+.photo-sheet .complete-note {
+  min-height: 68px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+}
+
+#complete-modal #complete-send-btn,
+.photo-sheet .primary-btn {
+  min-height: 40px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+}
+
+#complete-modal #complete-send-btn:hover:not(:disabled),
+.photo-sheet .primary-btn:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+/* The add-photo and moment dialogs: the same sheet language (r16, centred Poppins title). */
+.photo-sheet {
+  max-width: 380px;
+  padding: 20px;
+  border-radius: var(--radius-lg);
+}
+
+.photo-sheet .complete-heading {
+  font-family: var(--font);
+  font-size: var(--text-sub1);
+  line-height: 26px;
+  text-align: center;
+}
+
+.photo-sheet .moment-dialog-actions .photo-source-btn {
+  min-height: 40px;
+  border: 0;
+  background: none;
+  color: var(--accent-strong);
+  font-weight: var(--weight-semibold);
+}
+
+.photo-sheet .photo-upload-error {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-body);
+}
+
+.photo-sheet .photo-upload-error[hidden] {
+  display: none;
+}
+
+@media (max-width: 599px) {
+  .photo-sheet {
+    width: 100%;
+    max-width: none;
+    margin: auto 0 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+}
+
+/* Gallery page */
+.gallery-head {
+  justify-content: center;
+}
+
+.gallery-head h1 {
+  font-family: var(--font);
+  font-size: var(--text-heading);
+  text-align: center;
+}
+
+.gallery-filter {
+  margin: 0 -24px;
+  padding: 0;
+  border: 0;
+}
+
+.gallery-filter .tag-options {
+  flex-wrap: nowrap;
+  gap: 10px;
+  padding: 0 24px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.gallery-filter .tag-options::-webkit-scrollbar {
+  display: none;
+}
+
+.gallery-filter .tag-option {
+  flex: none;
+}
+
+.gallery-filter .tag-option span {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: var(--text-sub3);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.gallery-filter .tag-option input:checked + span {
+  background: var(--accent);
+  color: var(--blue);
+  box-shadow: none;
+}
+
+.gallery-shift-title {
+  margin: 4px 0 10px;
+  font-family: var(--font);
+  font-size: var(--text-sub2);
+  font-weight: var(--weight-bold);
+  line-height: 21px;
+}
+
+.gallery-grid {
+  gap: 8px;
+}
+
+.gallery-card,
+.parent-album .feed-card {
+  gap: 6px;
+  padding: 0 0 10px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: none;
+}
+
+.gallery-card .gallery-photo,
+.parent-album .feed-photo {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 0;
+}
+
+.gallery-caption {
+  gap: 4px;
+  padding: 0 10px;
+}
+
+.gallery-source {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: var(--radius-tag);
+  background: var(--tag-note);
+  color: var(--blue);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  line-height: 18px;
+}
+
+.gallery-source.is-task {
+  background: var(--tag-success);
+}
+
+.gallery-source.is-moment {
+  background: var(--tag-caution);
+}
+
+.gallery-title {
+  font-family: var(--font);
+  font-size: var(--text-sub3);
+  font-weight: var(--weight-bold);
+  color: var(--blue);
+}
+
+.gallery-card .msg-card-note {
+  margin: 0;
+  color: var(--blue);
+  font-size: var(--text-caption);
+  line-height: 18px;
+}
+
+.gallery-card .msg-meta {
+  margin: 0;
+  color: var(--grey);
+  font-size: var(--text-caption);
+}
+
+.gallery-remove,
+.parent-album .feed-remove {
+  width: auto;
+  min-height: 36px;
+  margin: auto 10px 0;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+}
+
+.gallery-empty {
+  padding: 32px 16px;
+  color: var(--grey);
+  font-family: var(--font);
+  font-size: var(--text-body);
+  text-align: center;
+}
+
+.gallery-empty::before {
+  display: none;
+}
+
+/* "+ Add a photo" (Figma "Add a photo"): a Periwinkle bar above the phone nav. */
+.gallery-fab {
+  left: 50%;
+  right: auto;
+  gap: 8px;
+  width: min(262px, calc(100% - 48px));
+  height: 44px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  transform: translateX(-50%);
+  box-shadow: 0 4px 12px rgba(0, 50, 78, 0.18);
+}
+
+.gallery-fab svg {
+  width: 20px;
+  height: 20px;
+}
+
+.gallery-fab:hover:not([aria-disabled="true"]) {
+  background: var(--accent-strong);
+}
+
+@media (max-width: 767px) {
+  .gallery-fab {
+    right: auto;
+    bottom: calc(96px + env(safe-area-inset-bottom));
+  }
+}
+
+/* Parent Album (parent.html#album): the Gallery's card language in a two-column grid. */
+.parent-album .feed-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (min-width: 768px) {
+  .parent-album .feed-list {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px;
+  }
+}
+
+.parent-album .feed-body {
+  gap: 4px;
+}
+
+.parent-album .feed-body > :not(.feed-photo) {
+  margin-right: 10px;
+  margin-left: 10px;
+}
+
+.parent-album .feed-body > .feed-photo {
+  order: -1;
+  margin: 0 0 6px;
+}
+
+.parent-album .msg-card-kicker {
+  align-self: flex-start;
+  margin-top: 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-tag);
+  background: var(--tag-success);
+  color: var(--blue);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.parent-album .moment-card .msg-card-kicker {
+  background: var(--tag-caution);
+}
+
+.parent-album .msg-card-kicker img {
+  display: none;
+}
+
+.parent-album .msg-card-title {
+  font-family: var(--font);
+  font-size: var(--text-sub3);
+  line-height: 21px;
+}
+
+.parent-album .msg-card-note,
+.parent-album .msg-meta {
+  font-size: var(--text-caption);
+  line-height: 18px;
+}
+
+.parent-album .feed-actions,
+.parent-album .feed-album-row,
+.parent-album .feed-status {
+  margin: 0 10px;
+}
+
+.parent-album .feed-album-row {
+  flex-wrap: wrap;
+  gap: 0 8px;
+}
+
+.parent-album .feed-actions {
+  grid-template-columns: 1fr;
+}
