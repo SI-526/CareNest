@@ -432,13 +432,11 @@
 
   // ---------- account panel (Profile page) ----------
 
-  // Renders "Your account" into `container` on the Profile page: who is signed in, the family
-  // switcher, Log out, and Delete my account and data. Parents reach People and invites from the
-  // "Manage household" row in Account Settings.
+  // Renders "Your account" into `container` on the Profile page: the family switcher, Log out, and
+  // Delete my account and data. The header already shows who is signed in, and parents reach
+  // People and invites from the "Manage household" row in Account Settings.
   function mountAccountPanel(container, ctx) {
     if (!container || !ctx || ctx.demo) return;
-    const roleLabel = ctx.role === "parent" ? "Parent" : "Sitter";
-    const familyName = ctx.household ? ctx.household.name : "";
     const others = (ctx.memberships || []).filter((m) => m.household_id !== (ctx.household && ctx.household.id));
     const switcher = others.length
       ? `<p class="account-meta">Switch to</p>${others
@@ -451,8 +449,6 @@
     container.innerHTML = `
       <article class="panel secondary-panel account-panel" aria-labelledby="account-title">
         <h2 class="section-title" id="account-title">Your account</h2>
-        <p class="account-who">Signed in as <strong>${escapeHtml(ctx.email)}</strong></p>
-        <p class="account-meta">${escapeHtml(roleLabel)}${familyName ? ` in ${escapeHtml(familyName)}` : ""}</p>
         ${switcher}
         <button type="button" class="photo-source-btn" data-sign-out>Log out</button>
         <button type="button" class="danger-btn" data-delete-account>Delete my account and data</button>

@@ -3306,10 +3306,6 @@ body.modal-open {
   text-align: center;
 }
 
-.account-who {
-  overflow-wrap: anywhere;
-}
-
 .account-meta,
 .account-links {
   color: var(--grey);
@@ -5604,12 +5600,6 @@ body[data-page="profile"] .secondary-main {
   border: 0;
   background: transparent;
   box-shadow: none;
-}
-
-.profile-page .account-panel .account-who {
-  color: var(--blue);
-  font-size: 14px;
-  line-height: 21px;
 }
 
 .profile-page .account-panel .account-meta,
