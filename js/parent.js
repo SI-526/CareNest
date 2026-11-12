@@ -93,6 +93,13 @@
       const button = event.target.closest("[data-request-dismiss]");
       if (!button) return;
       const ctx = await (window.CareNestFamily || auth).ready;
+      if (ctx && ctx.demo && window.CareNestDemo) {
+        // Demo: drop the sample request from this tab (js/data.js), as the Schedule page does.
+        data.scheduleRequests = (data.scheduleRequests || []).filter((r) => r.id !== button.dataset.requestDismiss);
+        window.CareNestDemo.save();
+        renderScheduleRequests();
+        return;
+      }
       if (!ctx || ctx.demo || !ctx.client) return;
       button.disabled = true;
       const { error } = await ctx.client

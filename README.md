@@ -116,14 +116,30 @@ Open **`demo.html`** and pick **Try as the babysitter** (`index.html?demo=1`) or
 - **Parent (Mary Ann Thomas)** sees the Thomas family, the same one the babysitter sees.
 
 Each family has a profile, care info (food and allergies, preferences, where things are,
-instructions, emergency steps, contacts), today's schedule, upcoming sessions, and today's care
-log already started (two tasks done, with care log details on them). Testers can check
-off tasks, add care log details and photos, add Care Log entries about each child on the Care Log
-tab, edit the sitter profile, and, as the parent,
+instructions, emergency steps, contacts), "Important today" notes, today's schedule, upcoming
+sessions (one for a single child, one overnight), and today's session already under way: two tasks
+done with care log details, Care Log entries about each child, and sample photos. The Thomas parent
+also has one open schedule request from Bethany and three photos saved in the Album.
+
+- **Today's session follows the clock.** It is built around the moment the tab first opened the
+  demo (`carenest:demo:opened` in sessionStorage): it started on the quarter hour about 90 minutes
+  earlier and runs about four hours (kept within the day, from midnight to 11:45pm). Task times,
+  check-offs, and log times sit inside it, and anything that would be later than now is left out.
+  Meal tasks are named for the time of day (Breakfast, Lunch, or Dinner), and the last task is
+  "Quiet time" before 5pm.
+- **Sample photos** are illustrations in `assets/demo-photos/` (no real children). Each image is
+  fetched and stored once per tab as a data URL (`loadDemoPhotos()` in `js/data.js`, then
+  `seedDemoPhotos()` in `js/store.js`), on the pages that load the store. Photos from earlier
+  sessions show in the Gallery and Album only.
+
+Testers can check off tasks, add care log details and photos, add Care Log entries about each child
+on the Care Log tab, edit the sitter profile, and, as the parent, edit their personal details,
 add, edit, and delete children and their care info, contacts, where things are, and emergency
-steps on the Children tab, and schedule sessions on the Schedule tab. Everything is kept in the
-tab's sessionStorage, so closing the tab resets the demo for the next tester. The parent's
-"Important today" notes are read-only in the demo. The demo tools panels (moment trigger,
+steps on the Children tab, schedule sessions on the Schedule tab, and answer or dismiss the
+schedule request. Everything is kept in the
+tab's sessionStorage, so closing the tab resets the demo for the next tester. Read-only in the demo:
+the parent's "Important today" notes and People & invites (sample people; inviting and removing are
+turned off). Family info asks the tester to sign in. The demo tools panels (moment trigger,
 "Start a new shift", concept alerts) show only on localhost.
 
 `?demo=1` (remembered for the browser tab) shows the demo families from `js/data.js` with a
@@ -133,8 +149,8 @@ demo clears the flag). Sign-in, `invite.html`, and `onboarding.html` also clear 
 reads the database (signed-out requests can read nothing anyway) and never reads an account's
 device data.
 
-Demo data (`js/store.js`, `?demo=1` only: task photos, moments, messages, check-offs, care logs
-and Care Log entries)
+Demo data (`js/store.js`, `?demo=1` only: task photos, moments, photo messages, check-offs, care
+logs and Care Log entries)
 is in sessionStorage under `carenest:demo:v1:<family>`, with the demo family's edits under
 `carenest:demo:data:<family>`; all of it ends with the tab. Signed-in people's photos and messages
 are not kept on the device. Each account's device key is `carenest:v1:<user id>`, picked by the

@@ -297,6 +297,48 @@
       return message;
     },
 
+    // Demo sample photos (js/data.js loadDemoPhotos): added once per tab, after the images load.
+    needsDemoPhotos() {
+      const state = read();
+      return Boolean(state.shift) && !state.demoPhotosSeeded;
+    },
+
+    // items: { kind: "task_proof" | "moment" | "chat", taskId, body, photoDataUrl, pastShift,
+    // sentAt, saved, seen }. A task photo attaches to that task's check-off (skipped if the task is
+    // not checked off). A photo with pastShift belongs to that earlier session, so it never counts
+    // as this shift's moment. saved puts it in the parent's Album; seen marks it read.
+    seedDemoPhotos(items) {
+      const state = read();
+      if (!state.shift || state.demoPhotosSeeded) return;
+      items.forEach((item) => {
+        if (!isPhotoDataUrl(item.photoDataUrl)) return;
+        let message;
+        if (item.kind === "task_proof") {
+          const completion = state.completions[item.taskId];
+          if (!completion || completion.photoDataUrl) return;
+          completion.photoDataUrl = item.photoDataUrl;
+          message = { id: newId(), kind: "task_proof", taskId: item.taskId, sender: "sitter", sentAt: completion.sentAt };
+        } else {
+          message = {
+            id: newId(),
+            kind: item.kind === "moment" ? "moment" : "chat",
+            body: String(item.body || "").trim(),
+            photo: item.photoDataUrl,
+            shiftId: item.pastShift || state.shift.id,
+            late: false,
+            sender: "sitter",
+            sentAt: item.sentAt || Date.now(),
+          };
+        }
+        state.messages.push(message);
+        if (item.saved && message.kind !== "chat") state.saves[message.id] = { messageId: message.id, savedBy: "parent", savedAt: message.sentAt };
+        if (item.seen && message.kind !== "chat") state.reads[message.id] = { messageId: message.id, reader: "parent", seenAt: message.sentAt };
+      });
+      state.messages.sort((a, b) => a.sentAt - b.sentAt);
+      state.demoPhotosSeeded = true;
+      write(state);
+    },
+
     // Photo message (gallery "+"): a sitter's chat message with a photo; the caption may be empty.
     postPhoto({ photoDataUrl, body }) {
       const state = read();

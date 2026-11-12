@@ -11,14 +11,17 @@
 // Food, preferences, and instructions live on each child (`children`); js/children.js flatten()
 // rebuilds the family-wide lists the older pages read.
 //
-// Everything a tester changes (care info, contacts, sessions, check-offs, care logs, messages,
-// the sitter profile) is kept in sessionStorage, so it lasts while the tab is open and is gone
+// Today's session is built around the moment the tab first opened the demo (SESSION), and the
+// sample photos are illustrations in assets/demo-photos/.
+//
+// Everything a tester changes (care info, contacts, sessions, check-offs, care logs, photos,
+// the sitter and parent profiles) is kept in sessionStorage, so it lasts while the tab is open and is gone
 // once the tab is closed. Nothing is sent to the database.
 (function () {
   const DEMO_FLAG = "carenest:demo";
   const FAMILY_KEY = "carenest:demo:family";
   const dataKey = (familyId) => `carenest:demo:data:${familyId}`;
-  const PARENT_PAGES = ["parent", "people", "manage"];
+  const PARENT_PAGES = ["parent", "people", "manage", "account"];
 
   const HOUR = 60 * 60 * 1000;
   const MINUTE = 60 * 1000;
@@ -63,6 +66,9 @@
     return { id, name, severity, severityClass: SEVERITY_CLASS[severity] || "", image: image || null, description };
   }
 
+  // One home address for Bethany in both families (both are in Ann Arbor).
+  const BETHANY_ADDRESS = "2214 Packard St, Ann Arbor, MI 48104";
+
   const KNOW_TILES = [
     { id: "food", label: "Food & allergies", icon: "assets/grocery.svg", href: "food-allergies.html" },
     { id: "preferences", label: "Preferences", icon: "assets/favorite.svg", href: "info.html?category=preferences" },
@@ -70,18 +76,102 @@
     { id: "instructions", label: "Instructions", icon: "assets/assignment.svg", href: "info.html?category=instructions" },
   ];
 
+  // ---------------------------------------------------------------- today's session
+
+  // Today's session is built around the moment this tab first opened the demo, so a tester always
+  // finds one under way: it started about an hour and a half earlier and runs about four hours.
+  // The moment is kept for the tab, so every page (and both families) agree on the same times.
+  const OPENED_KEY = "carenest:demo:opened";
+
+  function openedAt() {
+    const now = Date.now();
+    let opened = NaN;
+    try {
+      opened = Number(sessionStorage.getItem(OPENED_KEY));
+    } catch (e) {
+      /* storage unavailable: anchor to now */
+    }
+    if (Number.isFinite(opened) && opened > 0 && opened <= now) return opened;
+    try {
+      if (inDemo()) sessionStorage.setItem(OPENED_KEY, String(now));
+    } catch (e) {
+      /* storage unavailable */
+    }
+    return now;
+  }
+
+  // Local YYYY-MM-DD of a timestamp.
+  function isoDay(ms) {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  // 1:30pm (task times) and 1:30 PM (session times).
+  function clock(ms, upper) {
+    const d = new Date(ms);
+    const h = d.getHours();
+    const text = `${h % 12 === 0 ? 12 : h % 12}:${String(d.getMinutes()).padStart(2, "0")}${h >= 12 ? "pm" : "am"}`;
+    return upper ? text.replace(/(am|pm)$/, (m) => ` ${m.toUpperCase()}`) : text;
+  }
+
+  // The session window: starts on a quarter hour about 90 minutes before the demo opened (not
+  // before midnight) and ends four hours later (not after 11:45pm, unless the demo opened later
+  // than that). at(fraction) is a time inside it, on a 5 minute mark.
+  function sessionWindow(opened) {
+    const open = new Date(opened);
+    const dayStart = new Date(open.getFullYear(), open.getMonth(), open.getDate()).getTime();
+    const begin = new Date(opened - 90 * MINUTE);
+    begin.setMinutes(Math.floor(begin.getMinutes() / 15) * 15, 0, 0);
+    const start = Math.max(begin.getTime(), dayStart);
+    let end = Math.min(start + 4 * HOUR, dayStart + 24 * HOUR - 15 * MINUTE);
+    if (end < opened + 15 * MINUTE) end = Math.ceil((opened + 15 * MINUTE) / (15 * MINUTE)) * 15 * MINUTE;
+    const fiveMinutes = 5 * MINUTE;
+    return {
+      opened,
+      start,
+      end,
+      date: isoDay(start),
+      hour: new Date(start).getHours(),
+      at: (fraction) => Math.round((start + fraction * (end - start)) / fiveMinutes) * fiveMinutes,
+    };
+  }
+
+  // The meal that fits the time of day.
+  function mealAt(ms, menu) {
+    const h = new Date(ms).getHours() + new Date(ms).getMinutes() / 60;
+    if (h < 10.5) return { title: "Breakfast", detail: menu.breakfast };
+    if (h < 15) return { title: "Lunch", detail: menu.lunch };
+    return { title: "Dinner", detail: menu.dinner };
+  }
+
+  const SESSION = sessionWindow(openedAt());
+
   // ---------------------------------------------------------------- the Thomas family (Jack)
 
   function thomasFamily() {
+    const t = {
+      snack: SESSION.at(0.08),
+      playground: SESSION.at(0.3),
+      meal: SESSION.at(0.6),
+      windDown: SESSION.at(0.88),
+    };
+    const meal = mealAt(t.meal, {
+      breakfast: "Gluten-free oatmeal with berries",
+      lunch: "Pasta and vegetables",
+      dinner: "Pasta and vegetables",
+    });
+    const evening = new Date(t.windDown).getHours() >= 17;
     const schedule = [
-      task("snack", "1:30pm", "Snack", "Apples and cheese"),
-      task("playground", "3:00pm", "Playground", null, {
+      task("snack", clock(t.snack), "Snack", "Apples and cheese"),
+      task("playground", clock(t.playground), "Playground", null, {
         location: "3175 Gallup Park Rd, Ann Arbor, MI 48104",
         map: "assets/map.png",
         careNote: "Spend ~1 hour playing. Make sure to pack snacks and drinks!",
       }),
-      task("dinner", "5:00pm", "Dinner", "Pasta and vegetables"),
-      task("wind-down", "7:00pm", "Wind down", "Bath time and reading"),
+      task("dinner", clock(t.meal), meal.title, meal.detail),
+      evening
+        ? task("wind-down", clock(t.windDown), "Wind down", "Bath time and reading")
+        : task("wind-down", clock(t.windDown), "Quiet time", "Books and a rest on the couch"),
     ];
     const contacts = [
       contact("mary", "Mary Ann Thomas", "Parent", "588 - 909 - 3489", "assets/mary.png"),
@@ -92,8 +182,10 @@
     return {
       familyName: "Thomas family",
       parentName: "Mary Ann Thomas",
-      babysitter: { name: "Bethany", avatar: "assets/bethany.png", address: "51900 Beck St., Grand Rapids, MI, 48091" },
-      child: { name: "Jack Thomas", age: "Age 3", avatar: null, dateLabel: todayLabel(), shiftTime: "3:00pm - 7:00pm" },
+      // The demo parent's sample sign-in address (Profile, Personal details, People).
+      parentEmail: "mary.thomas@example.com",
+      babysitter: { name: "Bethany", avatar: "assets/bethany.png", address: BETHANY_ADDRESS },
+      child: { name: "Jack Thomas", age: "Age 3", avatar: null, dateLabel: todayLabel(), shiftTime: `${clock(SESSION.start)} - ${clock(SESSION.end)}` },
       homeAddress: "213 Maple Lane, Ann Arbor, MI 48104",
       primaryContactId: "mary",
       children: [
@@ -147,23 +239,23 @@
         {
           id: "demo-pickup",
           category: "schedule",
-          title: "Pick Jack up from soccer at 4:30pm",
-          detail: "Practice runs late on Thursdays. Bring his water bottle; it's by the front door.",
+          title: "Pick Jack up from soccer practice",
+          detail: "Practice sometimes runs a little late. Bring his water bottle; it's by the front door.",
           createdAt: Date.now() - 3 * HOUR,
           updatedAt: Date.now() - 3 * HOUR,
         },
         {
           id: "demo-meds",
           category: "food_meds",
-          title: "Amoxicillin with dinner (5 ml)",
-          detail: "The bottle is in the fridge door with the syringe next to it. Shake well first. He had his morning dose at 8am.",
+          title: "Amoxicillin with his next meal (5 ml)",
+          detail: "The bottle is in the fridge door with the syringe next to it. Shake well first. He had his last dose before you arrived.",
           createdAt: Date.now() - 3 * HOUR,
           updatedAt: Date.now() - 25 * MINUTE,
         },
         {
           id: "demo-grandma",
           category: "other",
-          title: "Grandma may stop by around 6pm",
+          title: "Grandma Linda may stop by to say hi",
           detail: "",
           createdAt: Date.now() - 2 * HOUR,
           updatedAt: Date.now() - 2 * HOUR,
@@ -172,9 +264,24 @@
       contacts,
       schedule,
       appointments: [
-        { id: "thomas-today", date: dateKey(0), start_time: "3:00 PM", end_time: "7:00 PM", note: "Soccer pickup at 4:30pm.", activities: schedule.map((t) => Object.assign({}, t)) },
-        { id: "thomas-date-night", date: dateKey(3), start_time: "6:00 PM", end_time: "10:00 PM", note: "Date night. Jack's bedtime is 7:30pm.", activities: [] },
-        { id: "thomas-saturday", date: dateKey(5), start_time: "11:00 AM", end_time: "5:00 PM", note: "", activities: [] },
+        {
+          id: "thomas-today",
+          date: SESSION.date,
+          start_time: clock(SESSION.start, true),
+          end_time: clock(SESSION.end, true),
+          note: "Jack has soccer practice today. Kylie is getting over a cold, so keep her inside.",
+          activities: schedule.map((item) => Object.assign({}, item)),
+          childIds: ["jack", "kylie"],
+        },
+        // SI-75: a session for one child only.
+        { id: "thomas-date-night", date: dateKey(3), start_time: "6:00 PM", end_time: "10:00 PM", note: "Date night. Kylie is at a sleepover, so it's just Jack. His bedtime is 7:30pm.", activities: [], childIds: ["jack"] },
+        { id: "thomas-saturday", date: dateKey(5), start_time: "11:00 AM", end_time: "5:00 PM", note: "", activities: [], childIds: ["jack", "kylie"] },
+        // SI-80: an overnight session that ends after midnight.
+        { id: "thomas-overnight", date: dateKey(8), start_time: "7:00 PM", end_time: "1:00 AM", note: "Wedding reception. Both kids in bed by 8:30pm; we'll be home around 1am.", activities: [], childIds: ["jack", "kylie"] },
+      ],
+      // SI-50: Bethany asked for a schedule for a day with no session yet (parent's Schedule page).
+      scheduleRequests: [
+        { id: "demo-request", date: dateKey(10), requestedBy: "bethany", requesterName: "Bethany", createdAt: Date.now() - 5 * HOUR },
       ],
       knowTiles: KNOW_TILES,
       categories: {
@@ -220,21 +327,29 @@
         careNote: null,
         items: [],
       },
-      // Today's shift as the tester finds it: the first two tasks done, with care logs.
+      // Today's shift as the tester finds it: the first two tasks done, with care logs, and Care
+      // Log entries about each child (SI-63). Anything timed after the demo opened is left out.
       shiftSeed: {
-        startedMinutesAgo: 95,
+        startedAt: SESSION.start + 5 * MINUTE,
         completions: [
-          { taskId: "snack", minutesAgo: 80, note: "Sliced apples and the dairy-free cheese from his bin." },
-          { taskId: "playground", minutesAgo: 20, note: "" },
+          { taskId: "snack", at: t.snack + 10 * MINUTE, note: "Sliced apples and the dairy-free cheese from his bin." },
+          { taskId: "playground", at: t.playground + 15 * MINUTE, note: "" },
         ],
         logs: [
-          { taskId: "snack", minutesAgo: 78, category: "meal", mealAmount: "most", note: "Ate all the apple slices, left about half the cheese." },
-          { taskId: "playground", minutesAgo: 18, category: "care", note: "Sunscreen on at 3:00. Played tag and the big slide for an hour, no bumps or scrapes." },
-          { taskId: "playground", minutesAgo: 15, category: "care", note: "Drank his whole water bottle. A little tired on the walk back." },
+          { taskId: "snack", at: t.snack + 12 * MINUTE, category: "meal", mealAmount: "most", note: "Ate all the apple slices, left about half the cheese." },
+          { childId: "kylie", at: SESSION.start + 30 * MINUTE, note: "Took her temperature: normal. Drank a full glass of water and is reading on the couch. Still a little stuffy." },
+          { taskId: "playground", at: t.playground + 17 * MINUTE, category: "care", note: "Sunscreen on before we left. Played tag and went down the big slide, no bumps or scrapes." },
+          { taskId: "playground", at: t.playground + 20 * MINUTE, category: "care", note: "Drank his whole water bottle. A little tired on the walk back." },
+          { childId: "jack", at: SESSION.start + 85 * MINUTE, note: "Built a tall Duplo tower and asked to save it for Mom to see." },
         ],
-        messages: [
-          { sender: "parent", minutesAgo: 70, body: "Thanks Bethany! He's been asking about the playground all week." },
-          { sender: "sitter", minutesAgo: 14, body: "Back from the playground. He had a blast! Heading inside to start dinner prep." },
+        // Sample photos (assets/demo-photos/), added once the images load (loadDemoPhotos below).
+        photos: [
+          // saved: in the parent's Album (parent.html#album). Only task photos and moments save.
+          { kind: "task_proof", taskId: "playground", file: "playground.jpg", saved: true },
+          { kind: "chat", file: "block-tower.jpg", at: SESSION.start + 86 * MINUTE, body: "Jack's tower. He wants you to see it before it comes down!" },
+          { kind: "chat", file: "snack-plate.jpg", daysAgo: 2, minutes: 40, body: "Snack time: apples and rice crackers." },
+          { kind: "moment", file: "story-time.jpg", daysAgo: 2, minutes: 200, body: "Story time with Ellie before bed.", saved: true },
+          { kind: "moment", file: "drawing.jpg", daysAgo: 6, minutes: 95, body: "Kylie drew a picture of your house, sun and all.", saved: true },
         ],
       },
     };
@@ -243,16 +358,33 @@
   // ---------------------------------------------------------------- the Rivera family (Sofia)
 
   function riveraFamily() {
+    const t = {
+      library: SESSION.at(0.02),
+      snack: SESSION.at(0.15),
+      reading: SESSION.at(0.3),
+      piano: SESSION.at(0.48),
+      meal: SESSION.at(0.62),
+      bedtime: SESSION.at(0.88),
+    };
+    const meal = mealAt(t.meal, {
+      breakfast: "Egg-free waffles and a clementine",
+      lunch: "Rice, black beans, and cucumber",
+      dinner: "Chicken quesadillas (egg-free tortillas) and cucumber",
+    });
+    const evening = new Date(t.bedtime).getHours() >= 17;
     const schedule = [
-      task("rivera-pickup", "3:15pm", "School pickup", "Kindergarten pickup line, door B", {
-        location: "Burns Park Elementary, 1414 Wells St, Ann Arbor, MI 48104",
-        careNote: "Show your ID to the teacher. Sofia waits by the flagpole with Ms. Lee's class.",
+      // The ids are kept from earlier demo versions, so a tab that saved them still lines up.
+      task("rivera-pickup", clock(t.library), "Library story time", "Children's room, second floor", {
+        location: "Ann Arbor District Library, 343 S Fifth Ave, Ann Arbor, MI 48104",
+        careNote: "Her library card is in the front pocket of her backpack. Return the books in the blue tote.",
       }),
-      task("rivera-snack", "3:45pm", "After-school snack", "Clementine and whole-grain crackers"),
-      task("rivera-homework", "4:30pm", "Reading and homework", "20 minutes of reading, then her worksheet"),
-      task("rivera-piano", "5:30pm", "Piano practice", "15 minutes on the songs marked in her book"),
-      task("rivera-dinner", "6:00pm", "Dinner", "Chicken quesadillas (egg-free tortillas) and cucumber"),
-      task("rivera-bedtime", "7:30pm", "Bath and bedtime", "Bath, pajamas, one chapter of her book"),
+      task("rivera-snack", clock(t.snack), "Snack", "Clementine and whole-grain crackers"),
+      task("rivera-homework", clock(t.reading), "Reading time", "20 minutes of reading, then her worksheet"),
+      task("rivera-piano", clock(t.piano), "Piano practice", "15 minutes on the songs marked in her book"),
+      task("rivera-dinner", clock(t.meal), meal.title, meal.detail),
+      evening
+        ? task("rivera-bedtime", clock(t.bedtime), "Bath and bedtime", "Bath, pajamas, one chapter of her book")
+        : task("rivera-bedtime", clock(t.bedtime), "Quiet time", "Drawing or LEGO at the kitchen table"),
     ];
     const contacts = [
       contact("ana", "Ana Rivera", "Parent", "734 - 555 - 0164"),
@@ -263,8 +395,8 @@
     return {
       familyName: "Rivera family",
       parentName: "Ana Rivera",
-      babysitter: { name: "Bethany", avatar: "assets/bethany.png", address: "2214 Packard St, Ann Arbor, MI 48104" },
-      child: { name: "Sofia Rivera", age: "Age 6", avatar: null, dateLabel: todayLabel(), shiftTime: "3:15pm - 8:00pm" },
+      babysitter: { name: "Bethany", avatar: "assets/bethany.png", address: BETHANY_ADDRESS },
+      child: { name: "Sofia Rivera", age: "Age 6", avatar: null, dateLabel: todayLabel(), shiftTime: `${clock(SESSION.start)} - ${clock(SESSION.end)}` },
       homeAddress: "1802 Granger Ave, Ann Arbor, MI 48104",
       primaryContactId: "ana",
       children: [
@@ -291,7 +423,7 @@
             { id: "rivera-ins-eggs", title: "No eggs", detail: "Check labels for egg, including baked goods and pasta. Her egg-free snacks have a green sticker." },
             { id: "rivera-ins-homework", title: "Homework", detail: "Reading first, then the worksheet. Help only if she asks; she likes to try first." },
             { id: "rivera-ins-outside", title: "Outside", detail: "She can ride her scooter on the sidewalk with a helmet. Not past the corner." },
-            { id: "rivera-ins-bed", title: "Bedtime", detail: "Lights out at 8:00pm (7:45pm tonight). She sleeps with the hall light on." },
+            { id: "rivera-ins-bed", title: "Bedtime", detail: "Lights out at 8:00pm. She sleeps with the hall light on." },
           ],
         },
       ],
@@ -299,16 +431,16 @@
         {
           id: "rivera-library",
           category: "schedule",
-          title: "Library books are due tomorrow",
-          detail: "They're in the blue tote by the stairs. Please put them in her backpack tonight.",
+          title: "Return her library books at story time",
+          detail: "They're in the blue tote by the stairs. Her library card is in the front pocket of her backpack.",
           createdAt: Date.now() - 4 * HOUR,
           updatedAt: Date.now() - 4 * HOUR,
         },
         {
           id: "rivera-picture-day",
           category: "other",
-          title: "Picture day tomorrow, bedtime by 7:45pm",
-          detail: "Her outfit is hanging on the closet door.",
+          title: "Picture day tomorrow",
+          detail: "Her outfit is hanging on the closet door. An early bedtime tonight, please.",
           createdAt: Date.now() - 2 * HOUR,
           updatedAt: Date.now() - 2 * HOUR,
         },
@@ -316,9 +448,17 @@
       contacts,
       schedule,
       appointments: [
-        { id: "rivera-today", date: dateKey(0), start_time: "3:15 PM", end_time: "8:00 PM", note: "", activities: schedule.map((t) => Object.assign({}, t)) },
-        { id: "rivera-tomorrow", date: dateKey(1), start_time: "3:15 PM", end_time: "6:00 PM", note: "Ana is home by 6.", activities: [] },
-        { id: "rivera-next-week", date: dateKey(7), start_time: "3:15 PM", end_time: "8:00 PM", note: "", activities: [] },
+        {
+          id: "rivera-today",
+          date: SESSION.date,
+          start_time: clock(SESSION.start, true),
+          end_time: clock(SESSION.end, true),
+          note: "Piano lesson is tomorrow, so please don't skip practice.",
+          activities: schedule.map((item) => Object.assign({}, item)),
+          childIds: ["sofia"],
+        },
+        { id: "rivera-tomorrow", date: dateKey(1), start_time: "3:15 PM", end_time: "6:00 PM", note: "Ana is home by 6.", activities: [], childIds: ["sofia"] },
+        { id: "rivera-next-week", date: dateKey(7), start_time: "3:15 PM", end_time: "8:00 PM", note: "", activities: [], childIds: ["sofia"] },
       ],
       knowTiles: KNOW_TILES,
       categories: {
@@ -363,18 +503,20 @@
         items: [],
       },
       shiftSeed: {
-        startedMinutesAgo: 70,
+        startedAt: SESSION.start,
         completions: [
-          { taskId: "rivera-pickup", minutesAgo: 60, note: "" },
-          { taskId: "rivera-snack", minutesAgo: 35, note: "" },
+          { taskId: "rivera-pickup", at: t.library + 40 * MINUTE, note: "Returned the old books and checked out two new ones." },
+          { taskId: "rivera-snack", at: t.snack + 25 * MINUTE, note: "" },
         ],
         logs: [
-          { taskId: "rivera-pickup", minutesAgo: 58, category: "care", note: "Picked up at 3:20 by the flagpole. Her teacher said she had a great day and read aloud to the class." },
-          { taskId: "rivera-snack", minutesAgo: 33, category: "meal", mealAmount: "some", note: "Ate the clementine, only a few crackers." },
+          { taskId: "rivera-pickup", at: t.library + 42 * MINUTE, category: "care", note: "Sat right up front for story time and answered all the questions. She picked two dinosaur books." },
+          { taskId: "rivera-snack", at: t.snack + 27 * MINUTE, category: "meal", mealAmount: "some", note: "Ate the clementine, only a few crackers." },
+          { childId: "sofia", at: SESSION.start + 80 * MINUTE, note: "Drew a picture of her house with the sun and birds. Very proud of it!" },
         ],
-        messages: [
-          { sender: "sitter", minutesAgo: 57, body: "Got Sofia! She's in a great mood." },
-          { sender: "parent", minutesAgo: 50, body: "Yay, thank you! Don't forget piano tonight." },
+        photos: [
+          { kind: "task_proof", taskId: "rivera-snack", file: "snack-plate.jpg" },
+          { kind: "chat", file: "drawing.jpg", at: SESSION.start + 81 * MINUTE, body: "Sofia's drawing! She wants it on the fridge." },
+          { kind: "moment", file: "story-time.jpg", daysAgo: 7, minutes: 150, body: "Story time before bed. She read two pages to me!", saved: true },
         ],
       },
     };
@@ -603,42 +745,116 @@
     },
   };
 
-  // The care log, check-offs, and messages this tab starts with (js/store.js reads it once).
+  // The care log and check-offs this tab starts with (js/store.js reads it once). Times come from
+  // the family's session (SESSION); anything timed after now is left out, so the log never shows
+  // an entry from the future (the session is clamped to start at midnight on a late-night visit).
   function shiftSeed() {
-    const seed = window.CareNestData.shiftSeed;
+    const data = window.CareNestData;
+    const seed = data.shiftSeed;
     if (!seed) return null;
     const now = Date.now();
-    const at = (minutesAgo) => now - minutesAgo * MINUTE;
     const shiftId = newId("shift");
+    const startedAt = Math.min(seed.startedAt, now);
     const completions = {};
-    const messages = [];
-    seed.completions.forEach((c) => {
-      completions[c.taskId] = { taskId: c.taskId, photoDataUrl: null, note: c.note || "", tag: "", sentAt: at(c.minutesAgo), sender: "sitter" };
-    });
-    seed.messages.forEach((m) => {
-      messages.push({ id: newId("msg"), kind: "chat", body: m.body, sender: m.sender, sentAt: at(m.minutesAgo) });
-    });
-    messages.sort((a, b) => a.sentAt - b.sentAt);
+    seed.completions
+      .filter((c) => c.at <= now)
+      .forEach((c) => {
+        completions[c.taskId] = { taskId: c.taskId, photoDataUrl: null, note: c.note || "", tag: "", sentAt: c.at, sender: "sitter" };
+      });
+    const childName = (id) => {
+      const child = (data.children || []).find((c) => c.id === id);
+      return child ? child.name : "";
+    };
+    const logs = seed.logs
+      // A task log needs its task checked off, as the database requires.
+      .filter((l) => l.at <= now && (l.childId || completions[l.taskId]))
+      .map((l) =>
+        l.childId
+          ? { id: newId("log"), shiftId, taskId: null, childId: l.childId, childName: childName(l.childId), category: "note", note: l.note, mealAmount: null, bottleOz: null, author: "sitter", createdAt: l.at }
+          : {
+              id: newId("log"),
+              shiftId,
+              taskId: l.taskId,
+              category: l.category,
+              note: l.note || "",
+              mealAmount: l.mealAmount || null,
+              bottleOz: l.bottleOz == null ? null : l.bottleOz,
+              author: l.author === "parent" ? "parent" : "sitter",
+              createdAt: l.at,
+            }
+      );
     return {
       completions,
-      messages,
+      // The sample photos are added by loadDemoPhotos() once their images have loaded.
+      messages: [],
       // The photo prompt ("moment") is due a few minutes after the tester opens the page.
-      shift: { id: shiftId, startedAt: at(seed.startedMinutesAgo), endedAt: null, momentAt: now + (2 + Math.floor(Math.random() * 3)) * MINUTE, events: [] },
+      shift: { id: shiftId, startedAt, endedAt: null, momentAt: now + (2 + Math.floor(Math.random() * 3)) * MINUTE, events: [] },
       reads: {},
       saves: {},
       insights: {},
-      logs: seed.logs.map((l) => ({
-        id: newId("log"),
-        shiftId,
-        taskId: l.taskId,
-        category: l.category,
-        note: l.note || "",
-        mealAmount: l.mealAmount || null,
-        bottleOz: l.bottleOz == null ? null : l.bottleOz,
-        author: l.author === "parent" ? "parent" : "sitter",
-        createdAt: at(l.minutesAgo),
-      })),
+      logs,
     };
+  }
+
+  // Sample photos for the Album, the sitter's Gallery, and the parent's Photos card: illustrations
+  // in assets/demo-photos/ (no real children). The demo stores photos as data URLs, so each image
+  // is fetched and converted once per tab, then handed to js/store.js. Pages that show photos
+  // re-render when the store changes. Only on pages that load the store.
+  function photoDataUrl(file) {
+    return fetch(`assets/demo-photos/${file}`)
+      .then((response) => (response.ok ? response.blob() : Promise.reject(new Error(response.statusText))))
+      .then(
+        (blob) =>
+          new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+          })
+      );
+  }
+
+  async function loadDemoPhotos() {
+    const store = window.CareNestStore;
+    const seed = window.CareNestData && window.CareNestData.shiftSeed;
+    if (!store || !store.seedDemoPhotos || !seed || !seed.photos || !store.needsDemoPhotos()) return;
+    const now = Date.now();
+    const wanted = seed.photos.filter((photo) => photo.at == null || photo.at <= now);
+    const files = Array.from(new Set(wanted.map((photo) => photo.file)));
+    const urls = {};
+    await Promise.all(
+      files.map((file) =>
+        photoDataUrl(file)
+          .then((url) => {
+            urls[file] = url;
+          })
+          .catch(() => {
+            /* a photo that fails to load is left out */
+          })
+      )
+    );
+    const day = 24 * HOUR;
+    store.seedDemoPhotos(
+      wanted
+        .filter((photo) => urls[photo.file])
+        .map((photo) => ({
+          kind: photo.kind,
+          taskId: photo.taskId || null,
+          body: photo.body || "",
+          photoDataUrl: urls[photo.file],
+          // Photos from an earlier session (one per day) were seen then; they are not this shift's.
+          pastShift: photo.daysAgo ? `demo-past-${photo.daysAgo}` : null,
+          seen: Boolean(photo.daysAgo),
+          saved: Boolean(photo.saved),
+          sentAt: photo.daysAgo ? SESSION.start - photo.daysAgo * day + (photo.minutes || 90) * MINUTE : photo.at || null,
+        }))
+    );
+  }
+
+  // After js/auth.js has picked this tab's demo store (its storeKey), so the photos land in the
+  // family on screen.
+  if (inDemo() && window.CareNestAuth && window.CareNestAuth.ready) {
+    window.CareNestAuth.ready.then(() => loadDemoPhotos()).catch(() => {});
   }
 
   const SITTER_PROFILE_KEY = "carenest:demo:sitter-profile";

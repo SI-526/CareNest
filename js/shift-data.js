@@ -117,6 +117,11 @@
   }
 
   // 'YYYY-MM-DD' of the UTC day offset from today (the database's shift-window clock).
+  function localDay(ms) {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
   function utcDay(offset) {
     return new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
   }
@@ -1011,7 +1016,8 @@
         loadError: null,
         visit: {
           id: shift.id,
-          date: utcDay(0),
+          // The local date the shift started (not UTC, which is already tomorrow on a US evening).
+          date: localDay(shift.startedAt),
           startedAt: shift.startedAt,
           startedByName: sitter,
           endedAt: shift.endedAt,

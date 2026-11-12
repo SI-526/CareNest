@@ -5754,3 +5754,9 @@ body[data-page="profile"] .secondary-main {
   color: var(--grey);
   background: var(--surface);
 }
+
+/* Demo People page: Revoke and Remove are turned off (js/people.js showDemo). */
+.people-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
