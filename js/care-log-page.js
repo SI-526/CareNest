@@ -19,7 +19,13 @@
   const els = {
     logView: $("session-log-view"),
     entryView: $("session-entry-view"),
-    sub: $("session-log-sub"),
+    sub: $("session-log-sub-text"),
+    family: $("session-log-family"),
+    kids: $("session-log-kids"),
+    filters: $("session-log-filters"),
+    logCount: $("session-log-count"),
+    emptyTitle: $("session-log-empty-title"),
+    logBack: $("session-log-back"),
     status: $("session-log-status"),
     add: $("session-log-add"),
     list: $("session-log-list"),
@@ -34,6 +40,9 @@
     count: $("entry-count"),
     error: $("entry-error"),
     save: $("entry-save"),
+    saveText: $("entry-save-text"),
+    headSave: $("entry-head-save"),
+    title: $("entry-title"),
     cancel: $("entry-cancel"),
     back: $("entry-back"),
   };
@@ -51,12 +60,28 @@
     let saving = false;
     let openedHere = false; // the form was opened from this page (so Back can use history.back())
     let lastIds = null;
+    let filter = "all"; // "all", "task", or a child id (chips under the session card)
+    let clockTimer = null;
+    const kidsApi = window.CareNestChildren;
+    const esc = ui.escapeHtml;
+    if (isParent) els.logBack.href = "parent.html" + window.location.search;
+    else els.logBack.href = "index.html" + window.location.search;
 
     const children = () => (data.children || []).filter((c) => c && c.id);
     const canAdd = () => {
       const st = shift.state;
       return !isParent && st.loaded !== false && !st.loadError && Boolean(st.visit) && st.canLog && children().length > 0;
     };
+
+    // The clock line on the session card: "Today, 3:00 PM - 7:00 PM" when today's schedule has a
+    // window, else "Today · Started 5:35pm".
+    function cardLine(st) {
+      if (!st.visit) return "No session yet";
+      const windowText = careLog.shiftWindowText(data.appointments);
+      const day = dayLabel(st.visit.date);
+      if (windowText && day === "Today") return `${day}, ${windowText}`;
+      return sessionLine(st).replace(/^Current session · /, "");
+    }
 
     function sessionLine(st) {
       if (!st.visit) return "No session yet";
@@ -92,23 +117,70 @@
       return "";
     }
 
+    const firstName = (c) => (kidsApi ? kidsApi.firstName(c) : String(c.name || "").split(/\s+/)[0]) || "Child";
+
+    // The child and session card (Figma 303:634 "child-profile"): initials, never photos.
+    function renderKids() {
+      const kids = children();
+      els.kids.classList.toggle("is-single", kids.length === 1);
+      els.kids.innerHTML = kids
+        .map((c) => {
+          const name = kidsApi ? kidsApi.displayName(c) : c.name || "Child";
+          const initials = kidsApi ? kidsApi.initials(name) : careLog.initialsOf(name);
+          const parts = kidsApi ? kidsApi.displayParts(c) : [];
+          return `<li class="session-log-kid"><span class="session-log-avatar" aria-hidden="true">${esc(initials)}</span><span class="session-log-kid-text"><span class="session-log-kid-name">${esc(name)}</span>${
+            parts.length ? `<span class="session-log-kid-details">${parts.map(esc).join('<span class="session-log-dot-sep" aria-hidden="true"></span>')}</span>` : ""
+          }</span></li>`;
+        })
+        .join("");
+      els.kids.hidden = !kids.length;
+    }
+
+    // Filter chips: All, one per child (only with two or more children), and Task details when
+    // the session has any. These are the only groupings the data supports (no categories, SI-83).
+    function renderFilters(entries) {
+      const kids = children();
+      const chips = [{ id: "all", label: "All", n: entries.length }];
+      if (kids.length > 1) {
+        kids.forEach((c) => chips.push({ id: c.id, label: firstName(c), n: entries.filter((e) => e.kind !== "task" && e.childId === c.id).length }));
+      }
+      const tasks = entries.filter((e) => e.kind === "task").length;
+      if (tasks) chips.push({ id: "task", label: "Task details", n: tasks });
+      if (!chips.some((c) => c.id === filter)) filter = "all";
+      els.filters.innerHTML = chips
+        .map((c) => `<button type="button" class="session-log-chip" data-filter="${esc(c.id)}" aria-pressed="${c.id === filter}">${esc(c.label)} (${c.n})</button>`)
+        .join("");
+      els.filters.hidden = !entries.length;
+    }
+
     function render() {
       const st = shift.state;
-      els.sub.textContent = sessionLine(st);
+      const familyName = data.familyName && kidsApi && kidsApi.familyBase ? `${kidsApi.familyBase(data.familyName)} Family` : "Care Log";
+      els.family.textContent = familyName;
+      els.sub.textContent = cardLine(st);
       const status = statusText(st);
       els.status.textContent = status;
       els.status.hidden = !status;
       els.add.hidden = !canAdd();
+      renderKids();
 
       const entries = careLog.sessionEntries(st, children(), data.schedule);
-      els.list.innerHTML = careLog.sessionLogHtml(entries);
-      els.list.hidden = !entries.length;
-      els.empty.hidden = entries.length > 0 || Boolean(st.loadError);
-      els.emptyCopy.textContent = isParent
-        ? "Notes your sitter adds during the session will show up here."
-        : canAdd()
-          ? "Tap New entry to note meals, naps, moods, or anything the parents should know."
-          : "Entries added during a session will show up here.";
+      renderFilters(entries);
+      const shown = entries.filter((e) => filter === "all" || (filter === "task" ? e.kind === "task" : e.kind !== "task" && e.childId === filter));
+      els.logCount.textContent = `${entries.length} ${entries.length === 1 ? "entry" : "entries"} logged`;
+      els.list.innerHTML = careLog.sessionLogHtml(shown);
+      els.list.hidden = !shown.length;
+      els.empty.hidden = shown.length > 0 || Boolean(st.loadError);
+      const kid = children().find((c) => c.id === filter);
+      els.emptyTitle.textContent = entries.length ? (kid ? `No entries about ${firstName(kid)} yet` : "No task details yet") : "No Entries Logged Yet";
+      els.emptyCopy.textContent = entries.length
+        ? ""
+        : isParent
+          ? "Notes your sitter adds during the session will show up here."
+          : canAdd()
+            ? "Tap Log Activity to note meals, naps, moods, or anything the parents should know."
+            : "Entries added during a session will show up here.";
+      els.emptyCopy.hidden = !els.emptyCopy.textContent;
       if (!els.entryView.hidden) renderPicker();
       showView();
     }
@@ -126,9 +198,23 @@
       els.children.innerHTML = kids
         .map((c) => {
           const name = c.name || "Child";
-          return `<label class="tag-option session-entry-child-option"><input type="radio" name="entry-child" value="${ui.escapeHtml(c.id)}"${c.id === picked ? " checked" : ""} aria-describedby="entry-error" /><span>${ui.escapeHtml(name)}</span></label>`;
+          const initials = kidsApi ? kidsApi.initials(name) : careLog.initialsOf(name);
+          return `<label class="tag-option care-log-tile session-entry-child-option"><input type="radio" name="entry-child" value="${ui.escapeHtml(c.id)}"${c.id === picked ? " checked" : ""} aria-describedby="entry-error" /><span><span class="care-log-tile-icon session-entry-initials" aria-hidden="true">${ui.escapeHtml(initials)}</span>${ui.escapeHtml(name)}</span></label>`;
         })
         .join("");
+      updateTitle();
+    }
+
+    // "Log Care for Jack" (Figma 421:1058) once the child is known.
+    function updateTitle() {
+      const kids = children();
+      const id = kids.length === 1 ? kids[0].id : (els.children.querySelector("input:checked") || {}).value;
+      const kid = kids.find((c) => c.id === id);
+      els.title.textContent = kid ? `Log Care for ${firstName(kid)}` : "Log Care";
+    }
+
+    function updateClock() {
+      els.when.textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     }
 
     function showView() {
@@ -139,12 +225,14 @@
       if (wantEntry && !wasEntry) {
         lastIds = null;
         renderPicker();
-        const st = shift.state;
-        els.when.textContent = st.visit ? sessionLine(st).replace(/^Current session · /, "") : "";
+        updateClock();
+        clearInterval(clockTimer);
+        clockTimer = setInterval(updateClock, 30000);
         updateCount();
         const first = els.picker.hidden ? els.note : els.children.querySelector("input:checked") || els.children.querySelector("input");
         if (first) first.focus();
       } else if (!wantEntry && wasEntry) {
+        clearInterval(clockTimer);
         els.add.focus();
       }
     }
@@ -186,7 +274,18 @@
       updateCount();
       setError("");
     });
-    els.children.addEventListener("change", () => setError(""));
+    els.children.addEventListener("change", () => {
+      setError("");
+      updateTitle();
+    });
+    els.filters.addEventListener("click", (e) => {
+      const chip = e.target.closest("[data-filter]");
+      if (!chip) return;
+      filter = chip.dataset.filter;
+      render();
+      const again = els.filters.querySelector(`[data-filter="${CSS.escape(filter)}"]`);
+      if (again) again.focus();
+    });
     window.addEventListener("hashchange", showView);
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && !els.entryView.hidden && !saving) closeForm();
@@ -209,7 +308,8 @@
       }
       saving = true;
       els.save.disabled = true;
-      els.save.textContent = "Saving…";
+      els.headSave.disabled = true;
+      els.saveText.textContent = "Saving…";
       setError("");
       const child = children().find((c) => c.id === result.entry.childId);
       shift
@@ -228,7 +328,8 @@
         .finally(() => {
           saving = false;
           els.save.disabled = false;
-          els.save.textContent = "Save entry";
+          els.headSave.disabled = false;
+          els.saveText.textContent = "Log Activity";
         });
     });
 

@@ -172,6 +172,7 @@
         return {
           id: log.id,
           kind: log.taskId ? "task" : "entry",
+          childId: child ? child.id : null,
           childName,
           childFirst: firstName(childName),
           childLabel,
@@ -193,31 +194,53 @@
     return letters.toUpperCase();
   }
 
-  // The list on the Care Log page. Each entry shows its child (or the task it is about), the
-  // content, and the time.
+  // Category icons from the design system (Figma 186:320): a white glyph in a 30px Deep Teal
+  // circle. Meal and Bottle map to Snack and Feed; anything else (Care, Care Log notes) uses the
+  // generic note icon, since the data has no finer category (SI-83).
+  // Glyphs: snack "cookie" (186:330) and feed "mdi:baby-bottle" (186:379) on a 20 grid; the
+  // note is Material "description" on a 24 grid.
+  const CATEGORY_ICONS = {
+    meal: ["0 0 20 20", "M10 18.3334C8.84722 18.3334 7.76389 18.1147 6.75 17.6772C5.73611 17.2397 4.85417 16.6459 4.10417 15.8959C3.35417 15.1459 2.76042 14.264 2.32292 13.2501C1.88542 12.2362 1.66667 11.1529 1.66667 10.0001C1.66667 8.95842 1.86806 7.93758 2.27083 6.93758C2.67361 5.93758 3.23611 5.04522 3.95833 4.2605C4.68056 3.47578 5.54861 2.84383 6.5625 2.36466C7.57639 1.8855 8.6875 1.64591 9.89583 1.64591C10.1875 1.64591 10.4861 1.6598 10.7917 1.68758C11.0972 1.71536 11.4097 1.76397 11.7292 1.83341C11.6042 2.45841 11.6458 3.04869 11.8542 3.60425C12.0625 4.1598 12.375 4.62161 12.7917 4.98967C13.2083 5.35772 13.7049 5.61119 14.2812 5.75008C14.8576 5.88897 15.4514 5.85425 16.0625 5.64592C15.7014 6.46536 15.7535 7.25008 16.2187 8.00008C16.684 8.75008 17.375 9.13897 18.2917 9.16675C18.3056 9.31953 18.316 9.46189 18.3229 9.59383C18.3299 9.72578 18.3333 9.86814 18.3333 10.0209C18.3333 11.1598 18.1146 12.2327 17.6771 13.2397C17.2396 14.2466 16.6458 15.1286 15.8958 15.8855C15.1458 16.6424 14.2639 17.2397 13.25 17.6772C12.2361 18.1147 11.1528 18.3334 10 18.3334ZM8.75 8.33342C9.09722 8.33342 9.39236 8.21189 9.63542 7.96883C9.87847 7.72578 10 7.43064 10 7.08342C10 6.73619 9.87847 6.44105 9.63542 6.198C9.39236 5.95494 9.09722 5.83342 8.75 5.83342C8.40278 5.83342 8.10764 5.95494 7.86458 6.198C7.62153 6.44105 7.5 6.73619 7.5 7.08342C7.5 7.43064 7.62153 7.72578 7.86458 7.96883C8.10764 8.21189 8.40278 8.33342 8.75 8.33342ZM7.08333 12.5001C7.43056 12.5001 7.72569 12.3786 7.96875 12.1355C8.21181 11.8924 8.33333 11.5973 8.33333 11.2501C8.33333 10.9029 8.21181 10.6077 7.96875 10.3647C7.72569 10.1216 7.43056 10.0001 7.08333 10.0001C6.73611 10.0001 6.44097 10.1216 6.19792 10.3647C5.95486 10.6077 5.83333 10.9029 5.83333 11.2501C5.83333 11.5973 5.95486 11.8924 6.19792 12.1355C6.44097 12.3786 6.73611 12.5001 7.08333 12.5001ZM12.5 13.3334C12.7361 13.3334 12.934 13.2536 13.0938 13.0938C13.2535 12.9341 13.3333 12.7362 13.3333 12.5001C13.3333 12.264 13.2535 12.0661 13.0938 11.9063C12.934 11.7466 12.7361 11.6667 12.5 11.6667C12.2639 11.6667 12.066 11.7466 11.9062 11.9063C11.7465 12.0661 11.6667 12.264 11.6667 12.5001C11.6667 12.7362 11.7465 12.9341 11.9062 13.0938C12.066 13.2536 12.2639 13.3334 12.5 13.3334Z"],
+    bottle: ["0 0 20 20", "M9.4 2.33333L8.98333 2.75C8.43348 2.44336 7.82636 2.25329 7.19981 2.19164C6.57327 2.12999 5.94074 2.19808 5.34167 2.39167L5.275 2.33333C4.8781 1.97854 4.36043 1.78915 3.82828 1.80404C3.29612 1.81893 2.78986 2.03698 2.41342 2.41342C2.03698 2.78986 1.81893 3.29612 1.80404 3.82828C1.78915 4.36043 1.97854 4.8781 2.33333 5.275L2.39167 5.34167C2.19808 5.94074 2.12999 6.57327 2.19164 7.19981C2.25329 7.82636 2.44336 8.43348 2.75 8.98333L2.33333 9.4C2.09925 9.63438 1.96777 9.95208 1.96777 10.2833C1.96777 10.6146 2.09925 10.9323 2.33333 11.1667L3.50833 12.35C3.74271 12.5841 4.06042 12.7156 4.39167 12.7156C4.72292 12.7156 5.04062 12.5841 5.275 12.35L5.56667 12.05L11.4667 17.9417C11.701 18.1758 12.0187 18.3072 12.35 18.3072C12.6813 18.3072 12.999 18.1758 13.2333 17.9417L17.9417 13.2333C18.1758 12.999 18.3072 12.6813 18.3072 12.35C18.3072 12.0187 18.1758 11.701 17.9417 11.4667L12.05 5.56667L12.35 5.275C12.5841 5.04062 12.7156 4.72292 12.7156 4.39167C12.7156 4.06042 12.5841 3.74271 12.35 3.50833L11.1667 2.33333C10.9323 2.09925 10.6146 1.96777 10.2833 1.96777C9.95208 1.96777 9.63438 2.09925 9.4 2.33333ZM11.4667 4.39167L4.39167 11.4667L3.21667 10.2833L10.2833 3.21667M12.35 9.69167L9.69167 12.35L8.80833 11.4667L11.4667 8.80833M14.1167 11.4667L11.4667 14.1167L10.575 13.2333L13.2333 10.575L14.1167 11.4667Z"],
+    note: ["0 0 24 24", "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm2 16H8v-2h8v2Zm0-4H8v-2h8v2Zm-3-5V3.5L18.5 9H13Z"],
+  };
+
+  function categoryIconHtml(category, cls) {
+    const [box, path] = CATEGORY_ICONS[category] || CATEGORY_ICONS.note;
+    return `<span class="${cls || "care-log-dot"}" data-category="${escapeHtml(category || "note")}" aria-hidden="true"><svg viewBox="${box}" width="20" height="20" focusable="false"><path fill="currentColor" d="${path}"/></svg></span>`;
+  }
+
+  // The Shift Timeline on the Care Log page (Figma 303:634): a rail of category dots, one card
+  // per entry with its title and time, and the details in an inset box.
   function sessionLogHtml(entries) {
     return entries
       .map((e) => {
         const iso = new Date(e.createdAt).toISOString();
-        const badge =
+        const title = e.kind === "task" ? e.taskTitle : e.childLabel;
+        const kind =
           e.kind === "task"
-            ? `<span class="session-log-badge session-log-badge--task" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M9.6 16.2 5.4 12l-1.4 1.4 5.6 5.6 12-12-1.4-1.4z" fill="currentColor"/></svg></span>`
-            : `<span class="session-log-badge" aria-hidden="true">${escapeHtml(initialsOf(e.childName))}</span>`;
-        const subject =
-          e.kind === "task"
-            ? `${escapeHtml(e.taskTitle)}<span class="session-log-kind"> · ${escapeHtml(CATEGORY_LABELS[e.category] || "Care")}</span>`
-            : escapeHtml(e.childLabel);
+            ? `Task details · ${escapeHtml(CATEGORY_LABELS[e.category] || "Care")}`
+            : "Note";
         const about = e.childName || (e.childRemoved ? "a removed child" : "your child");
         const label = e.kind === "task" ? `Task details: ${e.taskTitle}` : `Entry about ${about}`;
+        const detail =
+          e.facts.length || e.note
+            ? `<div class="session-log-detail">
+              ${e.facts.length ? `<p class="session-log-fact">${escapeHtml(e.facts.join(" • "))}</p>` : ""}
+              ${e.note ? `<p class="session-log-text">${escapeHtml(e.note)}</p>` : ""}
+            </div>`
+            : "";
         return `<li class="session-log-entry" data-entry-id="${escapeHtml(e.id)}">
+          ${categoryIconHtml(e.kind === "task" ? e.category : "note", "session-log-dot")}
           <article class="session-log-card" aria-label="${escapeHtml(label)}">
             <div class="session-log-entry-head">
-              ${badge}
-              <p class="session-log-subject">${subject}</p>
+              <div class="session-log-heading">
+                <p class="session-log-subject">${escapeHtml(title)}</p>
+                <p class="session-log-kind">${kind}</p>
+              </div>
               <time class="session-log-time" datetime="${iso}">${escapeHtml(shortTime(e.createdAt))}</time>
             </div>
-            ${e.facts.length ? `<p class="session-log-fact">${escapeHtml(e.facts.join(" · "))}</p>` : ""}
-            ${e.note ? `<p class="session-log-text">${escapeHtml(e.note)}</p>` : ""}
+            ${detail}
             ${e.authorName ? `<p class="session-log-author">By ${escapeHtml(e.authorName)}</p>` : ""}
           </article>
         </li>`;
@@ -361,7 +384,7 @@
           : "";
         const icon = row.logs.length ? row.logs[row.logs.length - 1].category : "done";
         return `<li class="care-log-task">
-          <span class="care-log-dot" data-category="${escapeHtml(icon)}">${iconSvg(icon, 16)}</span>
+          ${categoryIconHtml(icon)}
           <div class="care-log-item">
             <div class="care-log-task-head">
               <p class="care-log-task-title">${escapeHtml(row.title)}</p>
@@ -506,7 +529,7 @@
     const categories = categoriesFor(modal.ageLabel());
     q("[data-log-categories]").innerHTML = categories
       .map(
-        (c, i) => `<label class="tag-option care-log-tile"><input type="radio" name="log-category" value="${c}"${i === 0 ? " checked" : ""} /><span><span class="care-log-tile-icon">${iconSvg(c, 20)}</span>${CATEGORY_LABELS[c]}</span></label>`
+        (c, i) => `<label class="tag-option care-log-tile"><input type="radio" name="log-category" value="${c}"${i === 0 ? " checked" : ""} /><span>${categoryIconHtml(c, "care-log-tile-icon")}${CATEGORY_LABELS[c]}</span></label>`
       )
       .join("");
     q("#log-form").querySelectorAll('input[name="log-amount"]').forEach((input) => {
@@ -603,6 +626,7 @@
     validateEntry,
     sessionEntries,
     sessionLogHtml,
+    categoryIconHtml,
     initialsOf,
     parseAgeMonths,
     categoriesFor,
