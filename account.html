@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" class="auth-pending">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+    <title>CareNest — Personal details</title>
+  </head>
+  <body data-page="account">
+    <div class="app detail-app parent-app">
+      <nav class="primary-nav" aria-label="Parent navigation"></nav>
+
+      <main class="parent-main people-main account-main" aria-labelledby="account-details-title">
+        <header class="detail-nav">
+          <a class="back-btn" href="profile.html" aria-label="Back to your profile">
+            <img src="assets/back.svg" alt="" width="30" height="30" />
+          </a>
+          <h1 id="account-details-title">Personal details</h1>
+        </header>
+        <p class="auth-status" id="account-loading" role="status">Loading your details…</p>
+
+        <section class="card auth-card" aria-labelledby="account-form-heading" id="account-card" hidden>
+          <h2 class="panel-title" id="account-form-heading">Your details</h2>
+          <form class="invite-form" id="account-form" novalidate>
+            <label class="field-label" for="account-name">Name</label>
+            <input class="text-input" id="account-name" name="name" type="text" maxlength="80" autocomplete="name" required />
+
+            <label class="field-label" for="account-email">Email address</label>
+            <input class="text-input" id="account-email" name="email" type="email" readonly aria-describedby="account-email-note" />
+            <p class="signin-note" id="account-email-note">This is the address you sign in with, so it can't be changed here.</p>
+
+            <label class="field-label" for="account-phone">Phone number <span class="field-optional">(optional)</span></label>
+            <input class="text-input" id="account-phone" name="phone" type="tel" maxlength="40" autocomplete="tel" />
+
+            <label class="account-switch" for="account-share-phone">
+              <span class="account-switch-text">
+                <span class="account-switch-title">Share my phone number with my sitter</span>
+                <span class="signin-note" id="account-share-note">
+                  Your sitter sees it on the Children page as the family's primary contact, unless
+                  you choose a different primary contact in <a href="manage.html">Family info</a>.
+                  Turn this off to keep the number private.
+                </span>
+              </span>
+              <input type="checkbox" role="switch" id="account-share-phone" name="share_phone" aria-describedby="account-share-note" />
+            </label>
+
+            <div class="profile-save-row">
+              <button type="submit" class="primary-btn" id="account-save">Save</button>
+              <p class="profile-save-status" id="account-status" role="status" aria-live="polite"></p>
+            </div>
+            <p class="form-error" id="account-error" role="alert" hidden></p>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <p class="visually-hidden" id="app-status" aria-live="polite"></p>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"
+      integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok"
+      crossorigin="anonymous"
+    ></script>
+    <script src="js/config.js"></script>
+    <script src="js/supabase.js"></script>
+    <script src="js/active-family.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/children.js"></script><script src="js/data.js"></script>
+    <script src="js/family-data.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/account.js"></script>
+  </body>
+</html>

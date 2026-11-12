@@ -15,6 +15,8 @@
   // Loaded once before the page renders: the signed-in sitter's own profile (profile page) or
   // the fields this family's sitters chose to share (parent schedule page).
   let sitterProfileState = null;
+  // The signed-in parent's own details (profile page; edited on account.html).
+  let parentProfileState = null;
   let sharedSitter = null;
   // The schedule page's re-sync with window.CareNestData (set by bindSchedule).
   let syncSchedule = null;
@@ -24,6 +26,7 @@
     if (isParent) ui.renderParentNav(page);
     else ui.renderSitterNav(page);
     if (page === "profile" && !isParent) sitterProfileState = await loadSitterProfile(ctx);
+    if (page === "profile" && isParent) parentProfileState = await auth.loadParentProfile(ctx);
     if (page === "schedule" && isParent) sharedSitter = await loadSharedSitter(ctx);
     render(ctx);
     // Live (SI-50): a parent's new session reaches the sitter, and a sitter's schedule request
@@ -269,13 +272,14 @@
 
   // Profile tab (Figma 316:2252 / 316:2360): who is signed in, their contact details, and the
   // account settings list. Read-only; the sitter edits name and phone in the public-profile form
-  // below. Parents have no personal profile row, so they get their family-roster name and email.
+  // below, and a parent edits theirs on account.html (Profile management).
   function profileSummary(ctx) {
     const isParent = Boolean(ctx && ctx.role === "parent");
     const profile = isParent ? null : (sitterProfileState && sitterProfileState.profile) || profileDefaults();
     const memberName = ctx && ctx.membership ? ctx.membership.display_name : ctx && ctx.demo ? data.parentName : "";
-    const name = String((isParent ? memberName : profile.name) || "").trim();
-    const phone = isParent ? "" : String(profile.phone || "").trim();
+    const parentProfile = isParent && parentProfileState ? parentProfileState.profile : null;
+    const name = String((isParent ? (parentProfile && parentProfile.name) || memberName : profile.name) || "").trim();
+    const phone = String((isParent ? parentProfile && parentProfile.phone : profile.phone) || "").trim();
     const email = String((ctx && ctx.email) || "").trim();
     const empty = !name && !phone;
     const avatar = empty
@@ -285,12 +289,12 @@
     const row = (label, value) => `<div class="profile-info-row"><p class="profile-info-label">${label}</p><p class="profile-info-value">${value}</p></div>`;
     const rows = [];
     if (email) rows.push(row("Email address", esc(email)));
-    if (!isParent && !empty) rows.push(row("Phone number", phone ? esc(phone) : '<span class="profile-info-missing">Not provided</span>'));
+    if (!empty) rows.push(row("Phone number", phone ? esc(phone) : '<span class="profile-info-missing">Not provided</span>'));
     const emptyBlock = '<div class="profile-info-empty"><p class="profile-info-empty-title">No information provided.</p><p>Add your name and contact details using Profile management.</p><p class="profile-info-empty-note">You&#39;re still signed in to your account.</p></div>';
     const info = empty ? emptyBlock + rows.join("") : rows.length ? rows.join("") : '<p class="profile-info-missing">No contact details provided.</p>';
     const settingsRow = (href, icon, title, sub) => `<li><a class="profile-settings-row" href="${href}"><span class="profile-settings-icon" aria-hidden="true"><img src="assets/${icon}" alt=""></span><span class="profile-settings-text"><span class="profile-settings-title">${title}</span><span class="profile-settings-sub">${sub}</span></span><img class="profile-settings-chevron" src="assets/icon-chevron-right.svg" alt="" aria-hidden="true"></a></li>`;
     const settings = [
-      settingsRow(isParent ? "#account" : "#profile-management", "icon-person.svg", "Profile management", "Personal details"),
+      settingsRow(isParent ? "account.html" : "#profile-management", "icon-person.svg", "Profile management", "Personal details"),
       isParent ? settingsRow("people.html", "icon-home.svg", "Manage household", "People &amp; invites") : "",
       isParent ? "" : settingsRow("#profile-updates", "icon-notifications.svg", "Notifications", "Care reminders &amp; family updates"),
     ].join("");

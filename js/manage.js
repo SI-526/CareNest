@@ -285,7 +285,7 @@
       document.getElementById("home-address").value = ctx.household.home_address || "";
       const primary = state.contacts.find((c) => c.is_primary);
       document.getElementById("primary-contact").innerHTML =
-        '<option value="">None</option>' +
+        '<option value="">None (a parent who shares their phone)</option>' +
         state.contacts
           .map((c) => `<option value="${esc(c.id)}"${primary && primary.id === c.id ? " selected" : ""}>${esc([c.name, c.role].filter(Boolean).join(" · "))}</option>`)
           .join("");
