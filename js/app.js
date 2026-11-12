@@ -175,8 +175,8 @@
     }
     const where = item.location || item.detail || "";
     el.innerHTML = `
-      <button type="button" class="next-activity-item" data-next-id="${escapeHtml(item.id)}" aria-label="View details for ${escapeHtml(item.title)} at ${escapeHtml(item.time)}">
-        <span class="next-activity-time">${escapeHtml(item.time)}</span>
+      <button type="button" class="next-activity-item" data-next-id="${escapeHtml(item.id)}" aria-label="View details for ${escapeHtml(item.title)} at ${escapeHtml(displayTimes(item.time))}">
+        <span class="next-activity-time">${escapeHtml(displayTimes(item.time))}</span>
         <span class="next-activity-body">
           <span class="next-activity-title">${escapeHtml(item.title)}</span>
           ${where ? `<span class="next-activity-detail">${escapeHtml(where)}</span>` : ""}
@@ -258,7 +258,7 @@
   function clockLabel(ms) {
     const d = new Date(ms);
     const h = d.getHours();
-    const time = `${h % 12 === 0 ? 12 : h % 12}:${String(d.getMinutes()).padStart(2, "0")}${h >= 12 ? "pm" : "am"}`;
+    const time = formatTime(ms);
     if (localDateKey(ms) === localDateKey(Date.now())) return time;
     return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
   }
@@ -672,7 +672,7 @@
     const title = category ? category.title : "Care information";
     const titleEl = document.getElementById("info-title");
     if (titleEl) titleEl.textContent = title;
-    document.title = `CareNest — ${title}`;
+    document.title = `CareNest · ${title}`;
 
     const contentEl = document.getElementById("info-content");
     if (!contentEl) return;
@@ -889,7 +889,7 @@
     cardEl.innerHTML = `
       <div class="shift-timing">
         <p class="shift-date">${escapeHtml(child.dateLabel)}</p>
-        ${child.shiftTime ? `<p class="shift-hours shift-tag">${escapeHtml(child.shiftTime)}</p>` : ""}
+        ${child.shiftTime ? `<p class="shift-hours shift-tag">${escapeHtml(displayTimes(child.shiftTime))}</p>` : ""}
       </div>
       ${children
         .map(
@@ -1036,7 +1036,7 @@
           <li class="schedule-row${item.completed ? " is-completed" : ""}">
             <div class="schedule-item-wrap">
               <button type="button" class="schedule-item" data-schedule-id="${escapeHtml(item.id)}" aria-label="View details for ${escapeHtml(item.title)}${completedLabel}">
-                <span class="schedule-time">${escapeHtml(item.time)}</span>
+                <span class="schedule-time">${escapeHtml(displayTimes(item.time))}</span>
                 <div class="schedule-body">
                   <p class="schedule-title">${escapeHtml(item.title)}</p>
                   ${detailHtml}
@@ -1209,7 +1209,7 @@
     pendingCompleteItem = item;
     resetPhotoUpload();
 
-    overlay.querySelector("[data-complete-time]").textContent = item.time;
+    overlay.querySelector("[data-complete-time]").textContent = displayTimes(item.time);
     overlay.querySelector("[data-complete-title]").textContent = item.title;
     overlay.querySelector("[data-complete-detail]").textContent =
       taskDetailText(item);
@@ -1494,16 +1494,22 @@
     }, 50);
   }
 
+  // "5:02 PM", the one clock format the app shows (Figma 238:687). Display only.
   function formatTime(ms) {
-    return new Date(ms).toLocaleTimeString([], {
-      hour: "numeric",
-      minute: "2-digit",
-    });
+    const d = new Date(ms);
+    const h = d.getHours();
+    return `${h % 12 === 0 ? 12 : h % 12}:${String(d.getMinutes()).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
   }
 
-  // "5:02pm"
+  // Kept as a name for callers (js/parent.js, js/care-log-page.js); same format as formatTime.
   function shortTime(ms) {
-    return formatTime(ms).replace(/\s*([AaPp])\.?\s*[Mm]\.?$/, (m, ap) => `${ap.toLowerCase()}m`);
+    return formatTime(ms);
+  }
+
+  // Display only: stored task times and shift hours ("3:00pm", "3:00pm - 7:00pm") read as
+  // "3:00 PM" and "3:00 PM - 7:00 PM". Stored values and comparisons keep their own format.
+  function displayTimes(text) {
+    return String(text || "").replace(/\b(\d{1,2}:\d{2})\s*([AaPp])\.?[Mm]\.?(?![A-Za-z])/g, (m, hm, ap) => `${hm} ${ap.toUpperCase()}M`);
   }
 
   function renderShiftControls() {
@@ -1703,7 +1709,7 @@
     if (!overlay) return;
     returnFocusEl = opener || document.activeElement;
 
-    overlay.querySelector("[data-modal-time]").textContent = item.time;
+    overlay.querySelector("[data-modal-time]").textContent = displayTimes(item.time);
     overlay.querySelector("[data-modal-date]").textContent = data.child.dateLabel;
     overlay.querySelector("[data-modal-title]").textContent = item.title;
 
@@ -1933,6 +1939,7 @@
     announce,
     formatTime,
     shortTime,
+    displayTimes,
     senderName,
     photoTitle,
     photoImg,

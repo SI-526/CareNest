@@ -274,6 +274,7 @@
       ctx.role === "caretaker" ? ctx.membership : ctx.members.find((m) => m.role === "caretaker");
     if (sitter) data.babysitter.name = firstName(sitter);
     data.viewerFirstName = firstName(ctx.membership);
+    data.viewerName = ((ctx.membership && ctx.membership.display_name) || "").trim();
     const parent = ctx.members.find((m) => m.role === "parent");
     if (parent) data.parentName = (parent.display_name || "").trim() || firstName(parent);
   }

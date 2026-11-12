@@ -7371,10 +7371,28 @@ body[data-page="info"] .info-content > .panel:not(:has(.panel-title)) {
   justify-content: center;
 }
 
-.gallery-head h1 {
+.gallery-head h1,
+body.parent-album .parent-header .parent-title {
   font-family: var(--font);
   font-size: var(--text-heading);
   text-align: center;
+}
+
+/* Album (parent.html#album) reads as Gallery's sibling: the same centred page title and no
+   greeting row, so the two photo pages share one header treatment (SI-101). */
+body.parent-album .parent-header {
+  justify-content: center;
+  padding-top: 0;
+}
+
+body.parent-album .parent-header .parent-child-avatar,
+body.parent-album .parent-greeting {
+  display: none;
+}
+
+body.parent-album .parent-header .parent-title {
+  line-height: var(--leading-tight);
+  letter-spacing: -0.01em;
 }
 
 .gallery-filter {
@@ -7506,12 +7524,13 @@ body[data-page="info"] .info-content > .panel:not(:has(.panel-title)) {
   font-weight: var(--weight-semibold);
 }
 
+/* Left-aligned in the content column, under the filter chips (SI-101). */
 .gallery-empty {
-  padding: 32px 16px;
+  padding: 24px 0;
   color: var(--grey);
   font-family: var(--font);
   font-size: var(--text-body);
-  text-align: center;
+  text-align: left;
 }
 
 .gallery-empty::before {
