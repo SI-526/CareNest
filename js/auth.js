@@ -380,7 +380,7 @@
     if (session && session.user) {
       const meta = session.user.user_metadata || {};
       const name = (meta.full_name || meta.name || "").trim() || session.user.email || "your account";
-      banner.innerHTML = `Demo mode — signed in as ${escapeHtml(name)} · <button type="button" class="text-btn demo-exit">Exit demo</button>`;
+      banner.innerHTML = `Demo mode: signed in as ${escapeHtml(name)}. <button type="button" class="text-btn demo-exit">Exit demo</button>`;
       banner.querySelector("button").addEventListener("click", () => {
         clearDemo();
         window.location.replace(window.location.pathname);

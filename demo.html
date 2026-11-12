@@ -10,7 +10,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="css/styles.css" />
-    <title>CareNest — Try the demo</title>
+    <title>Try the demo · CareNest</title>
   </head>
   <body data-page="demo">
     <div class="app auth-app">
@@ -19,12 +19,16 @@
         <section class="auth-intro">
           <h1 class="auth-title" id="demo-title">Try CareNest</h1>
           <p class="auth-lede">
-            Explore a sample family without signing in. You can check off tasks, add care log entries, send
-            messages, and change information. Nothing is saved after you close this tab.
+            Explore a sample family without signing in. You can check off tasks, add care log entries and
+            photos, and change information. Nothing is saved after you close this tab.
           </p>
         </section>
+        <div class="demo-choices">
         <section class="card auth-card demo-choice" aria-labelledby="demo-sitter-heading">
-          <h2 class="panel-title" id="demo-sitter-heading">Babysitter</h2>
+          <div class="demo-choice-head">
+            <span class="demo-choice-avatar" aria-hidden="true">B</span>
+            <h2 class="panel-title" id="demo-sitter-heading">Babysitter</h2>
+          </div>
           <p class="signin-note">
             You're Bethany, babysitting Jack Thomas (age 3) today. You also sit for Sofia Rivera (age 6); switch
             families with the menu at the top of the page.
@@ -32,13 +36,17 @@
           <a class="primary-btn" href="index.html?demo=1">Try as the babysitter</a>
         </section>
         <section class="card auth-card demo-choice" aria-labelledby="demo-parent-heading">
-          <h2 class="panel-title" id="demo-parent-heading">Parent</h2>
+          <div class="demo-choice-head">
+            <span class="demo-choice-avatar" aria-hidden="true">MT</span>
+            <h2 class="panel-title" id="demo-parent-heading">Parent</h2>
+          </div>
           <p class="signin-note">
             You're Mary Ann Thomas, Jack's mom. Follow today's care session and edit Jack's care information and
             schedule.
           </p>
           <a class="primary-btn" href="parent.html?demo=1">Try as a parent</a>
         </section>
+        </div>
       </main>
       <footer class="legal-footer"><a href="privacy.html">Privacy</a><span aria-hidden="true">·</span><a href="terms.html">Terms</a></footer>
     </div>

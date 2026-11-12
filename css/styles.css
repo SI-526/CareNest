@@ -1,51 +1,80 @@
 /* CareNest design system — calm, clear, and quietly playful. */
+/* Design system tokens (Figma "Design System" 186:293 variables). Where a swatch label and its
+   variable disagree (Deep Teal #123E52 vs #00324E, Cloud #F8F8FB vs #F6F6F6) the variable wins. */
 :root {
-  --blue: #00324e;
-  --grey: #666666;
-  --bg: #fcfcff;
-  --surface: #f6f7ff;
+  /* Colour */
+  --blue: #00324e; /* Deep Teal: headings, primary text, active nav */
+  --grey: #666666; /* Cool Gray: secondary text, inactive nav */
+  --cloud: #f6f6f6; /* Cloud: page background */
+  --bg: var(--cloud);
+  --section: #fafcff; /* Home section cards (Figma 153:5) */
+  --surface: #f6f6f6; /* neutral inset and hover fill */
   --card: #ffffff;
-  --cloud: #f6f6f6;
   --severe: #f9d7d7;
   --mild: #fff1c9;
   --map-border: #8c95d2;
-  --accent: #798cce;
-  --accent-strong: #6267b5;
+  --accent: #798cce; /* Periwinkle */
+  --accent-strong: #6267b5; /* Action Violet */
   --accent-soft: #eef0ff;
   --focus: #6267b5;
-  --line: #dfe0e9;
+  --line: #dfe0e9; /* Soft Border */
   --line-soft: #eceef5;
   --line-strong: #cfd4ea;
+  --divider: #c8c8c8; /* list dividers on Home */
   --success: #397456;
   --success-soft: #e7f4eb;
+  --green: #268514;
   --warning: #885c0a;
   --warning-soft: #fff4df;
   --notice: #766018;
   --notice-soft: #fff9e7;
   --neutral-soft: #f3f4fa;
-  --danger: #bd0000;
+  --danger: #bd0000; /* Red */
   --danger-soft: #fff0f1;
+  /* Tag backgrounds (Figma Tag 255:567) */
+  --tag-alert: #ffdcdc;
+  --tag-caution: #fdf9d1;
+  --tag-success: #e5ede3;
+  --tag-note: #dfe0e9;
+  --note-open: rgba(129, 148, 214, 0.3); /* an Important today note, expanded (158:193) */
   --overlay: rgba(18, 63, 79, 0.42);
-  --radius: 16px;
-  --radius-sm: 12px;
-  --shadow-surface: 0 1px 2px rgba(35, 54, 100, 0.03), 0 10px 28px rgba(35, 54, 100, 0.045);
-  --shadow-hover: 0 12px 30px rgba(35, 54, 100, 0.11);
+
+  /* Radii: 10 cards and buttons, 8 tiles and icon containers, 16 Care Log, 6 tags */
+  --radius: 10px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --radius-tag: 6px;
+  --radius-pill: 999px;
+
+  /* Elevation: cards sit flat on Cloud; only the nav bars cast a shadow. */
+  --shadow-surface: 0 1px 2px rgba(17, 45, 78, 0.04);
+  --shadow-hover: 0 8px 20px rgba(17, 45, 78, 0.08);
+  --shadow-nav: 0 -1px 15px rgba(0, 0, 0, 0.1);
+  --shadow-topnav: 0 -1px 7.5px rgba(0, 0, 0, 0.1);
   --max-width: 1240px;
   --detail-width: 560px;
 
-  /* Typography — mobile-first type scale */
+  /* Typography: Poppins for headings and titles, DM Sans for body, labels and buttons. */
   --font: "Poppins", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
-  /* Figma hi-fi: Poppins for headings/titles, DM Sans for body, labels, buttons. */
   --font-body: "DM Sans", system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
-  --text-xs: 0.75rem; /* 12px — captions, badges */
-  --text-sm: 0.8125rem; /* 13px — secondary meta */
-  --text-base: 0.9375rem; /* 15px — body */
-  --text-md: 1rem; /* 16px — section titles, names */
-  --text-lg: 1.125rem; /* 18px — emphasized lines */
-  --text-xl: 1.25rem; /* 20px — page titles (phone) */
-  --text-2xl: 1.5rem; /* 24px — page titles (tablet+), auth titles */
+  /* Design-system text styles (size / line-height) */
+  --text-title: 1.75rem; /* 28 / 36.4 Poppins 700 */
+  --text-heading: 1.5rem; /* 24 / 31.6 Poppins 700 */
+  --text-sub1: 1.125rem; /* 18 / 26 Poppins 700 */
+  --text-sub2: 1rem; /* 16 / 21 Poppins 700 */
+  --text-sub3: 0.875rem; /* 14 / 21 Poppins 700 */
+  --text-body: 0.875rem; /* 14 / 21 DM Sans 400 (Body, Label/L2, Button/B2) */
+  --text-caption: 0.75rem; /* 12 / 18 DM Sans 400 (Caption, Label/L3) */
+  /* Legacy scale, kept for pages not yet moved to the named styles */
+  --text-xs: 0.75rem; /* 12px */
+  --text-sm: 0.8125rem; /* 13px */
+  --text-base: 0.875rem; /* 14px body */
+  --text-md: 1rem; /* 16px */
+  --text-lg: 1.125rem; /* 18px */
+  --text-xl: 1.25rem; /* 20px */
+  --text-2xl: 1.5rem; /* 24px */
   --text-display: clamp(2rem, 4vw, 3.25rem);
   --leading-tight: 1.25;
   --leading-snug: 1.4;
@@ -119,22 +148,23 @@ button {
   gap: 12px;
 }
 
-/* Primary navigation */
+/* Primary navigation: the Bottom Nav component (Figma 196:482, 425:1626) on phones and a
+   full-bleed bar on wider screens. Default items show the outline glyph and a Cool Gray label;
+   the active item swaps to the filled glyph and a Deep Teal label, with no pill behind it. */
 .primary-nav {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
   max-width: 100%;
-  /* A conventional app bar should span its frame instead of floating as a
-     content-width pill. */
   margin: 0;
   align-self: stretch;
   padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
   background: var(--card);
-  box-shadow: var(--shadow-surface);
+  box-shadow: none;
 }
 
 .nav-item {
@@ -144,49 +174,56 @@ button {
   gap: 8px;
   min-height: 46px;
   padding: 0 16px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   color: var(--grey);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  line-height: var(--leading-tight);
-  transition: background 0.15s ease, color 0.15s ease;
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-normal);
+  transition: color 0.15s ease;
   flex: 1 1 0;
 }
 
 .nav-icon {
   display: block;
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
   fill: currentColor;
+}
+
+.nav-icon-filled,
+.nav-item[aria-current="page"] .nav-icon-outline {
+  display: none;
+}
+
+.nav-item[aria-current="page"] .nav-icon-filled {
+  display: inline;
 }
 
 .nav-item:hover,
 .nav-item:focus-visible {
   color: var(--blue);
   outline: none;
-  background: var(--bg);
 }
 
 .nav-item:focus-visible {
   box-shadow: 0 0 0 2px var(--focus);
 }
 
-/* Figma: the active tab is Deep Teal icon + label with no pill background. */
 .nav-item[aria-current="page"] {
   color: var(--blue);
   background: transparent;
-  font-weight: var(--weight-bold);
+  font-weight: var(--weight-medium);
 }
 
-/* Tablet+: keep two-word labels ("Family info") on one line. */
+/* Tablet+: keep labels on one line. */
 @media (min-width: 768px) {
   .nav-item {
     white-space: nowrap;
   }
 }
 
-/* Tablet: the 7–8 item pill must fit inside 768px without horizontal scroll. */
 @media (min-width: 768px) and (max-width: 1023px) {
   .nav-item {
     gap: 6px;
@@ -194,13 +231,8 @@ button {
   }
 }
 
-/* Desktop: room for slightly larger, easier-to-read labels. */
-@media (min-width: 1024px) {
-  .nav-item {
-    font-size: 0.875rem;
-  }
-}
-
+/* Phones: the Bottom Nav. White, 16px side padding, 60px items with a 28px glyph over a
+   12/18 label, 78px tall plus the safe area. */
 @media (max-width: 767px) {
   html {
     scroll-padding-bottom: 120px;
@@ -218,33 +250,34 @@ button {
     left: 0;
     width: 100%;
     max-width: none;
-    justify-content: space-around;
-    gap: 2px;
-    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    justify-content: space-between;
+    gap: 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
     border: 0;
-    border-top: 1px solid var(--line);
-    border-radius: 0;
-    background: rgba(255, 255, 255, 0.96);
-    box-shadow: 0 -4px 18px rgba(0, 50, 78, 0.06);
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
+    background: var(--card);
+    box-shadow: var(--shadow-nav);
   }
 
   .nav-item {
-    flex: 1 1 0;
+    flex: 0 1 60px;
     flex-direction: column;
-    gap: 3px;
+    gap: 0;
     min-width: 0;
     min-height: 54px;
-    padding: 5px 2px;
-    font-size: 0.6875rem;
-    font-weight: var(--weight-medium);
+    padding: 4px 0;
+    font-size: var(--text-caption);
+    line-height: 18px;
+    text-align: center;
+  }
+
+  .nav-item[aria-current="page"] {
+    font-weight: var(--weight-regular);
   }
 
   .nav-icon {
-    width: 22px;
-    height: 22px;
-    flex-basis: 22px;
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
   }
 }
 
@@ -288,12 +321,13 @@ button {
   }
 }
 
-/* Next shift */
+/* Next shift / Current Shift (Figma 153:5, 74:7): date on the left, the hours as a Tag on the
+   right, then each child as a 60px initials avatar with name and age. */
 .shift-card {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 12px;
+  gap: 16px;
+  padding: 12px 8px;
 }
 
 .shift-timing {
@@ -307,17 +341,38 @@ button {
 .shift-date,
 .shift-hours {
   margin: 0;
-  font-size: var(--text-sm);
+  font-family: var(--font);
+  font-size: var(--text-body);
   font-weight: var(--weight-medium);
-  line-height: var(--leading-snug);
+  line-height: 21px;
   color: var(--blue);
   white-space: nowrap;
 }
 
+/* The hours as a Tag: Action Violet while the shift is on, Soft Border before, grey after. */
+.shift-tag {
+  padding: 1px 8px;
+  border-radius: var(--radius-tag);
+  background: var(--tag-note);
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  line-height: 18px;
+}
+
+.shift-card[data-state="active"] .shift-tag {
+  background: var(--accent-strong);
+  color: #ffffff;
+}
+
+.shift-card[data-state="ended"] .shift-tag {
+  background: var(--surface);
+  color: var(--grey);
+}
+
 .shift-child {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
+  gap: 24px;
   width: 100%;
 }
 
@@ -329,39 +384,44 @@ button {
   flex-shrink: 0;
 }
 
+.shift-avatar.contact-initials {
+  font-size: var(--text-sub1);
+}
+
 .shift-meta {
   flex: 1;
   min-width: 0;
-  padding: 0 12px;
+  padding: 0 12px 0 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
-  min-height: 60px;
+  gap: 0;
 }
 
 .shift-name {
   margin: 0;
-  font-size: var(--text-md);
-  font-weight: var(--weight-semibold);
-  line-height: var(--leading-tight);
+  font-family: var(--font);
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  line-height: 21px;
   color: var(--blue);
 }
 
 .shift-age {
   margin: 0;
-  font-size: var(--text-sm);
+  font-family: var(--font);
+  font-size: var(--text-body);
   font-weight: var(--weight-medium);
-  line-height: var(--leading-snug);
+  line-height: 21px;
   color: var(--blue);
 }
 
 /* Panels / cards */
 .panel {
   background: var(--card);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius);
-  box-shadow: var(--shadow-surface);
+  box-shadow: none;
   padding: 20px;
   width: 100%;
   display: flex;
@@ -467,11 +527,11 @@ button {
 
 .panel-title {
   margin: 0;
-  font-size: var(--text-md);
+  font-size: var(--text-sub2);
   font-weight: var(--weight-bold);
-  line-height: var(--leading-tight);
+  line-height: 1.3125;
   color: var(--blue);
-  letter-spacing: -0.015em;
+  letter-spacing: 0;
 }
 
 .page-eyebrow {
@@ -531,6 +591,67 @@ button {
   color: var(--grey);
   font-size: var(--text-lg);
   line-height: var(--leading-normal);
+}
+
+/* Top Nav, Sub Page (Figma 224:674): a white bar with a 28px Periwinkle back circle, a centred
+   Poppins 18/26 title and an empty slot on the right that keeps the title centred. Opt in with
+   class="top-nav" on a .detail-nav or .secondary-header; pages move to it slice by slice. */
+.top-nav {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% + 48px);
+  max-width: none;
+  margin: -32px -24px 0;
+  padding: 17px 16px;
+  background: var(--card);
+  box-shadow: var(--shadow-topnav);
+}
+
+.top-nav::after {
+  content: "";
+}
+
+/* .detail-nav (flex, later in this file) must not undo the grid. */
+.detail-nav.top-nav {
+  display: grid;
+  gap: 12px;
+  width: calc(100% + 48px);
+}
+
+.detail-app > .detail-nav.top-nav,
+.secondary-header.top-nav {
+  margin-top: -32px;
+  padding: 17px 16px;
+}
+
+.top-nav .back-btn,
+.top-nav .back-btn img {
+  width: 28px;
+  height: 28px;
+}
+
+.top-nav h1,
+.detail-nav.top-nav h1,
+.secondary-header.top-nav h1 {
+  margin: 0;
+  color: var(--blue);
+  font-size: var(--text-sub1);
+  font-weight: var(--weight-bold);
+  line-height: 26px;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+@media (min-width: 768px) {
+  .top-nav,
+  .detail-app > .detail-nav.top-nav,
+  .secondary-header.top-nav {
+    margin: 32px 0 0;
+    border-radius: var(--radius);
+    box-shadow: none;
+  }
 }
 
 .secondary-grid {
@@ -894,10 +1015,10 @@ body[data-page="schedule"] .app > #checklist { display: none; }
 }
 
 .panel-link {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  line-height: var(--leading-snug);
-  color: var(--blue);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  line-height: 18px;
+  color: var(--accent-strong);
   white-space: nowrap;
 }
 
@@ -914,9 +1035,9 @@ body[data-page="schedule"] .app > #checklist { display: none; }
 
 .card {
   background: var(--card);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius);
-  box-shadow: var(--shadow-surface);
+  box-shadow: none;
   padding: 18px 16px;
   width: 100%;
 }
@@ -1601,22 +1722,29 @@ body[data-page="schedule"] .app > #checklist { display: none; }
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 10px 6px;
-  border: 1px solid var(--accent);
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 1.5px solid var(--accent);
   border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--blue);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-tight);
-  transition: box-shadow 0.15s ease, background 0.15s ease;
+  background: var(--card);
+  color: var(--accent-strong);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  line-height: 1.5;
+  transition: box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
+/* Secondary button hover (Figma 213:566): Cloud fill, Action Violet border, dark text. */
 .photo-source-btn:hover,
 .photo-source-btn:focus-visible {
   outline: none;
-  background: var(--card);
-  box-shadow: 0 0 0 2px var(--focus);
+  border-color: var(--accent-strong);
+  background: var(--cloud);
+  color: #000000;
+}
+
+.photo-source-btn:focus-visible {
+  box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--focus);
 }
 
 .photo-preview-frame {
@@ -1681,13 +1809,15 @@ body[data-page="schedule"] .app > #checklist { display: none; }
   justify-content: center;
   width: 100%;
   min-height: 44px; /* touch target: Apple HIG 44pt, WCAG 2.5.5 */
-  padding: 10px 6px;
+  padding: 10px 16px;
   border-radius: var(--radius);
+  /* Figma's resting Primary is Periwinkle with Action Violet on hover; white on Periwinkle is
+     3.3:1 (below WCAG AA for 14px), so the button rests on Action Violet. */
   background: var(--accent-strong);
   color: #ffffff;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-tight);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  line-height: 1.5;
   transition: background 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
 }
 
@@ -1809,25 +1939,23 @@ body.modal-open {
   display: none;
 }
 
-/* Emergency entry (home) */
+/* Emergency entry (home): a section card with an Alert-tag icon tile, same language as the rest. */
 .emergency-card {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
-  padding: 14px 12px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-left: 4px solid var(--danger);
+  padding: 16px;
+  background: var(--section);
+  border: 0;
   border-radius: var(--radius);
-  box-shadow: var(--shadow-surface);
-  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  box-shadow: none;
+  transition: box-shadow 0.15s ease;
 }
 
 .emergency-card:hover,
 .emergency-card:focus-visible {
   box-shadow: var(--shadow-hover);
-  transform: translateY(-1px);
 }
 
 .emergency-card:focus-visible {
@@ -1839,32 +1967,46 @@ body.modal-open {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--danger-soft);
+  border-radius: var(--radius-sm);
+  background: var(--tag-alert);
+}
+
+.emergency-card-icon img {
+  width: 20px;
+  height: 20px;
 }
 
 .emergency-card-meta {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
 .emergency-card-title {
-  font-size: var(--text-md);
+  font-family: var(--font);
+  font-size: var(--text-sub3);
   font-weight: var(--weight-bold);
-  line-height: var(--leading-tight);
+  line-height: 21px;
   color: var(--blue);
 }
 
 .emergency-card-text {
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   font-weight: var(--weight-regular);
-  line-height: var(--leading-snug);
+  line-height: 21px;
   color: var(--grey);
+}
+
+.emergency-card-chevron,
+.next-activity-chevron {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--blue);
 }
 
 /* Care information page */
@@ -2011,9 +2153,10 @@ body.modal-open {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
+  background: var(--tag-note);
+  font-family: var(--font);
   font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-bold);
   color: var(--blue);
 }
 
@@ -2142,29 +2285,34 @@ body.modal-open {
   display: none;
 }
 
-/* Important today uses the same white card as the other session panels. */
+/* Important today (Figma 153:5; 158:193 with a note open): 8px list rows on the section card,
+   a 32px Deep Teal icon tile, Poppins title, grey preview, Soft-divider rules, and the note
+   opening in place on a Periwinkle tint. */
 
 .day-notes-date {
-  margin: 3px 0 0;
+  margin: 2px 0 0;
   color: var(--grey);
-  font-size: var(--text-xs);
-  line-height: var(--leading-snug);
+  font-size: var(--text-caption);
+  line-height: 18px;
 }
 
 .day-notes-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin: 0;
-  color: #c70000;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
+  color: var(--danger);
+  font-family: var(--font);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-regular);
   white-space: nowrap;
 }
 
 .day-notes-count::before {
   content: "";
   display: inline-block;
-  width: 9px;
-  height: 9px;
-  margin: 0 8px 1px 0;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: currentColor;
 }
@@ -2185,17 +2333,13 @@ body.modal-open {
 }
 
 .day-note {
-  border-bottom: 1px solid #c8c8c8;
-}
-
-.day-note:last-child {
-  border-bottom: 0;
+  border-bottom: 1px solid var(--divider);
 }
 
 /* Two dates (a shift still open from an earlier day): a small heading per date */
 .day-notes-group-title {
   margin: 4px 0 6px;
-  font-size: var(--text-sm);
+  font-size: var(--text-caption);
   font-weight: var(--weight-medium);
   color: var(--grey);
 }
@@ -2203,15 +2347,14 @@ body.modal-open {
 .day-note-summary {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 74px;
-  padding: 13px 4px 13px 0;
+  gap: 8px;
+  padding: 8px;
 }
 
 .day-note-details > .day-note-summary {
   cursor: pointer;
   list-style: none;
-  padding-right: 38px;
+  padding-right: 40px;
   position: relative;
 }
 
@@ -2219,21 +2362,22 @@ body.modal-open {
   display: none;
 }
 
+/* The 24px keyboard_arrow chevron, drawn in CSS so it can turn. */
 .day-note-details > .day-note-summary::after {
   content: "";
   position: absolute;
-  right: 12px;
+  right: 16px;
   top: 50%;
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid var(--blue);
-  border-bottom: 2px solid var(--blue);
+  width: 7px;
+  height: 7px;
+  border-right: 1.75px solid var(--blue);
+  border-bottom: 1.75px solid var(--blue);
   transform: translateY(-70%) rotate(45deg);
   transition: transform 0.15s ease;
 }
 
 .day-note-details[open] > .day-note-summary::after {
-  transform: translateY(-30%) rotate(-135deg);
+  transform: translateY(-20%) rotate(-135deg);
 }
 
 .day-note-details > .day-note-summary:focus-visible {
@@ -2245,17 +2389,17 @@ body.modal-open {
 .day-note-icon {
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
-  border-radius: 14px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: var(--radius-sm);
   background: var(--blue);
   color: #fff;
 }
 
 .day-note-icon svg {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
 }
 
 .day-note-copy {
@@ -2268,9 +2412,9 @@ body.modal-open {
 
 .day-note-category {
   color: var(--grey);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-medium);
-  line-height: var(--leading-tight);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-regular);
+  line-height: 18px;
 }
 
 .day-note-title {
@@ -2279,8 +2423,10 @@ body.modal-open {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  font-weight: var(--weight-semibold);
-  line-height: var(--leading-snug);
+  font-family: var(--font);
+  font-size: var(--text-sub3);
+  font-weight: var(--weight-bold);
+  line-height: 21px;
   overflow-wrap: anywhere;
 }
 
@@ -2290,49 +2436,50 @@ body.modal-open {
   height: 8px;
   flex: 0 0 8px;
   border-radius: 50%;
-  background: #c70000;
+  background: var(--danger);
 }
 
 .day-note-preview {
   overflow: hidden;
   color: var(--grey);
-  font-size: var(--text-sm);
-  line-height: var(--leading-snug);
+  font-size: var(--text-body);
+  line-height: 21px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .day-note-updated-time {
-  margin: -2px 8px 12px 60px;
-  color: #b00000;
-  font-size: var(--text-xs);
+  margin: -4px 8px 8px 48px;
+  color: var(--danger);
+  font-size: var(--text-caption);
   font-weight: var(--weight-medium);
 }
 
 .day-note-detail {
-  margin: -2px 8px 12px 60px;
-  padding: 12px;
-  border-radius: 12px;
-  background: #e8ebff;
-  font-size: var(--text-sm);
-  line-height: var(--leading-normal);
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--note-open);
+  color: var(--blue);
+  font-size: var(--text-caption);
+  line-height: 18px;
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
 
 .day-note-detail + .day-note-updated-time {
-  margin-top: -4px;
+  margin-top: 0;
 }
 
 .day-note-plain + .day-note-updated-time {
-  margin-top: 0;
+  margin-top: -4px;
 }
 
 .day-note-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
-  margin: -4px 8px 10px 60px;
+  margin: -4px 8px 8px 48px;
 }
 
 .day-notes-add {
@@ -2341,7 +2488,8 @@ body.modal-open {
 
 .day-notes-status {
   margin: 0;
-  font-size: var(--text-sm);
+  padding: 0 8px;
+  font-size: var(--text-body);
   color: var(--grey);
 }
 
@@ -2645,16 +2793,19 @@ body.modal-open {
 }
 
 .parent-child-avatar {
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
   border-radius: 50%;
   object-fit: cover;
 }
 
 .parent-greeting {
   margin: 0;
-  font-size: var(--text-sm);
+  font-family: var(--font);
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
   color: var(--grey);
 }
 
@@ -2739,21 +2890,25 @@ body.modal-open {
   line-height: var(--leading-tight);
 }
 
+/* Tag (Figma 255:567): 6px radius, 12/18 label on a tinted fill. */
 .status-pill {
   flex: 0 0 auto;
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
+  padding: 2px 8px;
+  border-radius: var(--radius-tag);
+  background: var(--tag-note);
+  color: var(--blue);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  line-height: 18px;
 }
 
 .status-pill.is-active {
-  background: var(--success-soft);
-  color: var(--success);
+  background: var(--tag-success);
+  color: var(--green);
 }
 
 .status-pill.is-ended {
-  background: var(--danger-soft);
+  background: var(--tag-alert);
   color: var(--danger);
 }
 
@@ -3326,12 +3481,24 @@ body.modal-open {
   font-size: var(--text-sm);
 }
 
+/* Demo mode only: a slim Caution-tag strip (Figma Tag 255:567 colours) above the page. */
 .demo-banner {
   margin: 0;
-  padding: 8px 16px;
-  background: var(--mild);
+  padding: 6px 16px;
+  border-bottom: 1px solid rgba(118, 96, 24, 0.14);
+  background: var(--tag-caution);
+  color: var(--blue);
   text-align: center;
-  font-size: var(--text-sm);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  line-height: 18px;
+}
+
+.demo-banner a,
+.demo-banner .text-btn {
+  color: var(--accent-strong);
+  font-size: inherit;
+  font-weight: var(--weight-semibold);
 }
 
 .auth-fatal {
@@ -4365,46 +4532,11 @@ body.modal-open {
   text-align: right;
 }
 
-/* Signed-in sitters have seven nav items (Home, Schedule, Log, Contacts, Messages, Profile,
-   Account). On phones, tighten the bar so "Messages" still fits its slot at 375px. */
-@media (max-width: 439px) {
-  .primary-nav:has(> .nav-item:nth-child(7)) {
-    gap: 0;
-    padding-left: 4px;
-    padding-right: 4px;
-  }
-
-  .primary-nav:has(> .nav-item:nth-child(7)) .nav-item {
-    padding-left: 0;
-    padding-right: 0;
-    font-size: 0.625rem;
-  }
-}
-
-/* Eight nav items (signed-in sitter: Log, Gallery and Account) on phones: 9px labels so
-   "Messages" fits its ~47px slot at 375px. ponytail: tight; fewer items is the real fix. */
-@media (max-width: 439px) {
-  .primary-nav:has(> .nav-item:nth-child(8)) {
-    padding-left: 0;
-    padding-right: 0;
-  }
-
-  .primary-nav:has(> .nav-item:nth-child(8)) .nav-item {
-    font-size: 0.5625rem;
-  }
-}
-
-/* Seven nav items (with Gallery and Account) on narrow phones: tighter padding and labels. */
+/* Narrow phones: the six-item parent bar still fits; items share the width. */
 @media (max-width: 400px) {
   .primary-nav {
-    gap: 0;
-    padding-right: 4px;
-    padding-left: 4px;
-  }
-
-  .nav-item {
-    font-size: 0.625rem;
-    text-align: center;
+    padding-right: 8px;
+    padding-left: 8px;
   }
 }
 
@@ -4571,20 +4703,34 @@ body:not([data-role="parent"]) .gallery-list {
   justify-content: center;
   gap: 8px;
   margin: 0;
-  padding: 8px 16px;
-  background: var(--surface);
-  font-size: var(--text-sm);
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+  font-size: var(--text-caption);
+  line-height: 18px;
 }
 
 .family-bar-label {
   color: var(--grey);
+  font-weight: var(--weight-medium);
 }
 
 .family-bar-select {
   max-width: 100%;
-  min-height: 36px;
+  min-height: 32px;
   padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background-color: var(--card);
+  color: var(--blue);
   font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+}
+
+.family-bar-select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
 /* ---------------------------------------------------------------- Children (SI-45 slice C)
@@ -5282,24 +5428,129 @@ body[data-page="children"]:has(.children-header--detail) {
   height: 32px;
 }
 
-/* Sitter Home (SI-69): "What's next" shows the one upcoming activity. */
+/* ---------------------------------------------------------------- Sitter Home and parent Today
+   Figma 153:5 / 158:193 / 74:7. Section cards (#FAFCFF, radius 10, 16px by 8px padding) on Cloud
+   with white inner cards; Poppins Bold 14 section titles; no tinted boxes inside cards. Parent
+   Today has no frame of its own and reuses the same language. */
+body[data-page="home"] .panel,
+body[data-page="parent"] .panel,
+#checklist.panel {
+  gap: 8px;
+  padding: 16px 8px;
+  background: var(--section);
+}
+
+body[data-page="home"] .panel-header,
+body[data-page="parent"] .panel-header,
+#checklist .panel-header {
+  align-items: flex-start;
+  padding: 0 8px;
+}
+
+body[data-page="home"] .panel > .panel-title,
+body[data-page="parent"] .panel > .panel-title {
+  padding: 0 8px;
+}
+
+body[data-page="home"] .panel-title,
+body[data-page="parent"] .panel-title,
+#checklist .panel-title {
+  font-size: var(--text-sub3);
+  line-height: 21px;
+}
+
+body[data-page="home"] .panel .card,
+body[data-page="parent"] .panel .card,
+#checklist .card {
+  background: var(--card);
+  border-radius: var(--radius);
+}
+
+body[data-page="home"] .page-main,
+body[data-page="home"] .main-column,
+body[data-page="home"] .side-column,
+body[data-page="parent"] .parent-main {
+  gap: 12px;
+}
+
+/* Compact header: 40px initials avatar, 16px name, 14px address (Figma 153:5 profile row). */
+.home-header,
+.parent-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 0;
+}
+
+.home-header .profile-avatar,
+.parent-header .parent-child-avatar {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 50%;
+  font-size: var(--text-body);
+}
+
+.home-header-meta {
+  min-width: 0;
+}
+
+.home-header-title,
+.parent-header .parent-title {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--text-sub2);
+  font-weight: var(--weight-bold);
+  line-height: 1.5;
+  letter-spacing: 0;
+  color: var(--blue);
+}
+
+.home-header .profile-address {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
+  color: var(--grey);
+}
+
+@media (min-width: 768px) {
+  .home-header,
+  .parent-header {
+    padding-top: 24px;
+  }
+}
+
+/* Shift controls under the shift card. */
+body[data-page="home"] .shift-controls {
+  padding: 4px 8px 0;
+}
+
+body[data-page="home"] .shift-status {
+  font-size: var(--text-body);
+  color: var(--grey);
+}
+
+/* What's next (SI-69): one schedule row in a white card. */
 .next-activity-card {
-  padding: 8px;
+  padding: 4px;
 }
 
 .next-activity-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   width: 100%;
-  padding: 10px 8px;
+  padding: 8px;
   text-align: left;
   border-radius: var(--radius-sm);
   transition: background 0.15s ease;
 }
 
 .next-activity-item:hover {
-  background: var(--accent-soft);
+  background: var(--surface);
 }
 
 .next-activity-item:focus-visible {
@@ -5309,14 +5560,12 @@ body[data-page="children"]:has(.children-header--detail) {
 
 .next-activity-time {
   flex-shrink: 0;
-  min-width: 72px;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--card);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  line-height: var(--leading-snug);
-  color: var(--accent-strong);
+  width: 56px;
+  font-family: var(--font);
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  line-height: 21px;
+  color: var(--blue);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -5326,35 +5575,172 @@ body[data-page="children"]:has(.children-header--detail) {
   flex: 1;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .next-activity-title {
-  font-size: var(--text-md);
-  font-weight: var(--weight-semibold);
-  line-height: var(--leading-tight);
+  font-family: var(--font);
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  line-height: 21px;
   color: var(--blue);
 }
 
 .next-activity-detail {
   overflow: hidden;
-  font-size: var(--text-sm);
-  line-height: var(--leading-snug);
+  font-size: var(--text-body);
+  line-height: 21px;
   color: var(--grey);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.next-activity-chevron {
-  flex-shrink: 0;
-  font-size: 22px;
-  line-height: 1;
-  color: var(--grey);
-}
-
 .next-activity-card .empty-state,
 .checklist-panel .empty-state {
   padding: 20px 12px;
+}
+
+/* Checklist (SI-71): Figma "Today's Schedule" rows, 56px Poppins time column, 24px gap,
+   #C8C8C8 rules. Also used on the sitter's Schedule page. */
+#checklist .card {
+  padding: 16px 12px;
+}
+
+#checklist .schedule-item {
+  gap: 0;
+  padding: 4px 0;
+}
+
+#checklist .schedule-time {
+  width: 56px;
+  padding-top: 0;
+  font-family: var(--font);
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  line-height: 21px;
+}
+
+#checklist .schedule-body {
+  margin-left: 24px;
+  gap: 8px;
+}
+
+#checklist .schedule-title {
+  font-family: var(--font);
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  line-height: 21px;
+}
+
+#checklist .schedule-detail,
+#checklist .schedule-location p {
+  font-size: var(--text-body);
+  line-height: 21px;
+}
+
+#checklist .schedule-divider {
+  margin: 8px;
+  background: var(--divider);
+}
+
+#checklist .panel-meta {
+  color: var(--grey);
+  font-size: var(--text-caption);
+  line-height: 18px;
+}
+
+/* Contacts (Figma 153:5 Emergency Contacts, 74:7 Your Contacts): white card, 35px avatar,
+   Poppins 12 name, 14 phone, Periwinkle call circle. */
+body[data-page="home"] .contact-card {
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+body[data-page="home"] .contact-name {
+  font-family: var(--font);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-bold);
+  line-height: 18px;
+}
+
+body[data-page="home"] .contact-role {
+  margin: 0;
+  color: var(--blue);
+  font-size: var(--text-caption);
+  line-height: 18px;
+}
+
+body[data-page="home"] .contact-phone {
+  font-family: var(--font);
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  line-height: 21px;
+}
+
+body[data-page="home"] .call-btn,
+body[data-page="home"] .call-btn img {
+  width: 24px;
+  height: 24px;
+}
+
+/* Good to Know (SI-73): white tiles, glyph over a Poppins label. */
+body[data-page="home"] .know-grid {
+  gap: 8px;
+}
+
+body[data-page="home"] .know-tile {
+  flex-direction: column;
+  gap: 8px;
+  min-height: 88px;
+  padding: 16px 8px;
+  border-radius: var(--radius);
+  background: var(--card);
+  font-family: var(--font);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  line-height: 1.3;
+}
+
+body[data-page="home"] .know-tile:hover,
+body[data-page="home"] .know-tile:focus-visible {
+  transform: none;
+}
+
+/* Parent Today: status card, schedule rows and care log in the same card language. */
+body[data-page="parent"] .day-status {
+  gap: 8px;
+  padding: 16px;
+}
+
+body[data-page="parent"] .day-status-title {
+  font-family: var(--font);
+  font-size: var(--text-sub3);
+  line-height: 21px;
+}
+
+body[data-page="parent"] .day-status .shift-status,
+body[data-page="parent"] .day-progress-row {
+  font-size: var(--text-body);
+}
+
+body[data-page="parent"] .day-progress {
+  height: 6px;
+  background: var(--line);
+}
+
+body[data-page="parent"] .day-progress::-webkit-progress-bar {
+  background: var(--line);
+}
+
+body[data-page="parent"] .parent-task-list {
+  padding: 0 8px;
+}
+
+body[data-page="parent"] .feed-section > .panel-title {
+  padding: 0 8px;
+  font-size: var(--text-sub3);
 }
 
 /* The sitter's Schedule page shows the same checklist as Home (SI-71), under Current Shift. */
@@ -5753,4 +6139,93 @@ body[data-page="profile"] .secondary-main {
 .account-main input[readonly] {
   color: var(--grey);
   background: var(--surface);
+}
+
+/* Top Nav on wider screens spans the page column (the .app column centres its children). */
+@media (min-width: 768px) {
+  .top-nav,
+  .detail-app > .detail-nav.top-nav {
+    width: 100%;
+  }
+}
+
+/* ---------------------------------------------------------------- Try CareNest (demo.html)
+   No Figma frame: the design system's type scale, white cards on Cloud, initials avatars. */
+body[data-page="demo"] .auth-app {
+  max-width: 760px;
+  gap: 16px;
+}
+
+body[data-page="demo"] .auth-brand {
+  font-family: var(--font);
+  font-size: var(--text-sub1);
+  font-weight: var(--weight-bold);
+  color: var(--blue);
+}
+
+body[data-page="demo"] .auth-title {
+  font-size: var(--text-title);
+  line-height: 1.3;
+}
+
+body[data-page="demo"] .auth-lede {
+  max-width: 60ch;
+  font-size: var(--text-body);
+  line-height: 21px;
+}
+
+.demo-choices {
+  display: grid;
+  gap: 12px;
+}
+
+.demo-choice {
+  gap: 12px;
+  padding: 16px;
+}
+
+.demo-choice-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.demo-choice-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 50%;
+  background: var(--tag-note);
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+}
+
+.demo-choice .panel-title {
+  font-size: var(--text-sub2);
+}
+
+.demo-choice .signin-note {
+  font-size: var(--text-body);
+  line-height: 21px;
+}
+
+.demo-choice .primary-btn {
+  margin-top: auto;
+  text-decoration: none;
+}
+
+@media (min-width: 768px) {
+  body[data-page="demo"] .auth-app {
+    padding-top: 56px;
+    align-items: stretch;
+  }
+
+  .demo-choices {
+    grid-template-columns: 1fr 1fr;
+  }
 }
