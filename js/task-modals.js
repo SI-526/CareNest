@@ -48,16 +48,12 @@
       <button type="button" class="photo-source-btn uncheck-btn" data-uncheck hidden>Uncheck this task</button>
       <p class="photo-upload-error" data-uncheck-error role="alert" hidden></p>
 
-      <img
-        class="modal-map"
-        data-modal-map
-        alt="Map of activity location"
-        hidden
-      />
-
       <div class="modal-location" data-modal-location hidden>
         <img src="assets/location.svg" alt="" width="16" height="16" />
-        <p data-modal-location-text></p>
+        <div>
+          <p data-modal-location-text></p>
+          <a class="map-link" data-modal-map-link href="https://www.google.com/maps" target="_blank" rel="noopener">Open in Maps<span class="visually-hidden"> (opens in a new tab)</span></a>
+        </div>
       </div>
 
       <p class="modal-detail" data-modal-detail hidden></p>

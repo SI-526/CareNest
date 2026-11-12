@@ -648,11 +648,11 @@
           .map(
             (item) => `
       <article class="restriction-item">
-        ${item.image ? `<img class="restriction-thumb" src="${escapeHtml(item.image)}" alt="" width="64" height="64" />` : ""}
+        <span class="food-tile" aria-hidden="true"><img src="assets/grocery.svg" alt="" width="28" height="28" /></span>
         <div class="restriction-content">
           <div class="restriction-top">
             <h3 class="restriction-name">${escapeHtml(item.name)}${childChip(item)}</h3>
-            ${item.severity ? `<span class="badge ${escapeHtml(item.severityClass || "")}">${escapeHtml(item.severity)}</span>` : ""}
+            ${item.severity ? `<span class="badge ${escapeHtml(item.severityClass || "")}">${item.severity === "Severe" ? '<img class="cn-icon" src="assets/icon-error.svg" alt="" width="20" height="20" />' : ""}${escapeHtml(item.severity)}</span>` : ""}
           </div>
           ${item.description ? `<p class="restriction-desc">${escapeHtml(item.description)}</p>` : ""}
         </div>
@@ -722,6 +722,7 @@
     if (!items || !items.length) return "";
     return `
       <section class="panel">
+        <div class="card">
         <ul class="info-list">
           ${items
             .map(
@@ -733,6 +734,7 @@
             )
             .join("")}
         </ul>
+        </div>
       </section>`;
   }
 
@@ -787,11 +789,9 @@
           <img src="assets/call.svg" alt="" width="23" height="22" />
         </a>`
       : "";
-    const address = !hospital.address
-      ? ""
-      : hospital.mapHref
-      ? `<a class="hospital-address" href="${escapeHtml(hospital.mapHref)}" target="_blank" rel="noopener">${escapeHtml(hospital.address)}<span class="visually-hidden"> (opens map in a new tab)</span></a>`
-      : `<p class="hospital-address">${escapeHtml(hospital.address)}</p>`;
+    const address = hospital.address
+      ? `<p class="hospital-address">${escapeHtml(hospital.address)}</p>${mapLinkHtml(hospital.mapHref || mapsHref(hospital.address))}`
+      : "";
     return `
       <section class="panel" aria-labelledby="hospital-heading">
         <h2 class="panel-title" id="hospital-heading">Hospital</h2>
@@ -801,13 +801,22 @@
             ${hospital.system ? `<p class="hospital-system">${escapeHtml(hospital.system)}</p>` : ""}
             ${address ? `<div class="modal-location">
               <img src="assets/location.svg" alt="" width="16" height="16" />
-              ${address}
+              <div>${address}</div>
             </div>` : ""}
             ${hospital.phone ? `<p class="contact-phone">${escapeHtml(hospital.phone)}</p>` : ""}
           </div>
           ${callBtn}
         </div>
       </section>`;
+  }
+
+  // An ordinary link to the address in Google Maps: no embedded map or map image.
+  function mapsHref(address) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+  }
+
+  function mapLinkHtml(href) {
+    return `<a class="map-link" href="${escapeHtml(href)}" target="_blank" rel="noopener">Open in Maps<span class="visually-hidden"> (opens in a new tab)</span></a>`;
   }
 
   function renderEmergencyContacts(contacts) {
@@ -823,7 +832,7 @@
     return `
       <section class="panel" aria-labelledby="who-heading">
         <h2 class="panel-title" id="who-heading">Who to contact</h2>
-        <div class="contacts-list">
+        <div class="card contacts-list">
           ${resolved
             .map((contact) => {
               const avatar = avatarHtml(contact.avatar, contact.name, "contact-avatar", 35);
@@ -1698,14 +1707,7 @@
     overlay.querySelector("[data-modal-date]").textContent = data.child.dateLabel;
     overlay.querySelector("[data-modal-title]").textContent = item.title;
 
-    const mapEl = overlay.querySelector("[data-modal-map]");
-    if (item.map) {
-      mapEl.src = item.map;
-      mapEl.hidden = false;
-    } else {
-      mapEl.hidden = true;
-      mapEl.removeAttribute("src");
-    }
+    const mapLink = overlay.querySelector("[data-modal-map-link]");
 
     const locationEl = overlay.querySelector("[data-modal-location]");
     const locationText = overlay.querySelector("[data-modal-location-text]");
@@ -1713,6 +1715,7 @@
 
     if (item.location) {
       locationText.textContent = item.location;
+      if (mapLink) mapLink.href = mapsHref(item.location);
       locationEl.hidden = false;
       detailEl.hidden = true;
       detailEl.textContent = "";

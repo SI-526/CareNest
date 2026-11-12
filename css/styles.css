@@ -6302,3 +6302,455 @@ body[data-page="demo"] .auth-lede {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ---------------------------------------------------------------- Slice 3: Children, food and care info
+   Figma 210:155 (list), 267:1320 (no families), 255:790 / 259:1100 (a child), 10:2 (food and
+   allergies), 4:18 / 15:154 (childcare information) and 15:274 (activity detail). Food photos and
+   the map screenshot are not shipped: food items get a Cloud icon tile, addresses a maps link.
+   Parent add/edit dialogs reuse the Schedule Details sheet (.schedule-sheet, slice 2). */
+
+/* Children list: the household switcher drops under the family name when the row is short, so
+   "Next Sit" stays on one line as in 210:155. */
+.household-pin {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.household-pin-text {
+  flex: 1 1 220px;
+}
+
+.household-pin-switch {
+  max-width: 100%;
+}
+
+.sit-tag {
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.family-detail {
+  padding: 8px;
+}
+
+/* Food items (255:790, 10:2): #FAFCFF rows, a 64px Cloud tile with the grocery icon, a rule
+   between items, Poppins Bold names, 14/21 grey descriptions and radius-6 severity tags. */
+.child-food .restriction-item,
+#restriction-list .restriction-item {
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--section);
+}
+
+.food-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-sm);
+  background: var(--cloud);
+}
+
+.food-tile img {
+  width: 28px;
+  height: 28px;
+}
+
+#restriction-list {
+  gap: 24px;
+}
+
+#restriction-list .restriction-item + .restriction-item {
+  position: relative;
+  margin-top: 24px;
+}
+
+#restriction-list .restriction-item + .restriction-item::before {
+  position: absolute;
+  top: -24px;
+  right: 16px;
+  left: 16px;
+  border-top: 1px solid #b0b0b0;
+  content: "";
+}
+
+#restriction-list .restriction-name {
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: var(--weight-bold);
+}
+
+#restriction-list .restriction-desc {
+  font-size: 14px;
+  line-height: 21px;
+}
+
+#restriction-list .badge {
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: var(--radius-tag);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: var(--weight-bold);
+}
+
+#restriction-list .badge .cn-icon {
+  width: 20px;
+  height: 20px;
+}
+
+#restriction-list .badge--severe {
+  background: var(--tag-alert);
+  color: var(--danger);
+}
+
+#restriction-list .badge--mild {
+  background: var(--tag-caution);
+}
+
+#restriction-list .badge--moderate {
+  background: var(--tag-caution);
+}
+
+/* Food and care info pages (10:2, 4:18): a #FAFCFF section card on Cloud, its title inside, and
+   one white card holding the rows. */
+body[data-page="food"] .detail-app > .panel,
+body[data-page="info"] .info-content > .panel {
+  gap: 8px;
+  padding: 24px 8px;
+  background: var(--section);
+}
+
+body[data-page="food"] .panel-title,
+body[data-page="info"] .info-content .panel-title {
+  margin: 0;
+  padding: 0;
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: var(--text-sub2);
+  line-height: 21px;
+  font-weight: var(--weight-bold);
+}
+
+body[data-page="food"] .panel > .card,
+body[data-page="info"] .info-content .panel > .card {
+  padding: 16px 8px;
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+body[data-page="food"] .care-note {
+  margin-top: 24px;
+  padding: 8px 12px;
+}
+
+body[data-page="food"] .care-note h3 {
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: var(--weight-bold);
+}
+
+body[data-page="food"] .care-note p {
+  font-size: 14px;
+  line-height: 21px;
+}
+
+body[data-page="info"] .info-content {
+  gap: 16px;
+}
+
+/* Where things are: rows split by a rule, like Today's Schedule in 4:18. */
+body[data-page="info"] .info-list {
+  gap: 0;
+}
+
+body[data-page="info"] .info-item {
+  gap: 4px;
+  padding: 12px 8px;
+  border-radius: 0;
+  background: none;
+}
+
+body[data-page="info"] .info-item + .info-item {
+  border-top: 1px solid var(--divider);
+}
+
+body[data-page="info"] .info-item-title {
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: var(--weight-bold);
+}
+
+body[data-page="info"] .info-item-detail {
+  font-size: 14px;
+  line-height: 21px;
+}
+
+/* Emergency steps: the numbered steps as ruled rows, the Call 911 callout as an Alert card. */
+body[data-page="info"] .emergency-callout {
+  gap: 12px;
+  padding: 16px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--tag-alert);
+}
+
+body[data-page="info"] .emergency-callout p {
+  font-size: 14px;
+  line-height: 21px;
+}
+
+body[data-page="info"] .emergency-call-btn {
+  min-height: 44px;
+  padding: 8px 24px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: var(--weight-semibold);
+}
+
+body[data-page="info"] .emergency-steps {
+  gap: 0;
+  padding: 0 8px 0 28px;
+  font-size: 14px;
+  line-height: 21px;
+}
+
+body[data-page="info"] .emergency-steps li {
+  padding: 12px 0 12px 4px;
+}
+
+body[data-page="info"] .emergency-steps li + li {
+  border-top: 1px solid var(--divider);
+}
+
+body[data-page="info"] .emergency-steps li::marker {
+  font-family: var(--font);
+}
+
+/* Hospital (15:274): name and system, then the address in italics beside a pin, and a plain link
+   that opens it in maps. */
+body[data-page="info"] .hospital-card {
+  gap: 8px;
+  padding: 16px 12px;
+}
+
+body[data-page="info"] .hospital-card .contact-name {
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: var(--weight-bold);
+}
+
+body[data-page="info"] .hospital-system {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: var(--weight-regular);
+}
+
+body[data-page="info"] .hospital-meta .modal-location {
+  margin-top: 4px;
+}
+
+.hospital-address {
+  color: var(--grey);
+  font-family: var(--font);
+  font-size: 14px;
+  font-style: italic;
+  line-height: 21px;
+  text-decoration: none;
+}
+
+.modal-location > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.map-link {
+  align-self: flex-start;
+  color: var(--accent-strong);
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: var(--weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.map-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+body[data-page="info"] .contact-name,
+body[data-page="info"] .contact-phone {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Who to contact: rows in the white card, as on a child's page. */
+body[data-page="info"] .contacts-list.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 8px;
+}
+
+body[data-page="info"] .contact-card {
+  gap: 8px;
+  min-height: 56px;
+  padding: 10px 2px;
+  background: none;
+}
+
+body[data-page="info"] .contact-card .contact-avatar {
+  width: 32px;
+  height: 32px;
+}
+
+body[data-page="info"] .contact-card .contact-name {
+  font-weight: var(--weight-bold);
+}
+
+body[data-page="info"] .contact-role {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: var(--weight-regular);
+}
+
+body[data-page="info"] .empty-state {
+  padding: 24px 8px;
+  background: var(--card);
+}
+
+/* Parent controls: Action Violet text buttons (Button/B2) beside the section titles, and the
+   Schedule Details "Delete" button for a child. */
+.child-text-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-height: 44px;
+  margin: -10px -8px -10px 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--accent-strong);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: var(--weight-semibold);
+}
+
+.child-text-btn:hover {
+  background: var(--cloud);
+}
+
+.child-text-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.child-hero .child-text-btn {
+  margin: 0;
+}
+
+.child-delete {
+  align-self: stretch;
+  width: 100%;
+  margin-top: 16px;
+  padding: 8px 24px;
+}
+
+.child-delete:hover {
+  background: var(--card);
+}
+
+/* Parent add/edit dialogs: Schedule Details' header, labels and 48px inputs. */
+.child-form .schedule-details-header .panel-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.child-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.child-form .field-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  color: #000000;
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: var(--weight-bold);
+}
+
+.child-form .field-optional {
+  color: var(--grey);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: var(--weight-bold);
+}
+
+.child-form input.text-input,
+.child-form select.text-input {
+  height: 48px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: #000000;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.child-form .text-input::placeholder {
+  color: var(--grey);
+}
+
+.child-form > .form-error {
+  margin: 0 0 8px;
+}
+
+.child-form > .schedule-delete {
+  margin-top: 16px;
+}
+
+@media (max-width: 767px) {
+  /* Shorter than a schedule, so the sheet hugs its fields at the bottom of the screen. */
+  .confirm-dialog.schedule-sheet.child-sheet {
+    height: fit-content;
+    max-height: calc(100dvh - 69px);
+    margin: auto 0 0;
+  }
+
+  .child-sheet .child-form {
+    height: auto;
+    max-height: calc(100dvh - 69px);
+  }
+}
+
+/* Desktop: the food and care info cards keep a readable measure instead of spanning the window. */
+@media (min-width: 768px) {
+  body[data-page="food"] .detail-app,
+  body[data-page="info"] .detail-app {
+    max-width: 720px;
+    margin-right: auto;
+    margin-left: auto;
+  }
+}
