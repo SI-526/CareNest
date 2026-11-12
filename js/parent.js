@@ -43,8 +43,8 @@
     function renderHeader() {
       document.getElementById("parent-greeting").textContent =
         `Hi ${data.viewerFirstName || parentContact().firstName || "there"}`;
-      // Only the demo family has a child photo; signed in, the child's initials stand in for it.
-      const avatar = ui.avatarHtml(data.child.avatar, data.child.name, "parent-child-avatar", 48);
+      // People and children always show initials, never photos.
+      const avatar = ui.avatarHtml(null, data.child.name, "parent-child-avatar", 48);
       if (avatar !== headerAvatar) {
         headerAvatar = avatar;
         document.querySelector(".parent-child-avatar").outerHTML = avatar;

@@ -313,7 +313,7 @@
     }
     const person = primary
       ? `<div class="family-detail">
-          ${ui.avatarHtml(primary.avatar, primary.name, "contact-avatar", 32)}
+          ${ui.avatarHtml(null, primary.name, "contact-avatar", 32)}
           <div><p class="family-detail-name">${esc(primary.name)}</p>${primary.role ? `<p class="family-detail-sub">${esc(primary.role)}</p>` : ""}</div>
         </div>`
       : "";
@@ -420,7 +420,7 @@
       ? contacts
           .map(
             (contact) => `<li class="child-contact">
-              ${ui.avatarHtml(contact.avatar, contact.name, "contact-avatar", 32)}
+              ${ui.avatarHtml(null, contact.name, "contact-avatar", 32)}
               <div class="child-contact-text"><p><strong>${esc(contact.name)}</strong>${contact.role ? ` (${esc(contact.role)})` : ""}</p>${contact.phone ? `<p>${esc(contact.phone)}</p>` : ""}</div>
               ${contact.phoneHref ? `<a class="call-btn" href="${esc(contact.phoneHref)}" aria-label="Call ${esc(contact.name)}"><img src="assets/call.svg" alt="" width="23" height="22" /></a>` : ""}
             </li>`

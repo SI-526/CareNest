@@ -835,7 +835,7 @@
         <div class="card contacts-list">
           ${resolved
             .map((contact) => {
-              const avatar = avatarHtml(contact.avatar, contact.name, "contact-avatar", 35);
+              const avatar = avatarHtml(null, contact.name, "contact-avatar", 35);
               return `
             <article class="contact-card">
               ${avatar}

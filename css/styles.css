@@ -855,10 +855,11 @@ button {
 .schedule-empty p { color: var(--accent-strong); font-size: 14px; line-height: 21px; font-weight: var(--weight-bold); }
 .schedule-empty small { display: block; margin-top: 8px; color: var(--grey); font-size: 10px; }
 /* Figma "Buttons": Periwinkle fill, radius 10, DM Sans SemiBold 16/24. */
-.schedule-empty-button, .schedule-edit-button, .schedule-add-activity { display: flex; width: 100%; min-height: 44px; align-items: center; justify-content: center; padding: 8px 24px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 16px; line-height: 24px; font-weight: var(--weight-semibold); }
+.schedule-empty-button, .schedule-edit-button, .schedule-add-activity { display: flex; width: 100%; min-height: 44px; align-items: center; justify-content: center; padding: 8px 24px; border-radius: 10px; background: var(--accent-strong); color: #fff; font-size: 16px; line-height: 24px; font-weight: var(--weight-semibold); }
 .schedule-empty-button { margin-top: 16px; }
 .schedule-edit-button, .schedule-add-activity { margin-top: 8px; }
 .schedule-empty-button:focus-visible, .schedule-edit-button:focus-visible, .schedule-add-activity:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.schedule-empty-button:hover:not(:disabled), .schedule-edit-button:hover, .schedule-add-activity:hover, .schedule-empty-button:focus-visible, .schedule-edit-button:focus-visible, .schedule-add-activity:focus-visible { background: color-mix(in srgb, var(--accent-strong) 85%, var(--blue)); }
 /* Figma content column: 40px between sections. Wide screens put Upcoming beside the overview. */
 .schedule-body-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, .9fr); gap: 40px 48px; align-items: start; margin-top: 40px; }
 .schedule-overview, .schedule-primary-content { min-width: 0; }
@@ -891,9 +892,10 @@ body[data-page="schedule"] .app > #checklist { display: none; }
 .schedule-details-header { position: sticky; top: -18px; z-index: 1; margin: -18px -18px 24px; padding: 17px 16px; border-bottom: 0; background: var(--card); box-shadow: 0 -1px 7.5px rgba(0, 0, 0, 0.1); }
 .schedule-details-header .panel-title { margin: 0; color: var(--blue); font-family: var(--font); font-size: 18px; line-height: 26px; font-weight: var(--weight-bold); }
 .schedule-close { display: grid; min-width: 44px; min-height: 44px; margin: -8px; place-items: center; border-radius: 50%; color: var(--accent); }
-.schedule-save { position: relative; min-height: 32px; padding: 4px 8px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 16px; line-height: 24px; font-weight: var(--weight-semibold); }
+.schedule-save { position: relative; min-height: 32px; padding: 4px 8px; border-radius: 10px; background: var(--accent-strong); color: #fff; font-size: 16px; line-height: 24px; font-weight: var(--weight-semibold); }
 .schedule-save::before { position: absolute; top: -6px; right: 0; bottom: -6px; left: 0; content: ""; }
 .schedule-close:focus-visible, .schedule-save:focus-visible, .schedule-delete:focus-visible, .schedule-delete-activity:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.schedule-save:hover, .schedule-save:focus-visible { background: color-mix(in srgb, var(--accent-strong) 85%, var(--blue)); }
 .schedule-details-form > .field-label, .schedule-time-fields .field-label > span:first-child, .schedule-detail-label strong, .schedule-detail-group > strong { margin: 0; color: #000; font-size: 14px; line-height: 21px; font-weight: var(--weight-bold); }
 .schedule-details-form > .field-label, .schedule-detail-label, .schedule-detail-group > strong { display: block; margin-bottom: 8px; }
 .schedule-detail-label { display: flex; }
@@ -3203,6 +3205,13 @@ body.modal-open {
   text-underline-offset: 2px;
 }
 
+/* Links styled as filled buttons are not underlined. */
+a.primary-btn,
+a.photo-source-btn,
+a.danger-btn {
+  text-decoration: none;
+}
+
 .field-label {
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
@@ -4030,7 +4039,7 @@ body.modal-open {
   padding: 4px 10px;
   border: 0;
   border-radius: 8px;
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #ffffff;
   font-family: var(--font);
   font-size: var(--text-md);
@@ -4042,6 +4051,10 @@ body.modal-open {
 .care-log-head-save:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--focus);
+}
+
+.care-log-head-save:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-strong) 85%, var(--blue));
 }
 
 .care-log-head-save:disabled {
@@ -4418,13 +4431,13 @@ body.modal-open {
   min-height: 40px;
   padding: 8px 24px;
   border-radius: var(--radius);
-  background: var(--accent);
+  background: var(--accent-strong);
   font-size: var(--text-md);
   font-weight: var(--weight-semibold);
 }
 
 .session-log-add:hover:not(:disabled) {
-  background: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-strong) 85%, var(--blue));
 }
 
 .session-log-status {
@@ -4903,13 +4916,13 @@ body.modal-open {
   width: 100%;
   min-height: 44px;
   border-radius: var(--radius);
-  background: var(--accent);
+  background: var(--accent-strong);
   font-size: var(--text-md);
   font-weight: var(--weight-semibold);
 }
 
 .care-log-form .care-log-submit:hover:not(:disabled) {
-  background: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-strong) 85%, var(--blue));
 }
 
 .care-log-form .care-log-foot {
@@ -6191,9 +6204,13 @@ body[data-page="parent"] .parent-task-list {
   padding: 0 8px;
 }
 
+/* Photos sits in a card like Care log: the title inside, the empty note flat on that card. */
 body[data-page="parent"] .feed-section > .panel-title {
-  padding: 0 8px;
   font-size: var(--text-sub3);
+}
+
+body[data-page="parent"] .feed-section > #feed-empty {
+  box-shadow: none;
 }
 
 /* The sitter's Schedule page shows the same checklist as Home (SI-71), under Current Shift.
@@ -6634,6 +6651,7 @@ body[data-page="profile"] .secondary-main {
 /* Top Nav on wider screens spans the page column (the .app column centres its children). */
 @media (min-width: 768px) {
   .top-nav,
+  .detail-nav.top-nav,
   .detail-app > .detail-nav.top-nav {
     width: 100%;
   }
@@ -6799,6 +6817,29 @@ body[data-page="demo"] .auth-lede {
   font-size: 14px;
   line-height: 21px;
   font-weight: var(--weight-bold);
+}
+
+/* Name + child pill stay on one line with the severity tag at its right, as on every row; a very
+   long name truncates rather than pushing the pill or tag onto another line. */
+#restriction-list .restriction-top {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+#restriction-list .restriction-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#restriction-list .restriction-name .child-chip {
+  margin-left: 4px;
+}
+
+#restriction-list .restriction-top .badge {
+  flex: none;
+  margin-left: auto;
 }
 
 #restriction-list .restriction-desc {
@@ -7270,14 +7311,14 @@ body[data-page="info"] .info-content > .panel:not(:has(.panel-title)) {
 .photo-sheet .primary-btn {
   min-height: 40px;
   border-radius: var(--radius);
-  background: var(--accent);
+  background: var(--accent-strong);
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
 }
 
 #complete-modal #complete-send-btn:hover:not(:disabled),
 .photo-sheet .primary-btn:hover:not(:disabled) {
-  background: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-strong) 85%, var(--blue));
 }
 
 /* The add-photo and moment dialogs: the same sheet language (r16, centred Poppins title). */
@@ -7485,7 +7526,7 @@ body[data-page="info"] .info-content > .panel:not(:has(.panel-title)) {
   width: min(262px, calc(100% - 48px));
   height: 44px;
   border-radius: var(--radius);
-  background: var(--accent);
+  background: var(--accent-strong);
   font-family: var(--font-body);
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
@@ -7499,7 +7540,7 @@ body[data-page="info"] .info-content > .panel:not(:has(.panel-title)) {
 }
 
 .gallery-fab:hover:not([aria-disabled="true"]) {
-  background: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-strong) 85%, var(--blue));
 }
 
 @media (max-width: 767px) {
@@ -8158,11 +8199,11 @@ body[data-page="info"] .info-content > .panel:not(:has(.panel-title)) {
 }
 
 .confirm-sheet .primary-btn {
-  background: var(--accent);
+  background: var(--accent-strong);
 }
 
 .confirm-sheet .primary-btn:hover {
-  background: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-strong) 85%, var(--blue));
 }
 
 .confirm-sheet .photo-source-btn {
