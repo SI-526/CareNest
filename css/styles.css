@@ -8208,3 +8208,294 @@ body[data-page="info"] .info-content > .panel:not(:has(.panel-title)) {
 .people-main #care-sections:empty {
   display: none;
 }
+
+/* ---------------------------------------------------------------- Slice 6: Sign in, onboarding,
+   invite, legal pages and the Messages redirect. No Figma frames: the same type scale, white
+   16px-radius cards on Cloud and form fields as Try CareNest (demo.html) and the slice-5 forms.
+   Google's sign-in button is drawn by Google in an iframe; only its frame is styled here. */
+.auth-app {
+  max-width: 560px;
+  gap: 16px;
+}
+
+.auth-app.legal-app {
+  max-width: 760px;
+}
+
+.auth-brand {
+  font-family: var(--font);
+  font-size: var(--text-sub1);
+  font-weight: var(--weight-bold);
+  line-height: 26px;
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.auth-title {
+  font-size: var(--text-title);
+  line-height: 1.3;
+  color: var(--blue);
+}
+
+.auth-lede {
+  max-width: 60ch;
+  font-size: var(--text-body);
+  line-height: 21px;
+}
+
+/* "Are you a sitter?" under the onboarding intro: a soft callout, not small print. */
+.auth-intro > .signin-note {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--blue);
+  font-size: var(--text-body);
+  line-height: 21px;
+}
+
+.auth-main .auth-card:not(.demo-choice) {
+  gap: 16px;
+  margin: 0;
+  padding: 20px 16px;
+  border-radius: var(--radius-lg);
+}
+
+.auth-main .auth-card:not(.demo-choice) .panel-title,
+.auth-main .risk-notice .panel-title {
+  margin: 0;
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: var(--text-sub1);
+  line-height: 26px;
+  font-weight: var(--weight-bold);
+}
+
+.auth-main .auth-card:not(.demo-choice) > .signin-note,
+.auth-main .auth-card > p:not([class]) {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: 21px;
+}
+
+.auth-main .auth-card > p:not([class]) {
+  color: var(--blue);
+}
+
+.auth-main .auth-card a:not(.primary-btn),
+.auth-main .signin-note a,
+.auth-main .risk-notice a,
+.auth-main .form-error a {
+  color: var(--accent-strong);
+  font-weight: var(--weight-semibold);
+}
+
+/* Invite "Step 1 of 2": a Note tag above the card title. */
+.auth-main .auth-step {
+  align-self: flex-start;
+  margin: 0 0 -8px;
+  padding: 2px 8px;
+  border-radius: var(--radius-tag);
+  background: var(--tag-note);
+  color: var(--blue);
+  font-size: var(--text-caption);
+  line-height: 18px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.auth-main .auth-actions {
+  gap: 12px;
+}
+
+.auth-main .auth-card:not(.demo-choice) .primary-btn,
+.auth-main .auth-card .photo-source-btn {
+  min-height: 48px;
+}
+
+/* Sign-in widget (signin.html, invite step 1): the Google button centred in the card at its
+   400px maximum, with its status line and error under it. */
+#signin-widget,
+#invite-signin {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-main .gis-button {
+  margin-inline: auto;
+}
+
+.auth-main [data-gis-note] {
+  text-align: center;
+}
+
+.auth-main .dev-signin {
+  gap: 8px;
+  padding: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.auth-main .dev-signin .text-input {
+  height: 48px;
+  border-color: var(--line);
+  color: #000000;
+  font-size: 16px;
+}
+
+.auth-main > .auth-status {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--blue);
+  font-size: var(--text-body);
+  line-height: 21px;
+}
+
+.auth-main > .auth-status a {
+  color: var(--accent-strong);
+  font-weight: var(--weight-semibold);
+}
+
+/* Data notice ("How your information is handled") on sign in, onboarding and invite. */
+.auth-main .risk-notice {
+  padding: 20px 16px;
+  border-radius: var(--radius-lg);
+}
+
+.auth-main .risk-notice ul {
+  margin: 12px 0 0;
+  padding-left: 20px;
+  gap: 8px;
+  color: var(--blue);
+  font-size: var(--text-body);
+  line-height: 21px;
+}
+
+.auth-main .risk-notice li::marker,
+.legal-page li::marker {
+  color: var(--accent);
+}
+
+/* Onboarding: the required acknowledgement as a bordered Cloud row, then errors as an alert. */
+.auth-main .check-row {
+  grid-template-columns: 20px 1fr;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--cloud);
+  color: var(--blue);
+  font-size: var(--text-body);
+  line-height: 21px;
+  cursor: pointer;
+}
+
+.auth-main .check-row input {
+  margin: 1px 0 0;
+  accent-color: var(--accent-strong);
+}
+
+.auth-main .check-row:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.auth-main .form-error {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: var(--tag-alert);
+  color: var(--danger);
+  font-size: var(--text-body);
+  line-height: 21px;
+  font-weight: var(--weight-medium);
+}
+
+.legal-footer {
+  padding-top: 8px;
+  font-size: var(--text-caption);
+  line-height: 18px;
+}
+
+.legal-footer a {
+  color: var(--grey);
+}
+
+/* Privacy policy and terms: the Top Nav (back to CareNest) over one long-form white card. */
+.legal-app > .legal-nav {
+  margin-bottom: 0;
+}
+
+.legal-page {
+  gap: 12px;
+  padding: 20px 16px 24px;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  color: var(--blue);
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.legal-effective {
+  margin: 0;
+  color: var(--grey);
+  font-size: var(--text-caption);
+  line-height: 18px;
+}
+
+.legal-page h2 {
+  margin: 12px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: var(--text-sub1);
+  line-height: 26px;
+  font-weight: var(--weight-bold);
+}
+
+.legal-page ul {
+  gap: 8px;
+}
+
+.legal-page a {
+  color: var(--accent-strong);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.legal-page code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--cloud);
+  font-size: 0.9em;
+}
+
+@media (min-width: 768px) {
+  .auth-app {
+    padding-top: 56px;
+  }
+
+  .auth-app.legal-app {
+    padding-top: 32px;
+  }
+
+  .legal-app > .legal-nav {
+    margin-top: 0;
+  }
+
+  .auth-main .auth-card:not(.demo-choice),
+  .auth-main .risk-notice {
+    padding: 24px;
+  }
+
+  .legal-page {
+    padding: 32px 40px 40px;
+    font-size: 16px;
+    line-height: 26px;
+  }
+}
