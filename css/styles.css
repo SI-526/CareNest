@@ -369,6 +369,15 @@ button {
   gap: 8px;
 }
 
+/* .panel's display: flex beats the [hidden] attribute, so the parent's Album view
+   (parent.html#album) would still show the Today-only panels. Scoped to those three on
+   purpose: other pages have panels marked hidden that their scripts never unhide. */
+#important-today[hidden],
+#parent-schedule[hidden],
+#parent-care-log[hidden] {
+  display: none;
+}
+
 .contacts-panel {
   gap: 12px;
 }
