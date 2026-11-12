@@ -1851,6 +1851,13 @@
       icon: '<path d="M9 2h6a1 1 0 0 1 1 1v1h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 1-1Zm1 2v2h4V4h-4Zm-2 7a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2H8Zm0 4a1 1 0 1 0 0 2h5a1 1 0 0 0 0-2H8Z" />',
     },
     {
+      // The parent's saved photos (photo_saves), shown by parent.js at #album.
+      id: "album",
+      href: "parent.html#album",
+      label: "Album",
+      icon: '<path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2ZM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5Z" />',
+    },
+    {
       id: "children",
       href: "children.html?as=parent",
       label: "Children",

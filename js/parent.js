@@ -192,7 +192,7 @@
     }
 
     function renderChrome() {
-      const current = view === "album" ? "care-log" : "home";
+      const current = view === "album" ? "album" : "home";
       document.querySelectorAll(".primary-nav [data-nav]").forEach((link) => {
         if (link.dataset.nav === current) link.setAttribute("aria-current", "page");
         else link.removeAttribute("aria-current");
