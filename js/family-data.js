@@ -15,6 +15,8 @@
 //                                                (js/children.js), where things are, emergency steps
 //   contacts                                  -> Your Contacts, Who to contact; role "Hospital" -> hospital card;
 //                                                is_primary -> the family card's primary contact
+//   household_parent_phones()                -> stands in as the primary contact when none is
+//                                                picked (a parent who shares their phone)
 //   appointments                              -> schedule page sessions
 //   schedule_requests (open only)             -> a sitter's "Request Schedule" reminders (SI-50)
 //
@@ -211,7 +213,14 @@
     const hospitalRow = contacts.find(isHospital);
     const people = contacts.filter((c) => !isHospital(c));
     data.contacts = people;
-    data.primaryContact = contacts.find((c) => c.isPrimary) || null;
+    // No contact picked as primary in Family info: the first parent who shares their phone
+    // (account.html) stands in, so the sitter always has the family's number.
+    const sharingParent = (rows.parentPhones || [])[0];
+    data.primaryContact =
+      contacts.find((c) => c.isPrimary) ||
+      (sharingParent
+        ? Object.assign(toContact({ id: `parent-${sharingParent.user_id}`, name: sharingParent.display_name || "Parent", role: "Parent", phone: sharingParent.phone }), { isParent: true })
+        : null);
 
     // Only active tasks; archived ones live on in past shifts' check snapshots.
     data.schedule = sortTasks(plan ? (plan.tasks || []).filter((t) => !t.archived_at) : []).map((t) => ({
@@ -261,7 +270,7 @@
   async function fetchRows(ctx) {
     const client = ctx.client;
     const householdId = ctx.household.id;
-    const [household, children, contacts, careItems, plans, appointments, scheduleRequests] = await Promise.all([
+    const [household, children, contacts, careItems, plans, appointments, scheduleRequests, parentPhones] = await Promise.all([
       // Re-read so a renamed family space shows live (the auth context's copy is from sign-in).
       client.from("households").select("id, name, child_name, child_age_label, home_address").eq("id", householdId).maybeSingle(),
       client
@@ -304,12 +313,15 @@
         .is("resolved_at", null)
         .gte("request_date", localDateKey(-1))
         .order("request_date", { ascending: true }),
+      // Parents who share their phone (account.html); filtered in the database.
+      client.rpc("household_parent_phones", { target_household_id: householdId }),
     ]);
     const error = household.error || children.error || contacts.error || careItems.error || plans.error || appointments.error;
     if (error) throw error;
     // Reminders are optional: if they cannot load (e.g. the table is not there yet), the family
     // pages still work, just without them.
     if (scheduleRequests.error) console.warn("Schedule requests unavailable", scheduleRequests.error);
+    if (parentPhones.error) console.warn("Parent phone numbers unavailable", parentPhones.error);
     return {
       household: household.data,
       children: children.data || [],
@@ -318,6 +330,7 @@
       plan: (plans.data && plans.data[0]) || null,
       appointments: appointments.data || [],
       scheduleRequests: (!scheduleRequests.error && scheduleRequests.data) || [],
+      parentPhones: (!parentPhones.error && parentPhones.data) || [],
     };
   }
 

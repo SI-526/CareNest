@@ -147,6 +147,8 @@ const tables = [
   "appointments",
   // SI-51 (20261026110000_carenest_sitter_profiles.sql); tested in "sitter profiles: ...".
   "sitter_profiles",
+  // 20261112000000_carenest_parent_profiles.sql; tested in "parent profiles: ...".
+  "parent_profiles",
   // SI-50 (20261026120000_carenest_schedule_requests.sql); tested in "schedule requests: ...".
   "schedule_requests",
   // SI-45 (20261102000000_carenest_children.sql); tested in "children: ...".
@@ -167,6 +169,7 @@ const rpcs = [
   ["is_member", { target_household_id: randomUUID() }],
   ["is_parent", { target_household_id: randomUUID() }],
   ["household_sitter_profiles", { target_household_id: randomUUID() }],
+  ["household_parent_phones", { target_household_id: randomUUID() }],
 ];
 
 let parentA;
@@ -1337,6 +1340,84 @@ test("sitter profiles: sitters own their profile; parents get only shared fields
              has_column_privilege('authenticated', 'public.sitter_profiles', 'bio', 'insert') as bio_insert,
              has_column_privilege('authenticated', 'public.sitter_profiles', 'bio', 'update') as bio_update`),
     [{ table_delete: false, user_id_write: false, bio_insert: true, bio_update: true }],
+  );
+});
+
+test("parent profiles: parents own their details; members see a parent's phone only while it is shared", async () => {
+  const a = await newFamily("pp-a", 1);
+  const b = await newFamily("pp-b", 1);
+  const outsiderUser = await signUp("pp-outsider");
+  const parent = a.parent.client;
+  const phones = (client) => client.rpc("household_parent_phones", { target_household_id: a.householdId });
+
+  // The parent creates their own row; sharing defaults to on, and the name reaches the roster.
+  const created = await parent
+    .from("parent_profiles")
+    .upsert({ display_name: "  Pat Parent ", phone: "734-555-0100" }, { onConflict: "user_id" })
+    .select("*")
+    .single();
+  assert.ifError(created.error);
+  assert.equal(created.data.user_id, a.parent.id);
+  assert.equal(created.data.share_phone, true);
+  const roster = await admin.from("household_members").select("display_name").eq("user_id", a.parent.id);
+  assert.deepEqual(roster.data, [{ display_name: "Pat Parent" }]);
+
+  // A blank name leaves the roster name alone.
+  assert.ifError((await parent.from("parent_profiles").update({ display_name: "" }).eq("user_id", a.parent.id)).error);
+  const kept = await admin.from("household_members").select("display_name").eq("user_id", a.parent.id);
+  assert.deepEqual(kept.data, [{ display_name: "Pat Parent" }]);
+
+  // Members of the family (the sitter, the parent) see the shared phone; nobody reads the table row.
+  for (const [who, client] of [["the sitter", a.sitter.client], ["the parent", parent]]) {
+    const res = await phones(client);
+    assert.ifError(res.error);
+    assert.deepEqual(res.data, [{ user_id: a.parent.id, display_name: "Pat Parent", phone: "734-555-0100" }], who);
+  }
+  const direct = await a.sitter.client.from("parent_profiles").select("*");
+  assert.deepEqual(direct.data ?? [], [], "the sitter read the parent's profile row directly");
+
+  // Another family's parent and an outsider get nothing for household A.
+  for (const [who, client] of [["parent B", b.parent.client], ["outsider", outsiderUser.client]]) {
+    const res = await phones(client);
+    assert.ifError(res.error);
+    assert.deepEqual(res.data, [], `${who} read household A's parent phones`);
+  }
+
+  // Turning sharing off hides the number from everyone, the parent included.
+  assert.ifError((await parent.from("parent_profiles").update({ share_phone: false }).eq("user_id", a.parent.id)).error);
+  for (const client of [a.sitter.client, parent]) {
+    const res = await phones(client);
+    assert.ifError(res.error);
+    assert.deepEqual(res.data, [], "an unshared phone was returned");
+  }
+
+  // A sitter cannot create a parent profile; nobody writes another user's row or user_id.
+  const sitterInsert = await a.sitter.client.from("parent_profiles").insert({ display_name: "Sam" }).select();
+  assert.equal(sitterInsert.error?.code, "42501", "a sitter created a parent profile");
+  assertPermissionDenied(
+    await parent.from("parent_profiles").insert({ user_id: b.parent.id, display_name: "x" }).select(),
+    "parent inserted a profile for another user",
+  );
+  assertDenied(
+    await b.parent.client.from("parent_profiles").update({ phone: "hijacked" }).eq("user_id", a.parent.id).select(),
+  );
+  assertPermissionDenied(
+    await parent.from("parent_profiles").delete().eq("user_id", a.parent.id).select(),
+    "parent deleted their profile",
+  );
+
+  // Anonymous visitors read nothing and cannot call the RPC.
+  const anonRead = await anon.from("parent_profiles").select("*");
+  assert.ok(anonRead.error || anonRead.data.length === 0, "anon read parent_profiles");
+  assertPermissionDenied(await phones(anon), "anon called household_parent_phones");
+
+  assert.deepEqual(
+    localSql(`
+      select has_table_privilege('authenticated', 'public.parent_profiles', 'delete, truncate') as table_delete,
+             has_column_privilege('authenticated', 'public.parent_profiles', 'user_id', 'insert, update') as user_id_write,
+             has_column_privilege('authenticated', 'public.parent_profiles', 'phone', 'insert') as phone_insert,
+             has_column_privilege('authenticated', 'public.parent_profiles', 'phone', 'update') as phone_update`),
+    [{ table_delete: false, user_id_write: false, phone_insert: true, phone_update: true }],
   );
 });
 

@@ -18,6 +18,7 @@
     home: ["caretaker"],
     parent: ["parent"],
     people: ["parent"],
+    account: ["parent"],
     manage: ["parent"],
     gallery: ["parent", "caretaker"],
     info: ["parent", "caretaker"],
@@ -430,6 +431,60 @@
     </footer>`;
   }
 
+  // ---------- a parent's personal details (account.html, the Profile page) ----------
+
+  // public.parent_profiles (20261112000000_carenest_parent_profiles.sql): the parent's own name,
+  // phone, and whether their sitters see that phone. Only the owner reads the row. A parent with
+  // no row yet starts from their roster name, with sharing on (the column default). Demo: the
+  // sample parent, with this tab's edits (js/data.js).
+  async function loadParentProfile(ctx) {
+    const sample = window.CareNestData || {};
+    const rosterName = ctx && ctx.membership ? (ctx.membership.display_name || "").trim() : "";
+    const fallback = { name: rosterName || (ctx && ctx.demo ? sample.parentName || "" : ""), phone: "", sharePhone: true };
+    if (!ctx) return { profile: fallback };
+    if (ctx.demo) {
+      const demo = window.CareNestDemo;
+      return { profile: demo && demo.loadParentProfile ? demo.loadParentProfile() : fallback };
+    }
+    if (!ctx.client || !ctx.user) return { profile: fallback };
+    const { data: row, error } = await ctx.client
+      .from("parent_profiles")
+      .select("display_name, phone, share_phone")
+      .eq("user_id", ctx.user.id)
+      .maybeSingle();
+    if (error) return { profile: fallback, error };
+    if (!row) return { profile: fallback };
+    return { profile: { name: (row.display_name || "").trim() || fallback.name, phone: row.phone || "", sharePhone: Boolean(row.share_phone) } };
+  }
+
+  // Saves the parent's details; the database copies a non-blank name into their roster rows.
+  async function saveParentProfile(ctx, profile) {
+    const values = {
+      name: String(profile.name || "").trim().slice(0, 80),
+      phone: String(profile.phone || "").trim().slice(0, 40),
+      sharePhone: Boolean(profile.sharePhone),
+    };
+    if (ctx.demo) {
+      const demo = window.CareNestDemo;
+      const error = demo && demo.saveParentProfile ? demo.saveParentProfile(values) : null;
+      return { profile: values, error };
+    }
+    const { error } = await ctx.client
+      .from("parent_profiles")
+      .upsert({ display_name: values.name, phone: values.phone, share_phone: values.sharePhone }, { onConflict: "user_id" });
+    if (!error && values.name) {
+      // Keep this page's copy of the roster in step with the database trigger.
+      if (ctx.membership) ctx.membership.display_name = values.name;
+      (ctx.memberships || []).forEach((m) => {
+        if (m.role === "parent") m.display_name = values.name;
+      });
+      (ctx.members || []).forEach((m) => {
+        if (ctx.user && m.user_id === ctx.user.id) m.display_name = values.name;
+      });
+    }
+    return { profile: values, error };
+  }
+
   // ---------- account panel (Profile page) ----------
 
   // Renders "Your account" into `container` on the Profile page: the family switcher, Log out, and
@@ -677,6 +732,8 @@
     clearDemo,
     mountChrome,
     mountAccountPanel,
+    loadParentProfile,
+    saveParentProfile,
     // localStorage key for js/store.js; null until the guard has decided who this is.
     get storeKey() {
       return storeKey;

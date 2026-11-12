@@ -12,8 +12,9 @@ step). There is deliberately **no `package.json` at the repo root**; database to
 
 Pages: `signin.html` (Google sign-in, the data notice), `onboarding.html` (create a family space;
 requires ticking the at-your-own-risk acknowledgement), `people.html` (parents: invite a sitter,
-revoke invites, remove sitters), `invite.html#<token>` (accept an invite), and `privacy.html` /
-`terms.html`. Every app page (`index`, `parent`, `people`, `manage`, `schedule`, `care-log`,
+revoke invites, remove sitters), `account.html` (parents: their name and phone number, and whether
+their sitter sees that phone on the Children page; the email is read-only), `invite.html#<token>` (accept an invite), and `privacy.html` /
+`terms.html`. Every app page (`index`, `parent`, `people`, `account`, `manage`, `schedule`, `care-log`,
 `children`, `profile`, `gallery`, `info`, `food-allergies`) loads `js/auth.js`, which keeps the page hidden until it has checked the
 session: signed out goes to `signin.html`, no family space goes to `onboarding.html`, a parent's
 home is `parent.html`, a sitter's is `index.html`, and a page for the other role redirects to the

@@ -642,6 +642,7 @@
   }
 
   const SITTER_PROFILE_KEY = "carenest:demo:sitter-profile";
+  const PARENT_PROFILE_KEY = "carenest:demo:parent-profile";
   const SITTER_PROFILE = {
     name: "Bethany",
     bio: "Education student at the University of Michigan. CPR and first aid certified, with four years of babysitting experience with toddlers and school-age kids.",
@@ -678,6 +679,28 @@
         /* unreadable: the sample profile */
       }
       return Object.assign({}, SITTER_PROFILE);
+    },
+    // The demo parent's personal details (account.html): the sample parent's name and their
+    // number from the sample contacts, with this tab's edits.
+    loadParentProfile() {
+      const sample = window.CareNestData || {};
+      const own = (sample.contacts || []).find((c) => c.name === sample.parentName);
+      const base = { name: sample.parentName || "", phone: own ? own.phone : "", sharePhone: true };
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(`${PARENT_PROFILE_KEY}:${familyId}`) || "null");
+        if (saved && typeof saved === "object") return Object.assign(base, saved);
+      } catch (e) {
+        /* unreadable: the sample details */
+      }
+      return base;
+    },
+    saveParentProfile(profile) {
+      try {
+        sessionStorage.setItem(`${PARENT_PROFILE_KEY}:${familyId}`, JSON.stringify(profile));
+        return null;
+      } catch (e) {
+        return new Error("This browser tab is out of storage space, so this wasn't saved.");
+      }
     },
     saveSitterProfile(profile) {
       try {
