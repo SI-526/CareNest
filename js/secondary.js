@@ -248,17 +248,22 @@
     const caregiver = sharedSitter && sharedSitter.display_name || data.babysitter && data.babysitter.name || "Caregiver";
     const current = editable
       ? `<section class="current-shift-card current-session-card"><div class="current-session-title"><div><p class="schedule-card-title">Current Session</p><p class="schedule-card-meta"><strong data-current-date>${esc(displayDate(today))}</strong><span data-current-session-time></span></p></div><button type="button" class="schedule-icon-button" data-edit-schedule aria-label="Edit current session">${ICONS.cardEdit}</button></div><div class="current-session-people"><div><strong>Children</strong>${people}</div><span class="current-session-divider" aria-hidden="true"></span><div><strong>Caregiver</strong><div class="schedule-people">${personHtml(caregiver, "schedule-avatar--sitter")}</div></div></div>${caregiverDetails()}</section>`
-      : `<section class="current-shift-card"><div><p class="schedule-card-title">Current Shift</p><p class="schedule-card-meta"><strong data-current-date>${esc(displayDate(today))}</strong><span data-current-session-time></span></p></div>${people}</section>`;
+      : `<section class="current-shift-card current-shift-card--sitter"><p class="schedule-card-title">Current Shift</p><div class="current-shift-details"><p class="schedule-card-meta"><strong data-current-date>${esc(displayDate(today))}</strong><span data-current-session-time></span></p>${people}</div></section>`;
     return `<section class="schedule-page${editable ? " schedule-page--parent" : ""}" data-schedule-page data-parent="${editable}" data-today="${today}" data-appointments="${esc(JSON.stringify(appointments))}">
       <header class="schedule-topnav"><h1>Schedule</h1></header>
       ${editable ? '<div class="schedule-request-notices" data-request-notices aria-live="polite"></div>' : ""}
       ${current}
       ${editable ? "" : "<div data-checklist-slot></div>"}
-      <div class="schedule-heading"><h2>Schedule</h2></div>
-      <div class="schedule-tabs" role="tablist" aria-label="Schedule view"><button type="button" role="tab" aria-selected="true" data-view="list">List</button><button type="button" role="tab" aria-selected="false" data-view="calendar">Calendar</button></div>
-      <div class="schedule-date-controls"><button type="button" class="schedule-chevron" data-date="previous" aria-label="Previous date">${ICONS.chevronLeft}</button><p data-date-label></p><button type="button" class="schedule-chevron" data-date="next" aria-label="Next date">${ICONS.chevronRight}</button></div>
-      <div class="schedule-body-grid"><div class="schedule-primary-content" data-schedule-content></div><section class="upcoming-shifts"><h2>${editable ? "Upcoming Sessions" : "Upcoming Shifts"}</h2><div data-upcoming-shifts></div></section></div>
-      ${editable ? '<button type="button" class="schedule-new-session" data-book-appointment><span aria-hidden="true">+&nbsp;</span> New Session</button>' : ""}<p class="schedule-request-status" data-request-status role="status"></p>
+      <div class="schedule-body-grid">
+        <section class="schedule-overview" aria-labelledby="schedule-overview-title">
+          <div class="schedule-heading"><h2 id="schedule-overview-title">Schedule</h2></div>
+          <div class="schedule-tabs" role="tablist" aria-label="Schedule view"><button type="button" role="tab" aria-selected="true" data-view="list">List</button><button type="button" role="tab" aria-selected="false" data-view="calendar">Calendar</button></div>
+          <div class="schedule-date-controls"><button type="button" class="schedule-chevron" data-date="previous" aria-label="Previous date">${ICONS.chevronLeft}</button><p data-date-label></p><button type="button" class="schedule-chevron" data-date="next" aria-label="Next date">${ICONS.chevronRight}</button></div>
+          <div class="schedule-primary-content" data-schedule-content></div>
+        </section>
+        <section class="upcoming-shifts"><h2>${editable ? "Upcoming Sessions" : "Upcoming Shifts"}</h2><div data-upcoming-shifts></div>${editable ? '<button type="button" class="schedule-new-session" data-book-appointment><span aria-hidden="true">+&nbsp;</span>New Session</button>' : ""}</section>
+      </div>
+      <p class="schedule-request-status" data-request-status role="status"></p>
     </section>`;
   }
 

@@ -844,6 +844,10 @@ button {
 .schedule-topnav h1 { margin: 0; color: var(--blue); font-size: 24px; line-height: 31.6px; font-weight: var(--weight-bold); }
 .current-shift-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border-radius: 8px; background: var(--cloud); }
 .current-session-card { display: block; }
+/* Figma 238:687: the title on its own line, then the date and hours with the children on the right. */
+.current-shift-card--sitter { display: block; }
+.current-shift-details { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 8px; }
+.current-shift-details .schedule-card-meta { margin-top: 0; }
 .current-session-title, .schedule-detail-label, .schedule-details-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .current-session-title { align-items: flex-start; }
 .schedule-icon-button { display: grid; flex: none; width: 44px; height: 44px; margin: -13px -13px 0 0; place-items: center; border-radius: 8px; color: var(--blue); }
@@ -861,7 +865,7 @@ button {
 .schedule-person small { font-size: inherit; }
 .schedule-avatar { display: grid; flex: none; width: 32px; height: 32px; place-items: center; border-radius: 50%; background: #dce7ef; color: var(--blue); font-size: 10px; font-weight: var(--weight-bold); }
 .schedule-avatar--sitter { background: #f1ddd7; }
-.schedule-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 40px; }
+.schedule-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .schedule-book-btn { min-height: 38px; padding: 8px 12px; border-radius: 9px; background: var(--accent-strong); color: #fff; font-size: var(--text-sm); font-weight: var(--weight-semibold); }
 .schedule-tabs { display: flex; justify-content: center; margin-top: 8px; border-bottom: 1px solid var(--line); }
 .schedule-tabs button { position: relative; min-width: 78px; padding: 4px 12px; border-radius: 8px 8px 0 0; background: var(--line); color: var(--grey); font-size: 12px; line-height: 18px; }
@@ -907,9 +911,10 @@ button {
 .schedule-empty-button { margin-top: 16px; }
 .schedule-edit-button, .schedule-add-activity { margin-top: 8px; }
 .schedule-empty-button:focus-visible, .schedule-edit-button:focus-visible, .schedule-add-activity:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.schedule-body-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(250px, .8fr); gap: 28px; align-items: start; }
-.schedule-primary-content { min-width: 0; }
-.upcoming-shifts { margin-top: 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow-surface); }
+/* Figma content column: 40px between sections. Wide screens put Upcoming beside the overview. */
+.schedule-body-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, .9fr); gap: 40px 48px; align-items: start; margin-top: 40px; }
+.schedule-overview, .schedule-primary-content { min-width: 0; }
+.upcoming-shifts { margin-top: 0; }
 .upcoming-shifts h2 { margin-bottom: 8px; }
 .upcoming-shift { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 72px; margin-top: 8px; padding: 8px 16px; border-radius: 8px; background: var(--cloud); }
 .upcoming-shift p { display: flex; flex-wrap: wrap; gap: 0 8px; color: #000; font-size: 14px; line-height: 21px; }
@@ -927,7 +932,7 @@ button {
 .schedule-request-notice a { text-decoration: underline; text-underline-offset: 2px; font-weight: var(--weight-semibold); }
 .schedule-request-actions { display: flex; gap: 8px; }
 .schedule-request-notice .primary-btn, .schedule-request-notice .photo-source-btn { width: auto; min-height: 36px; padding: 6px 14px; }
-.schedule-new-session { min-height: 44px; margin-top: 8px; padding: 8px 0; color: var(--accent-strong); font-size: 16px; line-height: 24px; font-weight: var(--weight-semibold); }
+.schedule-new-session { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; margin-top: 8px; padding: 8px 0; color: var(--accent-strong); font-size: 16px; line-height: 24px; font-weight: var(--weight-semibold); }
 /* The parent's schedule has no checklist (Figma); only the sitter's page moves it into a slot (SI-71). */
 body[data-page="schedule"] .app > #checklist { display: none; }
 
@@ -981,7 +986,10 @@ body[data-page="schedule"] .app > #checklist { display: none; }
 .schedule-editor-activities .schedule-activity-for, .schedule-activity-list .schedule-activity-for { color: var(--accent-strong); }
 .schedule-activity-children { display: grid; gap: 5px; color: #000; font-size: 14px; font-weight: var(--weight-semibold); }
 .schedule-activity-editor-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.schedule-activity-editor-actions .photo-source-btn { width: auto; min-height: 44px; padding: 5px 12px; }
+/* Figma secondary button: 1.5px Periwinkle outline, Action Violet label. */
+.schedule-activity-editor-actions .photo-source-btn { width: auto; min-height: 44px; padding: 8px 16px; border: 1.5px solid var(--accent); border-radius: 10px; background: var(--card); color: var(--accent-strong); font-size: 14px; line-height: 21px; font-weight: var(--weight-semibold); }
+.schedule-activity-editor-actions .photo-source-btn:hover { border-color: var(--accent-strong); background: var(--cloud); color: #000; }
+.schedule-activity-editor-actions .schedule-save { min-height: 44px; padding: 8px 16px; font-size: 14px; line-height: 21px; }
 .schedule-delete-activity { min-height: 44px; margin-right: auto; padding: 0 4px; border-radius: 8px; color: var(--danger); font-size: 14px; line-height: 21px; font-weight: var(--weight-semibold); }
 .schedule-details-form textarea.text-input { min-height: 86px; padding: 12px; border-color: var(--line); border-radius: 8px; color: #000; font-size: 14px; line-height: 21px; }
 .schedule-details-form textarea.text-input::placeholder { color: var(--grey); }
@@ -997,7 +1005,6 @@ body[data-page="schedule"] .app > #checklist { display: none; }
   .schedule-page { margin-top: 0; max-width: 640px; }
   .schedule-topnav { margin: 0 -16px 24px; padding: 17px 16px; background: var(--card); box-shadow: 0 -1px 7.5px rgba(0, 0, 0, 0.1); text-align: center; }
   .schedule-body-grid { grid-template-columns: 1fr; gap: 40px; }
-  .upcoming-shifts { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
   /* Schedule Details opens as a bottom sheet on phones (Figma 243:3509). */
   .confirm-dialog.schedule-sheet { width: 100%; max-width: none; height: calc(100dvh - 69px); max-height: none; margin: 69px 0 0; padding: 0; border-radius: 16px 16px 0 0; }
   .confirm-dialog.schedule-sheet::backdrop { background: rgba(0, 0, 0, 0.4); }
@@ -5743,9 +5750,75 @@ body[data-page="parent"] .feed-section > .panel-title {
   font-size: var(--text-sub3);
 }
 
-/* The sitter's Schedule page shows the same checklist as Home (SI-71), under Current Shift. */
+/* The sitter's Schedule page shows the same checklist as Home (SI-71), under Current Shift.
+   The Schedule frames (238:687, 239:1040) sit on white with flat Cloud cards, so here the checklist
+   is a Cloud card like Current Shift, with Schedule List rows: a 64px centred Deep Teal time,
+   24px gap, DM Sans Bold 14 title, 12/18 grey detail, Soft Border rules. */
+body[data-page="schedule"] {
+  background: var(--card);
+}
+
 .schedule-checklist {
   margin-top: 24px;
+}
+
+body[data-page="schedule"] #checklist.panel {
+  gap: 8px;
+  padding: 16px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--cloud);
+  box-shadow: none;
+}
+
+body[data-page="schedule"] #checklist .panel-header {
+  align-items: center;
+  padding: 0;
+}
+
+body[data-page="schedule"] #checklist .panel-title {
+  color: var(--blue);
+  font-family: var(--font);
+  font-size: var(--text-sub1);
+  line-height: 26px;
+}
+
+body[data-page="schedule"] #checklist .card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body[data-page="schedule"] #checklist .schedule-item {
+  padding: 8px 0;
+}
+
+body[data-page="schedule"] #checklist .schedule-time {
+  width: 64px;
+  font-family: var(--font-body);
+  text-align: center;
+  white-space: nowrap;
+}
+
+body[data-page="schedule"] #checklist .schedule-title {
+  font-family: var(--font-body);
+}
+
+body[data-page="schedule"] #checklist .schedule-body {
+  gap: 0;
+}
+
+body[data-page="schedule"] #checklist .schedule-detail,
+body[data-page="schedule"] #checklist .schedule-location p {
+  color: var(--grey);
+  font-size: var(--text-caption);
+  line-height: 18px;
+}
+
+body[data-page="schedule"] #checklist .schedule-divider {
+  margin: 0;
+  background: var(--line);
 }
 
 /* Profile tab (Figma 316:2252, 316:2360): identity, personal information, account settings,
