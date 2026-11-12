@@ -39,7 +39,7 @@
       </nav>
 
       <main class="gallery-main" aria-labelledby="gallery-title">
-        <div class="detail-nav">
+        <div class="detail-nav gallery-head">
           <h1 id="gallery-title">Gallery</h1>
         </div>
 
@@ -59,15 +59,16 @@
         <div class="gallery-list" id="gallery-list"></div>
 
         <div class="gallery-add" id="gallery-add" hidden>
-          <button type="button" class="gallery-fab" id="gallery-fab" aria-label="Add a photo" aria-describedby="gallery-locked">
+          <button type="button" class="gallery-fab" id="gallery-fab" aria-describedby="gallery-locked">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5a1 1 0 1 1 2 0v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5Z" /></svg>
+            <span>Add a photo</span>
           </button>
           <input type="file" accept="image/*" id="gallery-file" hidden />
         </div>
       </main>
     </div>
 
-    <dialog class="confirm-dialog gallery-dialog" id="gallery-dialog" aria-labelledby="gallery-dialog-title">
+    <dialog class="confirm-dialog gallery-dialog photo-sheet" id="gallery-dialog" aria-labelledby="gallery-dialog-title">
       <form class="confirm-dialog-body" id="gallery-form" novalidate>
         <h2 class="complete-heading" id="gallery-dialog-title">Send a photo</h2>
         <div class="photo-preview-frame gallery-preview-frame">

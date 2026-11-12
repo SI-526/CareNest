@@ -113,8 +113,8 @@
         if (window.CareNestUI) window.CareNestUI.renderParentNav("profile");
       }
       main.innerHTML = `
-        <header class="detail-nav"><h1 id="manage-title">Family info</h1></header>
-        <section class="panel">
+        <header class="detail-nav top-nav"><a class="back-btn" href="profile.html" aria-label="Back to your profile"><img src="assets/top-nav-back.svg" alt="" width="28" height="28" /></a><h1 id="manage-title">Family info</h1></header>
+        <section class="card auth-card">
           <h2 class="panel-title">Sign in to edit family information</h2>
           <p class="signin-note">The local demo shows sample family information. Sign in as a parent to edit your family’s schedule, care details, and contacts.</p>
           <a class="primary-btn" href="signin.html">Sign in</a>
@@ -489,7 +489,7 @@
 
     function fieldHtml(field, value) {
       const id = `edit-${field.name}`;
-      const label = `<label class="field-label" for="${id}">${esc(field.label)}${field.optional ? ' <span class="field-optional">(optional)</span>' : ""}</label>`;
+      const label = `<label class="field-label" for="${id}">${esc(field.label)}${field.optional ? ' <span class="field-optional">Optional</span>' : ""}</label>`;
       const required = field.required ? " required" : "";
       const max = field.max ? ` maxlength="${field.max}"` : "";
       let control;
@@ -507,7 +507,7 @@
         const placeholder = field.placeholder ? ` placeholder="${esc(field.placeholder)}"` : "";
         control = `<input class="text-input" id="${id}" name="${field.name}" type="${field.type}" value="${esc(v)}" autocomplete="off"${max}${required}${list}${placeholder} />`;
       }
-      return `<div class="manage-field">${label}${control}</div>`;
+      return `<div class="manage-field child-form-field">${label}${control}</div>`;
     }
 
     function openEditor(key, row, opener) {

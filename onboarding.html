@@ -29,12 +29,20 @@
         </section>
         <div id="risk-notice"></div>
         <form class="card auth-card" id="onboarding-form" novalidate>
-          <label class="field-label" for="household-name">Family space name</label>
-          <input class="text-input" id="household-name" name="household_name" type="text" maxlength="80" required placeholder="The Thomas family" autocomplete="off" />
-          <label class="field-label" for="child-name">Child's name <span class="field-optional">(optional, add more children later in Family info)</span></label>
-          <input class="text-input" id="child-name" name="child_name" type="text" maxlength="80" autocomplete="off" />
-          <label class="field-label" for="child-age">Child's age <span class="field-optional">(optional, e.g. "Age 3")</span></label>
-          <input class="text-input" id="child-age" name="child_age_label" type="text" maxlength="40" autocomplete="off" />
+          <h2 class="panel-title">Family details</h2>
+          <div class="form-field">
+            <label class="field-label" for="household-name">Family space name</label>
+            <input class="text-input" id="household-name" name="household_name" type="text" maxlength="80" required placeholder="The Thomas family" autocomplete="off" />
+          </div>
+          <div class="form-field">
+            <label class="field-label" for="child-name">Child's name <span class="field-optional">Optional</span></label>
+            <input class="text-input" id="child-name" name="child_name" type="text" maxlength="80" autocomplete="off" aria-describedby="child-name-hint" />
+            <p class="signin-note" id="child-name-hint">You can add more children later in Family info.</p>
+          </div>
+          <div class="form-field">
+            <label class="field-label" for="child-age">Child's age <span class="field-optional">Optional</span></label>
+            <input class="text-input" id="child-age" name="child_age_label" type="text" maxlength="40" autocomplete="off" placeholder="Age 3" />
+          </div>
           <label class="check-row">
             <input type="checkbox" id="risk-ack" name="acknowledged" required />
             <span>I have read the notice above. I understand CareNest is a student project, not HIPAA-compliant and not a medical service, with no backups, and I enter real information at my own risk.</span>

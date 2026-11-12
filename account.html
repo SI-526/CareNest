@@ -17,9 +17,9 @@
       <nav class="primary-nav" aria-label="Parent navigation"></nav>
 
       <main class="parent-main people-main account-main" aria-labelledby="account-details-title">
-        <header class="detail-nav">
+        <header class="detail-nav top-nav">
           <a class="back-btn" href="profile.html" aria-label="Back to your profile">
-            <img src="assets/back.svg" alt="" width="30" height="30" />
+            <img src="assets/top-nav-back.svg" alt="" width="28" height="28" />
           </a>
           <h1 id="account-details-title">Personal details</h1>
         </header>
@@ -28,15 +28,21 @@
         <section class="card auth-card" aria-labelledby="account-form-heading" id="account-card" hidden>
           <h2 class="panel-title" id="account-form-heading">Your details</h2>
           <form class="invite-form" id="account-form" novalidate>
-            <label class="field-label" for="account-name">Name</label>
-            <input class="text-input" id="account-name" name="name" type="text" maxlength="80" autocomplete="name" required />
+            <div class="form-field">
+              <label class="field-label" for="account-name">Name</label>
+              <input class="text-input" id="account-name" name="name" type="text" maxlength="80" autocomplete="name" required />
+            </div>
 
-            <label class="field-label" for="account-email">Email address</label>
-            <input class="text-input" id="account-email" name="email" type="email" readonly aria-describedby="account-email-note" />
-            <p class="signin-note" id="account-email-note">This is the address you sign in with, so it can't be changed here.</p>
+            <div class="form-field">
+              <label class="field-label" for="account-email">Email address</label>
+              <input class="text-input" id="account-email" name="email" type="email" readonly aria-describedby="account-email-note" />
+              <p class="signin-note" id="account-email-note">This is the address you sign in with, so it can't be changed here.</p>
+            </div>
 
-            <label class="field-label" for="account-phone">Phone number <span class="field-optional">(optional)</span></label>
-            <input class="text-input" id="account-phone" name="phone" type="tel" maxlength="40" autocomplete="tel" />
+            <div class="form-field">
+              <label class="field-label" for="account-phone">Phone number <span class="field-optional">Optional</span></label>
+              <input class="text-input" id="account-phone" name="phone" type="tel" maxlength="40" autocomplete="tel" />
+            </div>
 
             <label class="account-switch" for="account-share-phone">
               <span class="account-switch-text">

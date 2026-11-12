@@ -290,7 +290,7 @@
           return `<section class="child-card-section" aria-labelledby="family-${section.key}">
             <div class="child-section-head">
               <h3 class="child-section-title" id="family-${section.key}">${section.title}</h3>
-              <button type="button" class="photo-source-btn child-add-item" data-add-family="${section.key}">Add</button>
+              <button type="button" class="child-text-btn child-add-item" data-add-family="${section.key}">Add</button>
             </div>
             ${rows.length
               ? `<ul class="child-notes">${rows
@@ -313,7 +313,7 @@
     }
     const person = primary
       ? `<div class="family-detail">
-          ${ui.avatarHtml(primary.avatar, primary.name, "contact-avatar", 32)}
+          ${ui.avatarHtml(null, primary.name, "contact-avatar", 32)}
           <div><p class="family-detail-name">${esc(primary.name)}</p>${primary.role ? `<p class="family-detail-sub">${esc(primary.role)}</p>` : ""}</div>
         </div>`
       : "";
@@ -353,7 +353,7 @@
       <section class="child-hero" aria-labelledby="child-name">
         ${avatar(name, "large")}
         <div class="child-hero-text"><h1 id="child-name">${esc(name)}</h1>${details(child)}</div>
-        ${can ? `<button type="button" class="photo-source-btn child-edit" data-edit-child="${esc(child.id)}">Edit</button>` : ""}
+        ${can ? `<button type="button" class="child-text-btn child-edit" data-edit-child="${esc(child.id)}">Edit</button>` : ""}
       </section>
       ${child.pinnedNote ? `<p class="child-tag child-tag--pinned">${icon("keep", 20)}<span><span class="visually-hidden">Note: </span>${esc(child.pinnedNote)}</span></p>` : ""}
       ${SECTIONS.map((section) => sectionHtml(child, section, can)).join("")}
@@ -367,7 +367,7 @@
           <a class="know-tile" href="${esc(infoHref("emergency"))}"><img src="assets/emergency.svg" alt="" width="24" height="24" /><span>Emergency steps</span></a>
         </div>
       </section>
-      ${can ? `<button type="button" class="danger-btn child-delete" data-delete-child="${esc(child.id)}">Delete ${esc(kids.firstName(child))}</button>` : ""}`;
+      ${can ? `<button type="button" class="schedule-delete child-delete" data-delete-child="${esc(child.id)}">Delete ${esc(kids.firstName(child))}</button>` : ""}`;
   }
 
   function sectionHtml(child, section, can) {
@@ -380,7 +380,7 @@
     return `<section class="child-card-section" aria-labelledby="child-${section.key}">
         <div class="child-section-head">
           <h2 class="child-section-title" id="child-${section.key}"><img src="${section.icon}" alt="" width="24" height="24" />${section.title}</h2>
-          ${can ? `<button type="button" class="photo-source-btn child-add-item" data-add-item="${section.key}">Add</button>` : ""}
+          ${can ? `<button type="button" class="child-text-btn child-add-item" data-add-item="${section.key}">Add</button>` : ""}
         </div>
         ${body}
       </section>`;
@@ -390,7 +390,7 @@
     const rows = child.food
       .map(
         (item) => `<article class="restriction-item">
-          ${item.image ? `<img class="restriction-thumb" src="${esc(item.image)}" alt="" width="64" height="64" />` : ""}
+          <span class="food-tile" aria-hidden="true"><img src="assets/grocery.svg" alt="" width="28" height="28" /></span>
           <div class="restriction-content">
             <div class="restriction-top">
               <h3 class="restriction-name">${esc(item.name)}</h3>
@@ -420,7 +420,7 @@
       ? contacts
           .map(
             (contact) => `<li class="child-contact">
-              ${ui.avatarHtml(contact.avatar, contact.name, "contact-avatar", 32)}
+              ${ui.avatarHtml(null, contact.name, "contact-avatar", 32)}
               <div class="child-contact-text"><p><strong>${esc(contact.name)}</strong>${contact.role ? ` (${esc(contact.role)})` : ""}</p>${contact.phone ? `<p>${esc(contact.phone)}</p>` : ""}</div>
               ${contact.phoneHref ? `<a class="call-btn" href="${esc(contact.phoneHref)}" aria-label="Call ${esc(contact.name)}"><img src="assets/call.svg" alt="" width="23" height="22" /></a>` : ""}
             </li>`
@@ -440,25 +440,25 @@
   function formDialog(title, fields, removable) {
     return new Promise((resolve) => {
       const dialog = document.createElement("dialog");
-      dialog.className = "confirm-dialog manage-dialog";
+      dialog.className = "confirm-dialog manage-dialog schedule-sheet child-sheet";
       dialog.setAttribute("aria-labelledby", "child-dialog-title");
-      dialog.innerHTML = `<form class="confirm-dialog-body" method="dialog" novalidate>
-          <h2 class="panel-title" id="child-dialog-title">${esc(title)}</h2>
+      dialog.innerHTML = `<form class="confirm-dialog-body schedule-details-form child-form" method="dialog" novalidate>
+          <div class="schedule-details-header">
+            <button class="schedule-close" type="button" data-cancel aria-label="Close without saving"><img src="assets/icon-cancel.svg" alt="" width="28" height="28" /></button>
+            <h2 class="panel-title" id="child-dialog-title">${esc(title)}</h2>
+            <button class="schedule-save" value="save">Save</button>
+          </div>
           ${fields
             .map((field) => {
               const id = `child-field-${field.name}`;
-              const label = `<label class="field-label" for="${id}">${esc(field.label)}${field.required ? "" : ' <span class="field-optional">(optional)</span>'}</label>`;
-              if (field.type === "textarea") return `${label}<textarea class="text-input manage-textarea" id="${id}" name="${field.name}" rows="3" maxlength="${field.max || 2000}">${esc(field.value || "")}</textarea>`;
-              if (field.type === "select") return `${label}<select class="text-input" id="${id}" name="${field.name}"><option value="">None</option>${field.options.map((o) => `<option${o === field.value ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
-              return `${label}<input class="text-input" id="${id}" name="${field.name}" maxlength="${field.max || 140}" value="${esc(field.value || "")}"${field.placeholder ? ` placeholder="${esc(field.placeholder)}"` : ""} autocomplete="off" />`;
+              const label = `<label class="field-label" for="${id}">${esc(field.label)}${field.required ? "" : ' <span class="field-optional">Optional</span>'}</label>`;
+              if (field.type === "textarea") return `<div class="child-form-field">${label}<textarea class="text-input manage-textarea" id="${id}" name="${field.name}" rows="3" maxlength="${field.max || 2000}">${esc(field.value || "")}</textarea></div>`;
+              if (field.type === "select") return `<div class="child-form-field">${label}<select class="text-input" id="${id}" name="${field.name}"><option value="">None</option>${field.options.map((o) => `<option${o === field.value ? " selected" : ""}>${esc(o)}</option>`).join("")}</select></div>`;
+              return `<div class="child-form-field">${label}<input class="text-input" id="${id}" name="${field.name}" maxlength="${field.max || 140}" value="${esc(field.value || "")}"${field.placeholder ? ` placeholder="${esc(field.placeholder)}"` : ""} autocomplete="off" /></div>`;
             })
             .join("")}
           <p class="form-error" role="alert" hidden></p>
-          <div class="moment-dialog-actions">
-            <button class="primary-btn" value="save">Save</button>
-            ${removable ? '<button class="danger-btn" type="button" data-remove>Remove</button>' : ""}
-            <button class="photo-source-btn" value="cancel" type="button" data-cancel>Cancel</button>
-          </div>
+          ${removable ? '<button class="schedule-delete" type="button" data-remove>Remove</button>' : ""}
         </form>`;
       document.body.appendChild(dialog);
       const form = dialog.querySelector("form");

@@ -17,7 +17,10 @@
       <nav class="primary-nav" aria-label="Parent navigation"></nav>
 
       <main class="parent-main people-main" aria-labelledby="people-title">
-        <header class="detail-nav">
+        <header class="detail-nav top-nav">
+          <a class="back-btn" href="profile.html" aria-label="Back to your profile">
+            <img src="assets/top-nav-back.svg" alt="" width="28" height="28" />
+          </a>
           <h1 id="people-title">People</h1>
         </header>
         <p class="auth-status" id="people-welcome" role="status" hidden>
@@ -32,8 +35,10 @@
             Only invite people you trust: they'll see your child's care info, schedule, and photos.
           </p>
           <form class="invite-form" id="invite-form" novalidate>
-            <label class="field-label" for="invite-email">Sitter's Google email</label>
-            <input class="text-input" id="invite-email" name="email" type="email" autocomplete="off" required maxlength="320" />
+            <div class="form-field">
+              <label class="field-label" for="invite-email">Sitter's Google email</label>
+              <input class="text-input" id="invite-email" name="email" type="email" autocomplete="off" required maxlength="320" />
+            </div>
             <button type="submit" class="primary-btn" id="invite-submit">Create invite link</button>
             <p class="form-error" id="invite-error" role="alert" hidden></p>
           </form>
