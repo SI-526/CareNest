@@ -6754,3 +6754,8 @@ body[data-page="info"] .empty-state {
     margin-left: auto;
   }
 }
+
+/* Where things are has no section title (the Top Nav names it), so its card sits close in. */
+body[data-page="info"] .info-content > .panel:not(:has(.panel-title)) {
+  padding: 8px;
+}
