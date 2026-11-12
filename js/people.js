@@ -1,13 +1,61 @@
 // people.html (parents only): invite a sitter by email, show the private link once, revoke
-// pending invites, remove sitters. The database enforces all of this (parents only, RLS).
+// pending invites, remove sitters. The database enforces all of this (parents only, RLS). The
+// demo shows sample people read-only (showDemo).
 (function () {
   const auth = window.CareNestAuth;
   const esc = auth.escapeHtml;
 
+  // Demo (?demo=1): a read-only look at the sample family's people, so nobody can send a real
+  // invite or remove anyone from the demo. Names and sitter details come from js/data.js.
+  function showDemo() {
+    if (window.CareNestUI) window.CareNestUI.renderParentNav("profile");
+    const data = window.CareNestData || {};
+    const demo = window.CareNestDemo;
+    const sitter = demo && demo.loadSitterProfile ? demo.loadSitterProfile() : { name: "Bethany" };
+    const day = 24 * 60 * 60 * 1000;
+    const shortDate = (ms) => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const row = (name, sub, extra, action) => `<li class="people-row">
+        <div class="people-meta">
+          <p class="people-name">${esc(name)}</p>
+          <p class="people-sub">${esc(sub)}</p>
+          ${extra || ""}
+        </div>
+        ${action || ""}
+      </li>`;
+    const off = (label, cls) => `<button type="button" class="${cls} people-action" disabled aria-disabled="true">${label}</button>`;
+
+    const welcome = document.getElementById("people-welcome");
+    welcome.textContent = "Demo: this is what a parent sees. Invites and removals are turned off, so nothing here can be changed.";
+    welcome.hidden = false;
+
+    const form = document.getElementById("invite-form");
+    form.email.value = "";
+    form.email.placeholder = "Turned off in the demo";
+    form.querySelectorAll("input, button").forEach((el) => {
+      el.disabled = true;
+    });
+
+    document.getElementById("pending-list").innerHTML = row(
+      "jordan.lee@example.com",
+      `Expires ${shortDate(Date.now() + 5 * day)}`,
+      '<p class="people-sub">A backup sitter for date nights</p>',
+      off("Revoke", "photo-source-btn")
+    );
+    document.getElementById("pending-empty").hidden = true;
+
+    const sitterExtra = `${sitter.showBio !== false && sitter.bio ? `<p class="people-sub">${esc(sitter.bio)}</p>` : ""}${
+      sitter.showAvailability !== false && sitter.availability ? `<p class="people-sub">Available: ${esc(sitter.availability)}</p>` : ""
+    }`;
+    document.getElementById("members-list").innerHTML = [
+      row(`${data.parentName || "Mary Ann Thomas"} (you)`, `Parent · ${data.parentEmail || "mary.thomas@example.com"}`),
+      row(sitter.name || "Bethany", "Sitter · bethany.sitter@example.com", sitterExtra, off("Remove", "danger-btn")),
+    ].join("");
+  }
+
   auth.whenReady((ctx) => {
-    if (!ctx || ctx.demo) {
-      document.querySelector(".people-main").innerHTML =
-        '<p class="signin-note">People and invites need a signed-in parent. <a href="signin.html">Sign in</a></p>';
+    if (!ctx) return;
+    if (ctx.demo) {
+      showDemo();
       return;
     }
     if (window.CareNestUI) window.CareNestUI.renderParentNav("profile");

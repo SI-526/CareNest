@@ -23,8 +23,8 @@
 
     const { profile, error: loadError } = await auth.loadParentProfile(ctx);
     form.name.value = profile.name || "";
-    form.email.value = ctx.demo ? "" : ctx.email || "";
-    if (ctx.demo) form.email.placeholder = "Not signed in (demo)";
+    // Demo: the sample parent's address (js/data.js).
+    form.email.value = ctx.demo ? (window.CareNestData && window.CareNestData.parentEmail) || "" : ctx.email || "";
     form.phone.value = profile.phone || "";
     form.share_phone.checked = profile.sharePhone !== false;
     loading.hidden = true;

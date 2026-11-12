@@ -95,6 +95,16 @@
   }
 
   async function loadSharedSitter(ctx) {
+    // Demo: what Bethany's sample profile shares (js/data.js), as household_sitter_profiles() would.
+    if (ctx && ctx.demo && demo && demo.loadSitterProfile) {
+      const profile = demo.loadSitterProfile();
+      return {
+        display_name: profile.name || null,
+        bio: profile.showBio ? profile.bio || null : null,
+        phone: profile.showPhone ? profile.phone || null : null,
+        availability: profile.showAvailability ? profile.availability || null : null,
+      };
+    }
     if (!ctx || ctx.demo || !ctx.client || !ctx.household) return null;
     const { data: rows, error } = await ctx.client.rpc("household_sitter_profiles", { target_household_id: ctx.household.id });
     if (error || !rows || !rows.length) return null;
@@ -280,7 +290,8 @@
     const parentProfile = isParent && parentProfileState ? parentProfileState.profile : null;
     const name = String((isParent ? (parentProfile && parentProfile.name) || memberName : profile.name) || "").trim();
     const phone = String((isParent ? parentProfile && parentProfile.phone : profile.phone) || "").trim();
-    const email = String((ctx && ctx.email) || "").trim();
+    // Demo parents get the sample family's address (js/data.js).
+    const email = String((ctx && ctx.email) || (ctx && ctx.demo && isParent ? data.parentEmail : "") || "").trim();
     const empty = !name && !phone;
     const avatar = empty
       ? '<span class="profile-id-avatar profile-id-avatar--empty" aria-hidden="true"><img src="assets/icon-account-circle.svg" alt=""></span>'
@@ -394,7 +405,14 @@
     try { appointments = JSON.parse(pageEl.dataset.appointments || "[]"); } catch (e) { /* an empty schedule is valid */ }
     // Open "Request Schedule" reminders (SI-50): from the database, or this tab only in demo mode.
     const live = Boolean(ctx && !ctx.demo && ctx.client && ctx.household);
-    let requests = live ? (data.scheduleRequests || []).slice() : [];
+    // Demo parents start with Bethany's sample request (js/data.js), kept in this tab.
+    const demoRequests = Boolean(ctx && ctx.demo && demo && editable);
+    let requests = live || demoRequests ? (data.scheduleRequests || []).slice() : [];
+    const keepDemoRequests = () => {
+      if (!demoRequests) return;
+      data.scheduleRequests = requests.slice();
+      demo.save();
+    };
     let selected = pageEl.dataset.today;
     // parent.html links here with ?date=YYYY-MM-DD to open a requested day.
     const linkedDate = new URLSearchParams(window.location.search).get("date");
@@ -520,6 +538,13 @@
       render();
     }
     async function dismissRequest(button) {
+      if (demoRequests) {
+        requests = requests.filter((item) => item.id !== button.dataset.requestDismiss);
+        keepDemoRequests();
+        setStatus("Request dismissed.");
+        render();
+        return;
+      }
       button.disabled = true;
       const { error } = await ctx.client.from("schedule_requests").update({ resolved_at: new Date().toISOString() }).eq("id", button.dataset.requestDismiss);
       if (error) {
@@ -739,6 +764,7 @@
             if (saveError) throw saveError;
           }
           requests = requests.filter((request) => request.date !== item.date); // the database resolves it too
+          keepDemoRequests();
           selected = item.date; setStatus(existing ? "Schedule saved." : "Schedule added."); render(); dialog.remove();
         } catch (error) { showError(auth.friendlyError(error)); }
       });
@@ -801,7 +827,7 @@
       if (target.dataset.showDate) { selected = target.dataset.showDate; render(); }
       if (target.matches("[data-request-schedule]")) requestSchedule(target);
       if (target.dataset.requestAdd) { selected = target.dataset.requestAdd; view = "list"; render(); openBooking(null, selected); }
-      if (target.dataset.requestDismiss && live) dismissRequest(target);
+      if (target.dataset.requestDismiss && (live || demoRequests)) dismissRequest(target);
       if (target.matches("[data-book-appointment]")) openBooking(null, selected);
       if (target.matches("[data-edit-schedule]")) {
         // The Current Session pencil has no id: it means the session the card shows (last night's
