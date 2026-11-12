@@ -13,11 +13,13 @@
 
   function init(shift) {
     const data = window.CareNestData;
-    const { escapeHtml, announce, formatTime, shortTime } = ui;
+    const { escapeHtml, announce, formatTime, shortTime, displayTimes } = ui;
     // Read live: js/family-data.js replaces these when a parent's edits arrive (issue #11).
     const sitterName = () => data.babysitter.name;
     const childFirst = () => data.child.name.split(" ")[0];
     const parentContact = () => (data.contacts && data.contacts[0]) || {};
+    // The signed-in parent's name for the header avatar: "Mary Ann Thomas" -> "MA" in the demo.
+    const viewerName = () => data.viewerName || data.viewerFirstName || data.parentName || parentContact().name || "";
     const SEEN_AFTER_MS = 1500;
 
     const list = document.getElementById("feed-list");
@@ -44,7 +46,7 @@
       document.getElementById("parent-greeting").textContent =
         `Hi ${data.viewerFirstName || parentContact().firstName || "there"}`;
       // People and children always show initials, never photos.
-      const avatar = ui.avatarHtml(null, data.child.name, "parent-child-avatar", 48);
+      const avatar = ui.avatarHtml(null, viewerName(), "parent-child-avatar", 48);
       if (avatar !== headerAvatar) {
         headerAvatar = avatar;
         document.querySelector(".parent-child-avatar").outerHTML = avatar;
@@ -197,11 +199,14 @@
         if (link.dataset.nav === current) link.setAttribute("aria-current", "page");
         else link.removeAttribute("aria-current");
       });
-      const heading = view === "album" ? "Saved photos" : `${childFirst()}'s day`;
+      const heading = view === "album" ? "Album" : `${childFirst()}'s day`;
       document.body.classList.toggle("parent-album", view === "album");
       title.textContent = heading;
-      document.title = `CareNest — ${heading}`;
-      document.getElementById("feed-heading").textContent = view === "album" ? "Album" : "Photos";
+      document.title = `CareNest · ${heading}`;
+      const feedHeading = document.getElementById("feed-heading");
+      // Album's page title already names the list, so its panel heading stays for screen readers only.
+      feedHeading.textContent = view === "album" ? "Saved photos" : "Photos";
+      feedHeading.classList.toggle("visually-hidden", view === "album");
       document.getElementById("day-status").hidden = view === "album";
       const notes = document.getElementById("important-today");
       if (notes) notes.hidden = view === "album";
@@ -313,7 +318,7 @@
               : "";
           return `<li class="parent-task${r.check ? " is-done" : ""}">
             <div class="parent-task-main">
-              <p class="parent-task-title">${r.time ? `<span class="parent-task-time">${escapeHtml(r.time)}</span>` : ""}${escapeHtml(r.title)}</p>
+              <p class="parent-task-title">${r.time ? `<span class="parent-task-time">${escapeHtml(displayTimes(r.time))}</span>` : ""}${escapeHtml(r.title)}</p>
               ${r.check ? `<p class="schedule-check-meta">${checkMeta(r.check)}</p>` : ""}
             </div>
             ${action}
@@ -479,7 +484,7 @@
         : "";
       return `
         <p class="msg-card-kicker">${kicker}${newBadge}${reopenBadge}</p>
-        <h3 class="msg-card-title" id="item-${id}-title">${escapeHtml(item.title)}${item.taskTime ? ` <span class="msg-card-time">${escapeHtml(item.taskTime)}</span>` : ""}</h3>
+        <h3 class="msg-card-title" id="item-${id}-title">${escapeHtml(item.title)}${item.taskTime ? ` <span class="msg-card-time">${escapeHtml(displayTimes(item.taskTime))}</span>` : ""}</h3>
         ${photo}
         ${concept}
         ${item.tag ? `<p class="tag-chip">${escapeHtml(item.tag)}</p>` : ""}

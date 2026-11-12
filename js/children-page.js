@@ -113,12 +113,12 @@
     const id = new URLSearchParams(window.location.search).get("child");
     if (!id) {
       root.innerHTML = listHtml();
-      document.title = "CareNest — Children";
+      document.title = "CareNest · Children";
       return;
     }
     const child = kids.findChild(data(), id);
     root.innerHTML = child ? detailHtml(child) : goneHtml();
-    document.title = `CareNest — ${child ? kids.displayName(child) : "Children"}`;
+    document.title = `CareNest · ${child ? kids.displayName(child) : "Children"}`;
     window.scrollTo(0, 0);
   }
 

@@ -523,7 +523,7 @@
     const strip = q("[data-log-child]");
     strip.innerHTML = childStripHtml();
     strip.hidden = !strip.innerHTML.trim();
-    q("[data-log-time]").textContent = task.time || "";
+    q("[data-log-time]").textContent = clockText(task.time) || task.time || "";
     q("[data-log-title]").textContent = task.title || "";
 
     const categories = categoriesFor(modal.ageLabel());

@@ -206,6 +206,7 @@
     // Set here too, not only by js/auth.js fillNames(): that may have run against the sample
     // object this file discarded.
     data.viewerFirstName = auth.firstName(ctx.membership);
+    data.viewerName = ((ctx.membership && ctx.membership.display_name) || "").trim();
     const parent = members.find((m) => m.role === "parent");
     if (parent) data.parentName = (parent.display_name || "").trim() || auth.firstName(parent);
 

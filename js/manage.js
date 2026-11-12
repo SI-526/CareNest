@@ -42,7 +42,7 @@
   function clockLabel(iso) {
     const d = new Date(iso);
     const h = d.getHours();
-    return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${h % 12 === 0 ? 12 : h % 12}:${String(d.getMinutes()).padStart(2, "0")}${h >= 12 ? "pm" : "am"}`;
+    return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${h % 12 === 0 ? 12 : h % 12}:${String(d.getMinutes()).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
   }
 
   // Field definitions per list. type: text | textarea | time | tel | select.
@@ -78,7 +78,7 @@
     if (!match) return "";
     const hours = Number(match[1]);
     const h12 = hours % 12 === 0 ? 12 : hours % 12;
-    return `${h12}:${match[2]}${hours >= 12 ? "pm" : "am"}`;
+    return `${h12}:${match[2]} ${hours >= 12 ? "PM" : "AM"}`;
   }
 
   function friendly(error) {

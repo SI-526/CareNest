@@ -104,7 +104,7 @@
 
   function taskRows(editable) {
     if (!data.schedule.length) return '<li class="secondary-row"><span><strong>No tasks yet</strong><small>Add the first task for this session.</small></span></li>';
-    return data.schedule.map((item) => `<li class="secondary-row"><span class="secondary-time">${esc(item.time || "Any time")}</span><span><strong>${esc(item.title)}</strong><small>${esc(item.detail || item.location || "Details available in the session")}</small></span>${editable ? `<button class="photo-source-btn secondary-row-action" type="button" data-edit="task" data-id="${esc(item.id)}">Edit</button>` : ""}</li>`).join("");
+    return data.schedule.map((item) => `<li class="secondary-row"><span class="secondary-time">${esc(displayTime(item.time) || "Any time")}</span><span><strong>${esc(item.title)}</strong><small>${esc(item.detail || item.location || "Details available in the session")}</small></span>${editable ? `<button class="photo-source-btn secondary-row-action" type="button" data-edit="task" data-id="${esc(item.id)}">Edit</button>` : ""}</li>`).join("");
   }
 
   const { dateKey, parseDate, addDays, clockMinutes, endsNextDay, sessionLength, formatLength, sessionsOverlap, continuingSessions, isLongSession } = window.CareNestDates;
@@ -163,7 +163,7 @@
     const hours = (Number(part("hour")) % 12) + (part("period") === "PM" ? 12 : 0);
     return `${pad2(hours)}:${pad2(Number(part("minute")))}`;
   }
-  // "15:00" to "3:00pm", the format the rest of the app shows (js/family-data.js formatTaskTime).
+  // "15:00" to "3:00pm", the stored format (js/family-data.js formatTaskTime); displayTime shows it as "3:00 PM".
   const formatTime = (value) => {
     const [hours, minute] = String(value || "").split(":").map(Number);
     if (Number.isNaN(hours) || Number.isNaN(minute)) return "";
@@ -290,12 +290,14 @@
     const avatar = empty
       ? '<span class="profile-id-avatar profile-id-avatar--empty" aria-hidden="true"><img src="assets/icon-account-circle.svg" alt=""></span>'
       : `<span class="profile-id-avatar" aria-hidden="true">${esc(initials(name || "?"))}</span>`;
-    const identity = `<header class="profile-identity">${avatar}<div><h1>${empty ? "Your profile" : esc(name)}</h1><p>${empty ? "Signed in" : `${isParent ? "Parent" : "Sitter"} · Signed in`}</p></div></header>`;
+    // The demo is not a real sign-in: match the yellow banner (js/auth.js) instead of "Signed in".
+    const status = ctx && ctx.demo ? "Demo account, not signed in" : "Signed in";
+    const identity = `<header class="profile-identity">${avatar}<div><h1>${empty ? "Your profile" : esc(name)}</h1><p>${empty ? status : `${isParent ? "Parent" : "Sitter"} · ${status}`}</p></div></header>`;
     const row = (label, value) => `<div class="profile-info-row"><p class="profile-info-label">${label}</p><p class="profile-info-value">${value}</p></div>`;
     const rows = [];
     if (email) rows.push(row("Email address", esc(email)));
     if (!empty) rows.push(row("Phone number", phone ? esc(phone) : '<span class="profile-info-missing">Not provided</span>'));
-    const emptyBlock = '<div class="profile-info-empty"><p class="profile-info-empty-title">No information provided.</p><p>Add your name and contact details using Profile management.</p><p class="profile-info-empty-note">You&#39;re still signed in to your account.</p></div>';
+    const emptyBlock = `<div class="profile-info-empty"><p class="profile-info-empty-title">No information provided.</p><p>Add your name and contact details using Profile management.</p>${ctx && ctx.demo ? "" : '<p class="profile-info-empty-note">You&#39;re still signed in to your account.</p>'}</div>`;
     const info = empty ? emptyBlock + rows.join("") : rows.length ? rows.join("") : '<p class="profile-info-missing">No contact details provided.</p>';
     const settingsRow = (href, icon, title, sub) => `<li><a class="profile-settings-row" href="${href}"><span class="profile-settings-icon" aria-hidden="true"><img src="assets/${icon}" alt=""></span><span class="profile-settings-text"><span class="profile-settings-title">${title}</span><span class="profile-settings-sub">${sub}</span></span><img class="profile-settings-chevron" src="assets/icon-chevron-right.svg" alt="" aria-hidden="true"></a></li>`;
     const settings = [
@@ -381,7 +383,7 @@
       },
     }[page];
     if (!views) return;
-    document.title = `CareNest — ${views.title}`;
+    document.title = `CareNest · ${views.title}`;
     root.innerHTML = page === "schedule" || page === "profile" ? views.body : `<header class="secondary-header"><p class="page-eyebrow">${views.eyebrow}</p><h1>${views.title}</h1><p>${views.intro}</p></header>${views.body}`;
     if (page === "schedule") {
       // SI-71: the sitter's checklist (schedule.html, filled by js/app.js) sits under Current Shift.
@@ -907,7 +909,7 @@
       if (kind === "hours") return openDialog("Edit shift hours", [{ name: "schedule", label: "Usual shift hours" }], { schedule: data.child.shiftTime || "" }, async (values) => client.from("plans").update(values).eq("id", await planId()));
       if (kind === "task") {
         const row = data.schedule.find((item) => item.id === id) || {};
-        const fields = [{ name: "title", label: "Task" }, { name: "time_of_day", label: "Time (for example 3:00pm)" }, { name: "detail", label: "Details", type: "textarea" }, { name: "location", label: "Location" }];
+        const fields = [{ name: "title", label: "Task" }, { name: "time_of_day", label: "Time (for example 3:00 PM)" }, { name: "detail", label: "Details", type: "textarea" }, { name: "location", label: "Location" }];
         return openDialog(row.id ? "Edit task" : "Add task", fields, { title: row.title, time_of_day: row.time || "", detail: row.detail || "", location: row.location || "" }, async (values) => {
           values.time_of_day = toDatabaseTime(values.time_of_day);
           return row.id ? client.from("tasks").update(values).eq("id", row.id) : client.from("tasks").insert(Object.assign(values, { plan_id: await planId(), position: data.schedule.length }));
