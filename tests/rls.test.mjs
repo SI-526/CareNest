@@ -2807,6 +2807,7 @@ test("authenticated can execute only the pinned public functions; Realtime publi
       "create_invite(uuid,text)",
       "delete_my_account()",
       "end_visit(uuid)",
+      "household_parent_phones(uuid)",
       "household_sitter_profiles(uuid)",
       "is_member(uuid)",
       "is_parent(uuid)",
