@@ -1,0 +1,133 @@
+name: Tests
+
+# Runs every test on every push and publishes the results to the test dashboard (the gh-pages
+# branch, served by GitHub Pages). See dashboard/README.md.
+on:
+  push:
+    branches: ["**"]
+  delete:
+  workflow_dispatch:
+  schedule:
+    # Once a day, rebuild the page so story status from Linear stays current without a push.
+    - cron: "17 10 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  # A newer push to a branch cancels that branch's older run. Main, branch deletes and the daily
+  # rebuild each get their own group, so every run on main is recorded.
+  group: tests-${{ (github.event_name == 'push' && github.ref != 'refs/heads/main') && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      seconds: ${{ steps.tests.outputs.seconds }}
+      code: ${{ steps.tests.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - name: Install the pinned Supabase CLI and supabase-js
+        working-directory: tests
+        run: npm ci
+
+      - name: Start a local Supabase stack (migrations and seed)
+        working-directory: tests
+        run: npx supabase start --workdir .. -x studio,logflare,vector,edge-runtime,imgproxy,postgres-meta
+
+      - name: Run the unit and database tests
+        id: tests
+        working-directory: tests
+        run: |
+          start=$(date +%s)
+          set +e
+          node --test --test-concurrency=1 \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=../dashboard/json-reporter.mjs --test-reporter-destination=../results.json \
+            "*.test.mjs"
+          code=$?
+          echo "seconds=$(( $(date +%s) - start ))" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          test -s ../results.json || { echo "The test reporter wrote no results." >&2; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: results.json
+          retention-days: 30
+
+      - name: Fail the check if any test failed
+        if: steps.tests.outputs.code != '0'
+        run: |
+          echo "::error::Some tests failed. The report on the dashboard lists them."
+          exit 1
+
+  publish:
+    needs: test
+    # Publish after the tests whether they passed or failed; also on branch deletes and the
+    # daily rebuild, where the test job is skipped.
+    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'failure' || needs.test.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Branch deletes and the daily rebuild use the dashboard code on main.
+          ref: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.sha || 'main' }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        if: needs.test.result != 'skipped'
+        with:
+          name: test-results
+
+      - name: Find the pull request a push to main merged
+        if: needs.test.result != 'skipped' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+            | jq '[.[] | select(.merged_at != null and .base.ref == "main")][0] // {}' > pr.json || echo '{}' > pr.json
+          cat pr.json | jq '{number, title, head: .head.ref}'
+
+      - name: Publish to the dashboard
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.event.ref_type }}
+          DELETED_REF: ${{ github.event.ref }}
+          TEST_RESULT: ${{ needs.test.result }}
+          SECONDS_TAKEN: ${{ needs.test.outputs.seconds }}
+        run: |
+          if [ "$EVENT" = "delete" ]; then
+            [ "$REF_TYPE" = "branch" ] || { echo "Not a branch."; exit 0; }
+            bash dashboard/publish.sh --delete-branch "$DELETED_REF"
+          elif [ "$TEST_RESULT" = "skipped" ]; then
+            bash dashboard/publish.sh
+          else
+            message=$(git log -1 --format=%s "$GITHUB_SHA")
+            bash dashboard/publish.sh \
+              --results results.json \
+              --sha "$GITHUB_SHA" \
+              --branch "$GITHUB_REF_NAME" \
+              --message "$message" \
+              --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              --run-id "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+              --duration "$SECONDS_TAKEN" \
+              --pr pr.json
+          fi
