@@ -62,7 +62,9 @@ function evaluate(stories, map, tests) {
       tagged.set(key, [...(tagged.get(key) ?? []), `${t.file} > ${t.name}`]);
     }
   }
-  const counts = { passing: 0, failing: 0, none: 0, manual: 0, stale: 0, total: 0 };
+  // Before the first run on main there are no results, so linked criteria wait instead of failing.
+  const haveRun = tests.length > 0;
+  const counts = { passing: 0, failing: 0, waiting: 0, none: 0, manual: 0, stale: 0, total: 0 };
   const result = stories.map((story) => {
     const criteria = story.criteria.map((c) => {
       const link = map[story.id]?.[String(c.n)] ?? {};
@@ -75,7 +77,9 @@ function evaluate(stories, map, tests) {
       }
       const linked = names.map((name) => ({ name, test: byKey.get(name) ?? null }));
       if (state !== "stale") {
-        if (linked.length) {
+        if (linked.length && !haveRun) {
+          state = "waiting";
+        } else if (linked.length) {
           const statuses = linked.map((l) => l.test?.status ?? "missing");
           if (statuses.some((s) => s === "failed" || s === "missing")) state = "failing";
           else if (statuses.every((s) => s === "skipped")) state = "none";
@@ -88,9 +92,10 @@ function evaluate(stories, map, tests) {
       counts.total++;
       return { ...c, state, linked, manual: link.manual ?? null, note: staleNote ?? link.note ?? null };
     });
-    const tested = criteria.filter((c) => c.state === "passing" || c.state === "failing").length;
+    const tested = criteria.filter((c) => ["passing", "failing", "waiting"].includes(c.state)).length;
+    const waiting = criteria.some((c) => c.state === "waiting");
     const failing = criteria.filter((c) => c.state === "failing" || c.state === "stale").length;
-    return { ...story, criteria, tested, failing };
+    return { ...story, criteria, tested, failing, waiting };
   });
   return { stories: result, counts };
 }
@@ -180,7 +185,7 @@ h2 { margin: 0 0 0.35rem; font-size: 1.3rem; font-weight: 600; }
 .chip { display: inline-block; padding: 0.05rem 0.55rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 .chip-passed, .chip-passing { background: var(--passed-soft); color: var(--passed); }
 .chip-failed, .chip-failing { background: var(--failed-soft); color: var(--failed); }
-.chip-none, .chip-skipped { background: var(--none-soft); color: var(--none); }
+.chip-none, .chip-skipped, .chip-waiting { background: var(--none-soft); color: var(--none); }
 .chip-manual { background: var(--manual-soft); color: var(--manual); }
 .chip-stale, .chip-missing { background: var(--stale-soft); color: var(--stale); }
 .table-wrap { overflow-x: auto; }
@@ -224,7 +229,7 @@ ol.criteria > li > .chip { align-self: start; justify-self: end; }
 .ac-tests li { display: flex; gap: 0.5rem; align-items: baseline; padding-top: 0.15rem; }
 .ac-tests .file { color: var(--ink-3); white-space: nowrap; }
 .tick { flex: none; width: 0.55rem; height: 0.55rem; border-radius: 50%; display: inline-block; transform: translateY(-0.05rem); }
-.tick-passed { background: var(--passed); } .tick-failed, .tick-missing { background: var(--failed); } .tick-skipped { background: var(--skipped); }
+.tick-passed { background: var(--passed); } .tick-failed, .tick-missing { background: var(--failed); } .tick-skipped, .tick-pending { background: var(--skipped); }
 @media (max-width: 640px) { ol.criteria > li { grid-template-columns: 2.2rem 1fr; } ol.criteria > li > .chip { grid-column: 2; justify-self: start; } }
 footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule); color: var(--ink-3); font-size: 0.88rem; }
 .report-file { margin-top: 2rem; }
@@ -298,7 +303,7 @@ function niceStep(max) {
   return [1, 2, 5, 10].map((m) => m * pow).find((s) => s >= raw);
 }
 
-const STATE_LABEL = { passing: "Passing", failing: "Failing", none: "No test yet", manual: "Checked by hand", stale: "Link out of date" };
+const STATE_LABEL = { waiting: "Waiting for a run on main", passing: "Passing", failing: "Failing", none: "No test yet", manual: "Checked by hand", stale: "Link out of date" };
 
 function storySection() {
   const { stories, counts } = acceptance;
@@ -337,9 +342,10 @@ function storySection() {
   <p class="lede">Every Linear issue with acceptance criteria, ${esc(source)}, ${esc(runNote)}. Linear is still where stories are tracked; <code>dashboard/acceptance-map.json</code> links criteria to tests.</p>
   <div class="summary-line">
     <strong>${stories.length} stories, ${counts.total} criteria.</strong>
-    <span class="chip chip-passing">${counts.passing} passing</span>
+    ${counts.passing || !counts.waiting ? `<span class="chip chip-passing">${counts.passing} passing</span>` : ""}
     ${counts.failing ? `<span class="chip chip-failing">${counts.failing} failing</span>` : ""}
     ${counts.stale ? `<span class="chip chip-stale">${counts.stale} link out of date</span>` : ""}
+    ${counts.waiting ? `<span class="chip chip-waiting">${counts.waiting} with tests, waiting for a run on main</span>` : ""}
     ${counts.manual ? `<span class="chip chip-manual">${counts.manual} checked by hand</span>` : ""}
     <span class="chip chip-none">${counts.none} no test yet</span>
   </div>
@@ -357,7 +363,9 @@ function storyHtml(s) {
   const open = s.statusType !== "completed" && s.statusType !== "canceled";
   const badge = s.failing
     ? `<span class="chip chip-failing">${s.failing} ${s.failing === 1 ? "criterion needs" : "criteria need"} attention</span>`
-    : s.tested
+    : s.waiting
+      ? `<span class="chip chip-waiting">${s.tested} of ${s.criteria.length} have tests</span>`
+      : s.tested
       ? `<span class="chip chip-passing">${s.tested} of ${s.criteria.length} tested, all passing</span>`
       : `<span class="chip chip-none">No tests yet</span>`;
   const meta = [s.status, s.assignee, s.parent ? `part of ${s.parent}` : null].filter(Boolean).join(" · ");
@@ -379,7 +387,7 @@ function criterionHtml(c) {
   const manual = c.manual ? `<p class="ac-note">${esc(c.manual)}</p>` : "";
   const tests = c.linked.length
     ? `<ul class="ac-tests">${c.linked.map(({ name, test }) => {
-      const st = test?.status ?? "missing";
+      const st = test?.status ?? (c.state === "waiting" ? "pending" : "missing");
       const [file, ...rest] = name.split(" > ");
       const label = st === "missing" ? " (not found in this run)" : "";
       return `<li><span class="tick tick-${st}" aria-hidden="true"></span><span><span class="file">${esc(file.replace(/\.test\.mjs$/, ""))}</span> ${esc(rest.join(" > "))}<span class="muted">${label}</span></span></li>`;
