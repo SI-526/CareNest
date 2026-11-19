@@ -1,0 +1,22 @@
+{
+ "runs": [],
+ "branches": {
+  "claude/upbeat-curie-l08ofa": {
+   "id": "44589551701-1",
+   "sha": "d13f30dd89ca2d69117ccacf72a946fa86630a18",
+   "branch": "claude/upbeat-curie-l08ofa",
+   "message": "Add a test dashboard built from Linear stories",
+   "testedAt": "2026-11-19T18:43:51.410Z",
+   "seconds": 195,
+   "counts": {
+    "passed": 190,
+    "failed": 1,
+    "skipped": 0,
+    "total": 191
+   },
+   "runUrl": "https://github.com/SI-526/CareNest/actions/runs/44589551701",
+   "report": "reports/44589551701-1.html"
+  }
+ },
+ "merged": []
+}
