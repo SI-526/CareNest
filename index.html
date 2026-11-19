@@ -66,7 +66,7 @@ h2 { margin: 0 0 0.35rem; font-size: 1.3rem; font-weight: 600; }
 .chip { display: inline-block; padding: 0.05rem 0.55rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 .chip-passed, .chip-passing { background: var(--passed-soft); color: var(--passed); }
 .chip-failed, .chip-failing { background: var(--failed-soft); color: var(--failed); }
-.chip-none, .chip-skipped { background: var(--none-soft); color: var(--none); }
+.chip-none, .chip-skipped, .chip-waiting { background: var(--none-soft); color: var(--none); }
 .chip-manual { background: var(--manual-soft); color: var(--manual); }
 .chip-stale, .chip-missing { background: var(--stale-soft); color: var(--stale); }
 .table-wrap { overflow-x: auto; }
@@ -110,7 +110,7 @@ ol.criteria > li > .chip { align-self: start; justify-self: end; }
 .ac-tests li { display: flex; gap: 0.5rem; align-items: baseline; padding-top: 0.15rem; }
 .ac-tests .file { color: var(--ink-3); white-space: nowrap; }
 .tick { flex: none; width: 0.55rem; height: 0.55rem; border-radius: 50%; display: inline-block; transform: translateY(-0.05rem); }
-.tick-passed { background: var(--passed); } .tick-failed, .tick-missing { background: var(--failed); } .tick-skipped { background: var(--skipped); }
+.tick-passed { background: var(--passed); } .tick-failed, .tick-missing { background: var(--failed); } .tick-skipped, .tick-pending { background: var(--skipped); }
 @media (max-width: 640px) { ol.criteria > li { grid-template-columns: 2.2rem 1fr; } ol.criteria > li > .chip { grid-column: 2; justify-self: start; } }
 footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule); color: var(--ink-3); font-size: 0.88rem; }
 .report-file { margin-top: 2rem; }
@@ -121,7 +121,7 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
 </head>
 <body>
 <div class="page">
-<header class="masthead"><h1>CareNest test results</h1><p>Updated Nov 19, 2026, 1:43 PM EST</p></header>
+<header class="masthead"><h1>CareNest test results</h1><p>Updated Nov 19, 2026, 2:34 PM EST</p></header>
 <section class="headline"><h2>No run on main yet.</h2><p class="big">The first push to main fills this in.</p></section>
 
 <section id="stories" aria-labelledby="stories-h">
@@ -129,9 +129,10 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
   <p class="lede">Every Linear issue with acceptance criteria, from the Linear snapshot of Nov 19, 2026, 1:30 PM EST (CI has no Linear key yet), no run on main yet, so no criterion has a result. Linear is still where stories are tracked; <code>dashboard/acceptance-map.json</code> links criteria to tests.</p>
   <div class="summary-line">
     <strong>34 stories, 170 criteria.</strong>
-    <span class="chip chip-passing">0 passing</span>
-    <span class="chip chip-failing">40 failing</span>
     
+    
+    
+    <span class="chip chip-waiting">40 with tests, waiting for a run on main</span>
     
     <span class="chip chip-none">130 no test yet</span>
   </div>
@@ -143,42 +144,42 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
   </div>
   <div class="panel epic">
   <div class="epic-head"><h3>Child Information Hub</h3><p>3 stories, 6 of 13 criteria tested</p></div>
-  <details class="story" data-tested="true" data-attention="true" data-open="false" open>
+  <details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-7/user-story-view-childcare-information">SI-7</a><span>View Childcare Information</span></span>
-    <span class="story-badges"><span class="chip chip-failing">1 criterion needs attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">1 of 4 have tests</span></span>
     <span class="story-meta">Done · Brooke Bui</span>
   </summary>
   <ol class="criteria">
-    <li><span class="ac-n">AC1</span><div class="ac-body"><p>The screen displays important care information, including food and allergies, preferences, where things are, instructions, emergency contacts</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> caretaker can read the household&#39;s schedule and care info<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC1</span><div class="ac-body"><p>The screen displays important care information, including food and allergies, preferences, where things are, instructions, emergency contacts</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> caretaker can read the household&#39;s schedule and care info<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC2</span><div class="ac-body"><p>Information is organized in sections divided by each category as well as in steps for “if something goes wrong” section (includes information about which hospital to go to/who to contact)</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC3</span><div class="ac-body"><p>User Action 1: User taps a care item</p><ul><li>Expected System Behavior: The system displays additional details or instructions for that item</li></ul></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>Error condition: Information for a category has not been provided</p><ul><li>Error message: “No information provided”</li></ul></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-8/user-story-view-childcare-schedule">SI-8</a><span>View Childcare Schedule</span></span>
-    <span class="story-badges"><span class="chip chip-failing">2 criteria need attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">2 of 4 have tests</span></span>
     <span class="story-meta">Done · Brooke Bui</span>
   </summary>
   <ol class="criteria">
-    <li><span class="ac-n">AC1</span><div class="ac-body"><p>The screen displays the child’s daily schedule with information about their events and requests made by the parents (daily tasks)</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> caretaker can read the household&#39;s schedule and care info<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC1</span><div class="ac-body"><p>The screen displays the child’s daily schedule with information about their events and requests made by the parents (daily tasks)</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> caretaker can read the household&#39;s schedule and care info<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC2</span><div class="ac-body"><p>Information is organized and easy to scan</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC3</span><div class="ac-body"><p>User Action 1: User taps a scheduled activity to confirm they have completed an item which navigates them to the picture proof</p><ul><li>Expected System Behavior: The system shows relevant information about the activity</li></ul><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">photos</span> a task is completed only through complete_task, with a photo<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> parents may check off without a photo; caretakers must send one<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC3</span><div class="ac-body"><p>User Action 1: User taps a scheduled activity to confirm they have completed an item which navigates them to the picture proof</p><ul><li>Expected System Behavior: The system shows relevant information about the activity</li></ul><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">photos</span> a task is completed only through complete_task, with a photo<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> parents may check off without a photo; caretakers must send one<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>Error condition: Information for an activity is not provided</p><ul><li>Error message: “No information provided”</li></ul></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-45/user-story-view-child-information-multiple-children">SI-45</a><span>View Child Information (Multiple Children)</span></span>
-    <span class="story-badges"><span class="chip chip-failing">3 criteria need attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">3 of 5 have tests</span></span>
     <span class="story-meta">Done · Kelvin</span>
   </summary>
   <ol class="criteria">
-    <li><span class="ac-n">AC1</span><div class="ac-body"><p>The screen displays a list of families that the babysitter works for and the children that are within each family.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> several families: a sitter joins a second family by invite and reads both, and only both<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">active-family</span> a sitter in two families: the first joined, unless one is remembered<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
-    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Important care information, including food and allergies, preferences, where things are, instructions, emergency contacts, are available for each child.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">children</span> fromRows: each child gets only its own per-child items, in the database&#39;s order<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> children (slice C): food, preferences, and instructions must name a child<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
-    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Information is organized by categories such as preferences, allergies, and instructions that can differ from child to child</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">children</span> fromRows: each child gets only its own per-child items, in the database&#39;s order<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">children</span> flatten: family-wide lists name the child only when there are several, and data.child is the first<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC1</span><div class="ac-body"><p>The screen displays a list of families that the babysitter works for and the children that are within each family.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> several families: a sitter joins a second family by invite and reads both, and only both<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">active-family</span> a sitter in two families: the first joined, unless one is remembered<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
+    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Important care information, including food and allergies, preferences, where things are, instructions, emergency contacts, are available for each child.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">children</span> fromRows: each child gets only its own per-child items, in the database&#39;s order<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> children (slice C): food, preferences, and instructions must name a child<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
+    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Information is organized by categories such as preferences, allergies, and instructions that can differ from child to child</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">children</span> fromRows: each child gets only its own per-child items, in the database&#39;s order<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">children</span> flatten: family-wide lists name the child only when there are several, and data.child is the first<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>User Action 1: User taps a child</p><ul><li>Expected System Behavior: The system displays additional details or instructions for that child</li></ul></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC5</span><div class="ac-body"><p>Error condition: Information for a category has not been provided</p><ul><li>Error message: “No information provided”</li></ul></div><span class="chip chip-none">No test yet</span></li>
   </ol>
@@ -186,24 +187,24 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
 </div>
 <div class="panel epic">
   <div class="epic-head"><h3>Parent-Babysitter Communication/End of Recap Session</h3><p>9 stories, 17 of 42 criteria tested</p></div>
-  <details class="story" data-tested="true" data-attention="true" data-open="false" open>
+  <details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-6/user-story-view-photo-message-from-babysitter">SI-6</a><span>View photo message from babysitter</span></span>
-    <span class="story-badges"><span class="chip chip-failing">2 criteria need attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">2 of 5 have tests</span></span>
     <span class="story-meta">Done · Kelvin</span>
   </summary>
   <ol class="criteria">
     <li><span class="ac-n">AC1</span><div class="ac-body"><p>Parents should be able to get an alert when a child seems off within an image/video</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Parents should be to save images in an album for later on to look at as well as share them to their photos on their device</p><p class="ac-note">Tests cover saving to the parent&#39;s album. Sharing to the phone&#39;s photos is not tested.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">photos</span> parents save photos to their own album; sitters cannot<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
-    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Parents should be able to know when the video/image was sent and from which device</p><p class="ac-note">The send time and sender are tested. The device is not recorded.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">photos</span> chat senders, roles, and times are stamped by the server<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Parents should be to save images in an album for later on to look at as well as share them to their photos on their device</p><p class="ac-note">Tests cover saving to the parent&#39;s album. Sharing to the phone&#39;s photos is not tested.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">photos</span> parents save photos to their own album; sitters cannot<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
+    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Parents should be able to know when the video/image was sent and from which device</p><p class="ac-note">The send time and sender are tested. The device is not recorded.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">photos</span> chat senders, roles, and times are stamped by the server<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>Parents should be able to respond back to babysitters after an image/video is sent</p><p class="ac-note">Replies were removed along with Messages (SI-66). Older replies stay read-only.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC5</span><div class="ac-body"><p>Parents should be notified that their photo was saved successfully</p></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-39/user-story-view-moments-gallery">SI-39</a><span>View Moments Gallery</span></span>
-    <span class="story-badges"><span class="chip chip-failing">1 criterion needs attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">1 of 7 have tests</span></span>
     <span class="story-meta">Done · Kelvin · part of SI-8</span>
   </summary>
   <ol class="criteria">
@@ -212,77 +213,77 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
     <li><span class="ac-n">AC3</span><div class="ac-body"><p>Photos in the gallery include all photos that were taken that session, including from completed tasks.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>Photos will be categorized by their source:</p><ul><li>Task Updates</li><li>Photo Messages</li><li>General Moments</li></ul></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC5</span><div class="ac-body"><p>User Action 1: Babysitter taps on the gallery button.</p><ul><li>Expected System Behavior: The system displays all photos that were taken from that session , with the most recent photos at the bottom.</li></ul></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC6</span><div class="ac-body"><p>User Action 2: Babysitter selects the plus button.</p><ul><li>Expected System Behavior: The system will prompt the babysitter to upload or take a photo.</li></ul><p class="ac-note">The upload rules are tested. The camera prompt is not.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">photos</span> photo messages: the sitter&#39;s, in an open shift, own photo; parents can remove them<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC6</span><div class="ac-body"><p>User Action 2: Babysitter selects the plus button.</p><ul><li>Expected System Behavior: The system will prompt the babysitter to upload or take a photo.</li></ul><p class="ac-note">The upload rules are tested. The camera prompt is not.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">photos</span> photo messages: the sitter&#39;s, in an open shift, own photo; parents can remove them<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC7</span><div class="ac-body"><p>Error Condition: No photos have been taken or uploaded.</p><ul><li>Expected behavior/message: Display a clear empty state: “No photos yet. Continue capturing moments with your child!”</li></ul></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-9/user-story-send-photo-message-to-parent">SI-9</a><span>Send photo message to parent</span></span>
-    <span class="story-badges"><span class="chip chip-failing">2 criteria need attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">2 of 4 have tests</span></span>
     <span class="story-meta">Done · Brooke Bui</span>
   </summary>
   <ol class="criteria">
-    <li><span class="ac-n">AC1</span><div class="ac-body"><p>Babysitters are required to send a picture confirmation of a completed tasks with an option to include additional notes. After this is done, the check appears filled in.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">photos</span> a task is completed only through complete_task, with a photo<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> parents may check off without a photo; caretakers must send one<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC1</span><div class="ac-body"><p>Babysitters are required to send a picture confirmation of a completed tasks with an option to include additional notes. After this is done, the check appears filled in.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">photos</span> a task is completed only through complete_task, with a photo<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> parents may check off without a photo; caretakers must send one<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC2</span><div class="ac-body"><p>Babysitters should be able to access a general messaging portal to be able to ask follow up questions for constant communication</p><p class="ac-note">Messages was removed (SI-66). The Care Log took its place.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC3</span><div class="ac-body"><p>The system should distinguish normal messages vs messages for a completed tasks</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC4</span><div class="ac-body"><p>Babysitters should not have the option to add photos after the babysitting session is completed</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">photos</span> after a shift ends: no photos, proofs, or moments; chat continues<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">photos</span> a photo message racing end_visit is refused once the shift has ended<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC4</span><div class="ac-body"><p>Babysitters should not have the option to add photos after the babysitting session is completed</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">photos</span> after a shift ends: no photos, proofs, or moments; chat continues<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">photos</span> a photo message racing end_visit is refused once the shift has ended<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-28/user-story-logging-care-details">SI-28</a><span>Logging Care Details</span></span>
-    <span class="story-badges"><span class="chip chip-failing">4 criteria need attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">4 of 5 have tests</span></span>
     <span class="story-meta">Done · Kelvin</span>
   </summary>
   <ol class="criteria">
     <li><span class="ac-n">AC1</span><div class="ac-body"><p>The screen displays completed daily tasks with notes filled out with details about feedings or care.</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Information is organized chronologically and easy to scan</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-age</span> timeline orders completed tasks by check time and nests logs oldest first<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
-    <li><span class="ac-n">AC3</span><div class="ac-body"><p>User Action 1: User taps on the Log menu to attach details to a specific task they have completed.</p><ul><li>Expected System Behavior: The system pulls up relevant details about completed tasks for that babysitting session.</li></ul><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-logs</span> only a task checked in that shift can be logged; the shift must exist<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
-    <li><span class="ac-n">AC4</span><div class="ac-body"><p>User Action 2: User enters information about task based on category and provided input fields.</p><ul><li>Expected System Behavior: The system attaches notes to the specified completed task in a chronological view. Any edits or changes will be logged underneath that task and not affect the original time/details of the completed task.</li></ul><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-logs</span> a sitter logs a completed task; the database stamps author, role, household, and time<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-logs</span> logs are append-only: no update or delete; an edit is a new row and the check is untouched<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-age</span> validate checks bottle ounces and keeps only the category&#39;s fields<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
-    <li><span class="ac-n">AC5</span><div class="ac-body"><p>Error condition: Information for an activity is not provided</p><ul><li>Error message: “No information provided”</li></ul><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-age</span> validate refuses empty entries with the product copy<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Information is organized chronologically and easy to scan</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-age</span> timeline orders completed tasks by check time and nests logs oldest first<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
+    <li><span class="ac-n">AC3</span><div class="ac-body"><p>User Action 1: User taps on the Log menu to attach details to a specific task they have completed.</p><ul><li>Expected System Behavior: The system pulls up relevant details about completed tasks for that babysitting session.</li></ul><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-logs</span> only a task checked in that shift can be logged; the shift must exist<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
+    <li><span class="ac-n">AC4</span><div class="ac-body"><p>User Action 2: User enters information about task based on category and provided input fields.</p><ul><li>Expected System Behavior: The system attaches notes to the specified completed task in a chronological view. Any edits or changes will be logged underneath that task and not affect the original time/details of the completed task.</li></ul><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-logs</span> a sitter logs a completed task; the database stamps author, role, household, and time<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-logs</span> logs are append-only: no update or delete; an edit is a new row and the check is untouched<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-age</span> validate checks bottle ounces and keeps only the category&#39;s fields<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
+    <li><span class="ac-n">AC5</span><div class="ac-body"><p>Error condition: Information for an activity is not provided</p><ul><li>Error message: “No information provided”</li></ul><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-age</span> validate refuses empty entries with the product copy<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-63/build-out-care-log-page">SI-63</a><span>Build Out Care Log Page</span></span>
-    <span class="story-badges"><span class="chip chip-failing">2 criteria need attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">2 of 4 have tests</span></span>
     <span class="story-meta">Done · Kelvin</span>
   </summary>
   <ol class="criteria">
-    <li><span class="ac-n">AC1</span><div class="ac-body"><p>Babysitters can view and add entries for the current care session.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-entries</span> a sitter adds a task-less entry about each child; the database stamps author, role, household, time, and name<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-age</span> sessionEntries lists entries and task details oldest first, each with its child or task and time<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
-    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Care Log entries are associated with the correct child and session.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-entries</span> a child of another family, an unknown child, or no child is refused<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-entries</span> entries are accepted only while the shift&#39;s date is in the window, open or ended<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC1</span><div class="ac-body"><p>Babysitters can view and add entries for the current care session.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-entries</span> a sitter adds a task-less entry about each child; the database stamps author, role, household, time, and name<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-age</span> sessionEntries lists entries and task details oldest first, each with its child or task and time<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
+    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Care Log entries are associated with the correct child and session.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-entries</span> a child of another family, an unknown child, or no child is refused<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-entries</span> entries are accepted only while the shift&#39;s date is in the window, open or ended<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC3</span><div class="ac-body"><p>The Messages experience is removed.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>Care Log content is no longer duplicated on the Home page.</p></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-64/allow-babysitters-to-add-care-log-entries">SI-64</a><span>Allow babysitters to add care log entries</span></span>
-    <span class="story-badges"><span class="chip chip-failing">3 criteria need attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">3 of 6 have tests</span></span>
     <span class="story-meta">Done · Kelvin · part of SI-63</span>
   </summary>
   <ol class="criteria">
     <li><span class="ac-n">AC1</span><div class="ac-body"><p>Babysitter can start a new Care Log entry.</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Babysitter can select the relevant child when needed.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-age</span> validateEntry needs a child of the family (skipped with one child) and a note<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
-    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Babysitter can enter the information required by the approved design.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-age</span> validateEntry needs a child of the family (skipped with one child) and a note<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
-    <li><span class="ac-n">AC4</span><div class="ac-body"><p>Saving adds the new entry to the Care Log.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-entries</span> a sitter adds a task-less entry about each child; the database stamps author, role, household, time, and name<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Babysitter can select the relevant child when needed.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-age</span> validateEntry needs a child of the family (skipped with one child) and a note<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
+    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Babysitter can enter the information required by the approved design.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-age</span> validateEntry needs a child of the family (skipped with one child) and a note<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
+    <li><span class="ac-n">AC4</span><div class="ac-body"><p>Saving adds the new entry to the Care Log.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-entries</span> a sitter adds a task-less entry about each child; the database stamps author, role, household, time, and name<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC5</span><div class="ac-body"><p>The entry remains visible after refreshing or reopening the session.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC6</span><div class="ac-body"><p>If saving fails, the user receives a clear error message and can try again.</p></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-65/build-the-current-session-log-subpage">SI-65</a><span>Build the Current Session Log subpage</span></span>
-    <span class="story-badges"><span class="chip chip-failing">3 criteria need attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">3 of 5 have tests</span></span>
     <span class="story-meta">Done · Kelvin · part of SI-63</span>
   </summary>
   <ol class="criteria">
     <li><span class="ac-n">AC1</span><div class="ac-body"><p>The page follows the approved Figma design.</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Entries display in chronological order.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-age</span> sessionEntries lists entries and task details oldest first, each with its child or task and time<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
-    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Each entry shows the relevant child, content, and time.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-age</span> sessionEntries lists entries and task details oldest first, each with its child or task and time<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-age</span> sessionEntries tells a child with a blank name apart from a removed child<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Entries display in chronological order.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-age</span> sessionEntries lists entries and task details oldest first, each with its child or task and time<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
+    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Each entry shows the relevant child, content, and time.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-age</span> sessionEntries lists entries and task details oldest first, each with its child or task and time<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-age</span> sessionEntries tells a child with a blank name apart from a removed child<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>The page displays the appropriate empty state when no entries exist.</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC5</span><div class="ac-body"><p>Works for sessions involving multiple children.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">care-log-entries</span> a sitter adds a task-less entry about each child; the database stamps author, role, household, time, and name<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC5</span><div class="ac-body"><p>Works for sessions involving multiple children.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">care-log-entries</span> a sitter adds a task-less entry about each child; the database stamps author, role, household, time, and name<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
   </ol>
 </details>
 <details class="story" data-tested="false" data-attention="false" data-open="false">
@@ -312,27 +313,27 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
 </div>
 <div class="panel epic">
   <div class="epic-head"><h3>Schedule Maintenance</h3><p>3 stories, 4 of 22 criteria tested</p></div>
-  <details class="story" data-tested="true" data-attention="true" data-open="false" open>
+  <details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-29/user-story-view-whats-important-today">SI-29</a><span>View What&#39;s Important Today</span></span>
-    <span class="story-badges"><span class="chip chip-failing">2 criteria need attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">2 of 8 have tests</span></span>
     <span class="story-meta">Done · Isa Wilson</span>
   </summary>
   <ol class="criteria">
     <li><span class="ac-n">AC1</span><div class="ac-body"><p>A clearly labeled “Today’s Notes” or “Important Today” section is available for the current care session.</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC2</span><div class="ac-body"><p>The section displays session-specific information provided by the parent, such as:</p><ul><li>Changes to the normal routine</li><li>Special instructions</li><li>Schedule changes</li><li>Food or medication reminders</li><li>Other important notes for that day</li></ul><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> day notes: parents write, members read, and the database stamps who edited them and when<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC2</span><div class="ac-body"><p>The section displays session-specific information provided by the parent, such as:</p><ul><li>Changes to the normal routine</li><li>Special instructions</li><li>Schedule changes</li><li>Food or medication reminders</li><li>Other important notes for that day</li></ul><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> day notes: parents write, members read, and the database stamps who edited them and when<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC3</span><div class="ac-body"><p>Session-specific information is visually separate from the child’s permanent profile information.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>Information is organized so it can be quickly scanned.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC5</span><div class="ac-body"><p>User Action 1: Babysitter opens the current care session.</p><ul><li>Expected System Behavior: The system displays the “Important Today” section near the top of the session view with any notes provided by the parent.</li></ul></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC6</span><div class="ac-body"><p>User Action 2: Babysitter selects a note or item that contains additional details.</p><ul><li>Expected System Behavior: The system displays the full note or related instructions without requiring the babysitter to leave the current session.</li></ul></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC7</span><div class="ac-body"><p>Error Condition: The parent has not added any session-specific information.</p><ul><li>Expected behavior/message: Display a clear empty state: “No special updates for today.”</li></ul></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC8</span><div class="ac-body"><p>Edge Case: A note has been updated by the parent after the babysitter has already viewed the session.</p><ul><li>Expected behavior: The latest version of the note is displayed and is visually marked as updated, if feasible for the MVP.</li></ul><p class="ac-note">The database stamps the edit time. The &quot;Updated&quot; label itself is not tested.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> day notes: parents write, members read, and the database stamps who edited them and when<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC8</span><div class="ac-body"><p>Edge Case: A note has been updated by the parent after the babysitter has already viewed the session.</p><ul><li>Expected behavior: The latest version of the note is displayed and is visually marked as updated, if feasible for the MVP.</li></ul><p class="ac-note">The database stamps the edit time. The &quot;Updated&quot; label itself is not tested.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> day notes: parents write, members read, and the database stamps who edited them and when<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-43/user-story-view-current-session-schedule-babysitter">SI-43</a><span>View Current Session Schedule [Babysitter]</span></span>
-    <span class="story-badges"><span class="chip chip-failing">1 criterion needs attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">1 of 7 have tests</span></span>
     <span class="story-meta">Done · Brooke Bui</span>
   </summary>
   <ol class="criteria">
@@ -342,19 +343,19 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>User Action 1: Caregiver opens the Schedule page.</p><ul><li>Expected System Behavior: The system displays the schedule for the current care session in chronological order.</li></ul></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC5</span><div class="ac-body"><p>User Action 2: Caregiver switches to another date using the date controls.</p><ul><li>Expected System Behavior: The system displays the schedule associated with the selected date.</li></ul></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC6</span><div class="ac-body"><p>User Action 3: Caregiver switches between List and Calendar view.</p><ul><li>Expected System Behavior: The system displays the same scheduled care sessions in the selected format.</li></ul></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC7</span><div class="ac-body"><p>Error Condition: No schedule has been added for the current care session.</p><ul><li>Expected behavior/message: Display “No schedule has been added for this shift.” and give the caregiver the option to Request Schedule from the parent.</li></ul><p class="ac-note">Request Schedule is tested. The empty-state text is not.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> schedule requests: sitters ask, parents read and dismiss, booking that date resolves it<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC7</span><div class="ac-body"><p>Error Condition: No schedule has been added for the current care session.</p><ul><li>Expected behavior/message: Display “No schedule has been added for this shift.” and give the caregiver the option to Request Schedule from the parent.</li></ul><p class="ac-note">Request Schedule is tested. The empty-state text is not.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> schedule requests: sitters ask, parents read and dismiss, booking that date resolves it<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-44/user-story-add-and-edit-schedule-parent">SI-44</a><span>Add &amp; Edit Schedule [Parent]</span></span>
-    <span class="story-badges"><span class="chip chip-failing">1 criterion needs attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">1 of 7 have tests</span></span>
     <span class="story-meta">Done · Brooke Bui</span>
   </summary>
   <ol class="criteria">
     <li><span class="ac-n">AC1</span><div class="ac-body"><p>Parent&#39;s Schedule page shows upcoming care sessions with the date, time, children, and assigned caregiver.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC2</span><div class="ac-body"><p>Parents can switch between List and Calendar views.</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Parents can edit or create a new schedule from the Schedule page.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> appointments: parents book and edit in their own plan, members read, nothing moves, only parents delete<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> parent can create plans, tasks, care items, and contacts<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Parents can edit or create a new schedule from the Schedule page.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> appointments: parents book and edit in their own plan, members read, nothing moves, only parents delete<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> parent can create plans, tasks, care items, and contacts<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>User Action 1: Parent switches between List and Calendar view.</p><ul><li>Expected System Behavior: The system displays the same scheduled care sessions in the selected format.</li></ul></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC5</span><div class="ac-body"><p>User Action 2: Parent selects Add Schedule.</p><ul><li>Expected System Behavior: The system opens the Schedule Details page where the parent can enter the date, start and end time, children, caregiver, scheduled activities, and notes.</li></ul></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC6</span><div class="ac-body"><p>User Action 3: Parent saves a new schedule.</p><ul><li>Expected System Behavior: The new schedule is added and appears on both the List and Calendar views.</li></ul></div><span class="chip chip-none">No test yet</span></li>
@@ -379,58 +380,58 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
     <li><span class="ac-n">AC6</span><div class="ac-body"><p>Error Condition: A navigation destination cannot be loaded.</p><ul><li>Expected behavior/message: The app should remain stable and should not send the user to an incorrect page.</li></ul></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-58/user-story-view-profile-page">SI-58</a><span>View profile page</span></span>
-    <span class="story-badges"><span class="chip chip-failing">2 criteria need attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">2 of 5 have tests</span></span>
     <span class="story-meta">Done · Selina Lu</span>
   </summary>
   <ol class="criteria">
     <li><span class="ac-n">AC1</span><div class="ac-body"><p>The Profile page displays the user&#39;s personal information, such as name, profile picture, and contact details.</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Account settings, including login, logout, and profile management, are accessible within the same Profile page.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">active-family</span> sign-out forgets every account&#39;s remembered family in both storages<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> delete_my_account removes the sole parent&#39;s household data and account<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
-    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Users can view and edit their personal information.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> parent profiles: parents own their details; members see a parent&#39;s phone only while it is shared<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> sitter profiles: sitters own their profile; parents get only shared fields of current sitters<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Account settings, including login, logout, and profile management, are accessible within the same Profile page.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">active-family</span> sign-out forgets every account&#39;s remembered family in both storages<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> delete_my_account removes the sole parent&#39;s household data and account<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
+    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Users can view and edit their personal information.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> parent profiles: parents own their details; members see a parent&#39;s phone only while it is shared<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> sitter profiles: sitters own their profile; parents get only shared fields of current sitters<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>User Action 1: User taps the “Profile” tab in the navigation bar.</p><ul><li>Expected System Behavior: The system displays the Profile page with personal information and account management options.</li></ul></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC5</span><div class="ac-body"><p>Error condition: Profile information is missing or has not been provided.</p><ul><li>Error message: “No information provided.”</li></ul></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-68/keep-current-household-pinned-on-children-page">SI-68</a><span>Keep Current Household Pinned on Children Page</span></span>
-    <span class="story-badges"><span class="chip chip-failing">2 criteria need attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">2 of 3 have tests</span></span>
     <span class="story-meta">Done · Kelvin</span>
   </summary>
   <ol class="criteria">
     <li><span class="ac-n">AC1</span><div class="ac-body"><p>Keep the currently selected household section visible at the top of the babysitter’s Children page.</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Switching households updates the pinned household information.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">active-family</span> this tab&#39;s choice wins over the device&#39;s<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">active-family</span> a page load pins only its tab; an explicit choice also sets the device&#39;s default<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
-    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Child information shown below always corresponds to the selected household.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">active-family</span> members holds only the shown family&#39;s roster; memberships holds all of mine<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> several families: the app&#39;s narrowed saves and flags queries return only the shown family<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC2</span><div class="ac-body"><p>Switching households updates the pinned household information.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">active-family</span> this tab&#39;s choice wins over the device&#39;s<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">active-family</span> a page load pins only its tab; an explicit choice also sets the device&#39;s default<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
+    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Child information shown below always corresponds to the selected household.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">active-family</span> members holds only the shown family&#39;s roster; memberships holds all of mine<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> several families: the app&#39;s narrowed saves and flags queries return only the shown family<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-69/refine-home-page-content">SI-69</a><span>Refine Home Page Content</span></span>
-    <span class="story-badges"><span class="chip chip-failing">2 criteria need attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">2 of 5 have tests</span></span>
     <span class="story-meta">Done · Kelvin</span>
   </summary>
   <ol class="criteria">
-    <li><span class="ac-n">AC1</span><div class="ac-body"><p>Home shows only the most relevant upcoming schedule activity.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">next-activity</span> the earliest activity still ahead is next<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC1</span><div class="ac-body"><p>Home shows only the most relevant upcoming schedule activity.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">next-activity</span> the earliest activity still ahead is next<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC2</span><div class="ac-body"><p>Checklist is available from Home.</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Only the Primary Contact is shown.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> contacts: one primary per family, and only parents set it<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Only the Primary Contact is shown.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> contacts: one primary per family, and only parents set it<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>Misleading or redundant navigation is removed.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC5</span><div class="ac-body"><p>Updated Home sections follow the approved Figma design.</p></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-70/show-only-the-next-upcoming-activity">SI-70</a><span>Show Only the Next Upcoming Activity</span></span>
-    <span class="story-badges"><span class="chip chip-failing">3 criteria need attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">3 of 6 have tests</span></span>
     <span class="story-meta">Done · Kelvin · part of SI-69</span>
   </summary>
   <ol class="criteria">
-    <li><span class="ac-n">AC1</span><div class="ac-body"><p>Home shows only the next upcoming scheduled activity.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">next-activity</span> the earliest activity still ahead is next<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">next-activity</span> checked-off activities are skipped<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">next-activity</span> order in the list does not matter, ties keep the list&#39;s order<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC1</span><div class="ac-body"><p>Home shows only the next upcoming scheduled activity.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">next-activity</span> the earliest activity still ahead is next<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">next-activity</span> checked-off activities are skipped<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">next-activity</span> order in the list does not matter, ties keep the list&#39;s order<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC2</span><div class="ac-body"><p>Preview includes the activity name and scheduled time.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC3</span><div class="ac-body"><p>Section uses the approved heading, such as “What’s next” or “Upcoming activity”</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC4</span><div class="ac-body"><p>After an activity has passed, the next scheduled activity is shown.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">next-activity</span> an activity stays next through its minute, then the following one is shown<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
-    <li><span class="ac-n">AC5</span><div class="ac-body"><p>If there are no remaining activities, display the empty state.</p><p class="ac-note">Tested at the logic level. The empty-state text is not.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">next-activity</span> nothing is next after the last activity, or with no timed activities<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC4</span><div class="ac-body"><p>After an activity has passed, the next scheduled activity is shown.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">next-activity</span> an activity stays next through its minute, then the following one is shown<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
+    <li><span class="ac-n">AC5</span><div class="ac-body"><p>If there are no remaining activities, display the empty state.</p><p class="ac-note">Tested at the logic level. The empty-state text is not.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">next-activity</span> nothing is next after the last activity, or with no timed activities<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC6</span><div class="ac-body"><p>Full schedule remains available from the Schedule page.</p></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
@@ -448,14 +449,14 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
     <li><span class="ac-n">AC5</span><div class="ac-body"><p>Appropriate empty state appears if no checklist items have been added.</p></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-72/show-only-one-primary-contact-on-home">SI-72</a><span>Show Only One Primary Contact on Home</span></span>
-    <span class="story-badges"><span class="chip chip-failing">1 criterion needs attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">1 of 5 have tests</span></span>
     <span class="story-meta">Done · Kelvin · part of SI-69</span>
   </summary>
   <ol class="criteria">
-    <li><span class="ac-n">AC1</span><div class="ac-body"><p>Home displays only one designated Primary Contact.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> contacts: one primary per family, and only parents set it<span class="muted"> (not found in this run)</span></span></li><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> contacts: one update can hand primary to another contact, whichever row comes first<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC1</span><div class="ac-body"><p>Home displays only one designated Primary Contact.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> contacts: one primary per family, and only parents set it<span class="muted"></span></span></li><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> contacts: one update can hand primary to another contact, whichever row comes first<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC2</span><div class="ac-body"><p>Primary Contact name is shown.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC3</span><div class="ac-body"><p>Approved contact action or information is available.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>Other contacts remain accessible through the relevant child or household information page.</p></div><span class="chip chip-none">No test yet</span></li>
@@ -474,10 +475,10 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
     <li><span class="ac-n">AC3</span><div class="ac-body"><p>Removing the button does not change the content shown in Good to Know.</p></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-74/improve-parent-schedule-details-editing">SI-74</a><span>Improve Parent Schedule Details Editing</span></span>
-    <span class="story-badges"><span class="chip chip-failing">1 criterion needs attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">1 of 5 have tests</span></span>
     <span class="story-meta">Done · Kelvin</span>
   </summary>
   <ol class="criteria">
@@ -485,7 +486,7 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
     <li><span class="ac-n">AC2</span><div class="ac-body"><p>Activity time entry is quick and consistent.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC3</span><div class="ac-body"><p>Added activities save and display correctly.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>Parents can remove individual activities.</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC5</span><div class="ac-body"><p>Parents can delete the entire care session.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> appointments: parents book and edit in their own plan, members read, nothing moves, only parents delete<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC5</span><div class="ac-body"><p>Parents can delete the entire care session.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> appointments: parents book and edit in their own plan, members read, nothing moves, only parents delete<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
   </ol>
 </details>
 <details class="story" data-tested="false" data-attention="false" data-open="false">
@@ -502,10 +503,10 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
     <li><span class="ac-n">AC5</span><div class="ac-body"><p>Reopening Schedule Details shows the previously selected children.</p></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-76/improve-time-picker">SI-76</a><span>Improve Time Picker</span></span>
-    <span class="story-badges"><span class="chip chip-failing">1 criterion needs attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">1 of 5 have tests</span></span>
     <span class="story-meta">Done · Kelvin · part of SI-74</span>
   </summary>
   <ol class="criteria">
@@ -513,7 +514,7 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
     <li><span class="ac-n">AC2</span><div class="ac-body"><p>Time is selected using a wheel picker in 5-minute intervals.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC3</span><div class="ac-body"><p>Parents can adjust the activity time before saving.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>The selected time is preserved after the activity is saved.</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC5</span><div class="ac-body"><p>The picker only allows valid times within the supported schedule format.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">schedule-dates</span> clockMinutes reads 24-hour and 12-hour times and rejects the rest<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC5</span><div class="ac-body"><p>The picker only allows valid times within the supported schedule format.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">schedule-dates</span> clockMinutes reads 24-hour and 12-hour times and rejects the rest<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
   </ol>
 </details>
 <details class="story" data-tested="false" data-attention="false" data-open="false">
@@ -545,16 +546,16 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
     <li><span class="ac-n">AC5</span><div class="ac-body"><p>Updated schedule persists after saving and reopening.</p></div><span class="chip chip-none">No test yet</span></li>
   </ol>
 </details>
-<details class="story" data-tested="true" data-attention="true" data-open="false" open>
+<details class="story" data-tested="true" data-attention="false" data-open="false">
   <summary>
     <span class="story-title"><a class="id" href="https://linear.app/si-526/issue/SI-79/add-delete-schedule-action">SI-79</a><span>Add Delete Schedule Action</span></span>
-    <span class="story-badges"><span class="chip chip-failing">1 criterion needs attention</span></span>
+    <span class="story-badges"><span class="chip chip-waiting">1 of 5 have tests</span></span>
     <span class="story-meta">Done · Kelvin · part of SI-74</span>
   </summary>
   <ol class="criteria">
     <li><span class="ac-n">AC1</span><div class="ac-body"><p>Schedule Details includes a Delete Schedule action.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC2</span><div class="ac-body"><p>User is asked to confirm before the schedule is permanently deleted.</p></div><span class="chip chip-none">No test yet</span></li>
-    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Confirming removes the entire care session and its associated schedule.</p><ul class="ac-tests"><li><span class="tick tick-missing" aria-hidden="true"></span><span><span class="file">rls</span> appointments: parents book and edit in their own plan, members read, nothing moves, only parents delete<span class="muted"> (not found in this run)</span></span></li></ul></div><span class="chip chip-failing">Failing</span></li>
+    <li><span class="ac-n">AC3</span><div class="ac-body"><p>Confirming removes the entire care session and its associated schedule.</p><ul class="ac-tests"><li><span class="tick tick-pending" aria-hidden="true"></span><span><span class="file">rls</span> appointments: parents book and edit in their own plan, members read, nothing moves, only parents delete<span class="muted"></span></span></li></ul></div><span class="chip chip-waiting">Waiting for a run on main</span></li>
     <li><span class="ac-n">AC4</span><div class="ac-body"><p>Deleted session no longer appears in List or Calendar views.</p></div><span class="chip chip-none">No test yet</span></li>
     <li><span class="ac-n">AC5</span><div class="ac-body"><p>Canceling the confirmation leaves the schedule unchanged.</p></div><span class="chip chip-none">No test yet</span></li>
   </ol>
@@ -635,7 +636,7 @@ footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
   <p class="lede">The latest run of each branch that has not merged yet.</p>
   <div class="panel table-wrap"><table>
     <thead><tr><th>Branch</th><th>Latest commit</th><th>Result</th><th>Tests</th><th>Tested</th><th>Report</th></tr></thead>
-    <tbody><tr><td><a href="https://github.com/SI-526/CareNest/tree/claude/upbeat-curie-l08ofa"><code>claude/upbeat-curie-l08ofa</code></a></td><td><a href="https://github.com/SI-526/CareNest/commit/d13f30dd89ca2d69117ccacf72a946fa86630a18"><code>d13f30d</code></a> <span class="muted">Add a test dashboard built from Linear stories</span></td><td><span class="chip chip-failed">Failed</span></td><td class="num">1 of 191 failed</td><td class="num">Nov 19, 2026, 1:43 PM EST</td><td><a href="reports/44589551701-1.html">Report</a></td></tr></tbody>
+    <tbody><tr><td><a href="https://github.com/SI-526/CareNest/tree/claude/upbeat-curie-l08ofa"><code>claude/upbeat-curie-l08ofa</code></a></td><td><a href="https://github.com/SI-526/CareNest/commit/f71bec9326d5a9470c5202c6bd5382f1767c1e67"><code>f71bec9</code></a> <span class="muted">Show linked criteria as waiting before the first run on main</span></td><td><span class="chip chip-failed">Failed</span></td><td class="num">1 of 191 failed</td><td class="num">Nov 19, 2026, 2:34 PM EST</td><td><a href="reports/44598899185-1.html">Report</a></td></tr></tbody>
   </table></div>
 </section>
 <section aria-labelledby="merged-h">
