@@ -1,3 +1,6 @@
 supabase/
 tests/
 docs/
+dashboard/
+.github/
+.results/

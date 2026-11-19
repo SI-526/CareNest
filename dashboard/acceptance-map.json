@@ -1,0 +1,94 @@
+{
+  "_readme": [
+    "Which tests check which acceptance criteria. Stories and their criteria come from Linear; this file only links them to tests.",
+    "Keys are Linear issue ids, then the criterion's number as the dashboard shows it (AC1 is \"1\").",
+    "\"match\" is a few words from the criterion. If someone edits the story in Linear so the words no longer appear, the link is shown as out of date instead of silently pointing at the wrong criterion.",
+    "\"tests\" are \"<file> > <test name>\", exactly as node --test names them (suite names joined with \" > \").",
+    "\"manual\" marks a criterion that is checked by hand, with where the evidence is. \"note\" is shown under the criterion.",
+    "A test can also link itself by putting the id and criterion in its name, for example test(\"SI-70 AC4: the next activity is shown after one passes\", ...)."
+  ],
+  "SI-6": {
+    "2": { "match": "save images in an album", "tests": ["photos.test.mjs > parents save photos to their own album; sitters cannot"], "note": "Tests cover saving to the parent's album. Sharing to the phone's photos is not tested." },
+    "3": { "match": "when the video/image was sent", "tests": ["photos.test.mjs > chat senders, roles, and times are stamped by the server"], "note": "The send time and sender are tested. The device is not recorded." },
+    "4": { "match": "respond back to babysitters", "note": "Replies were removed along with Messages (SI-66). Older replies stay read-only." }
+  },
+  "SI-7": {
+    "1": { "match": "important care information", "tests": ["rls.test.mjs > caretaker can read the household's schedule and care info"] }
+  },
+  "SI-8": {
+    "1": { "match": "daily schedule", "tests": ["rls.test.mjs > caretaker can read the household's schedule and care info"] },
+    "3": { "match": "picture proof", "tests": ["photos.test.mjs > a task is completed only through complete_task, with a photo", "rls.test.mjs > parents may check off without a photo; caretakers must send one"] }
+  },
+  "SI-9": {
+    "1": { "match": "picture confirmation", "tests": ["photos.test.mjs > a task is completed only through complete_task, with a photo", "rls.test.mjs > parents may check off without a photo; caretakers must send one"] },
+    "2": { "match": "general messaging portal", "note": "Messages was removed (SI-66). The Care Log took its place." },
+    "4": { "match": "after the babysitting session is completed", "tests": ["photos.test.mjs > after a shift ends: no photos, proofs, or moments; chat continues", "photos.test.mjs > a photo message racing end_visit is refused once the shift has ended"] }
+  },
+  "SI-28": {
+    "2": { "match": "chronologically", "tests": ["care-log-age.test.mjs > timeline orders completed tasks by check time and nests logs oldest first"] },
+    "3": { "match": "attach details to a specific task", "tests": ["care-logs.test.mjs > only a task checked in that shift can be logged; the shift must exist"] },
+    "4": { "match": "based on category", "tests": ["care-logs.test.mjs > a sitter logs a completed task; the database stamps author, role, household, and time", "care-logs.test.mjs > logs are append-only: no update or delete; an edit is a new row and the check is untouched", "care-log-age.test.mjs > validate checks bottle ounces and keeps only the category's fields"] },
+    "5": { "match": "not provided", "tests": ["care-log-age.test.mjs > validate refuses empty entries with the product copy"] }
+  },
+  "SI-29": {
+    "2": { "match": "session-specific information provided by the parent", "tests": ["rls.test.mjs > day notes: parents write, members read, and the database stamps who edited them and when"] },
+    "8": { "match": "updated by the parent", "tests": ["rls.test.mjs > day notes: parents write, members read, and the database stamps who edited them and when"], "note": "The database stamps the edit time. The \"Updated\" label itself is not tested." }
+  },
+  "SI-39": {
+    "6": { "match": "plus button", "tests": ["photos.test.mjs > photo messages: the sitter's, in an open shift, own photo; parents can remove them"], "note": "The upload rules are tested. The camera prompt is not." }
+  },
+  "SI-43": {
+    "7": { "match": "No schedule has been added", "tests": ["rls.test.mjs > schedule requests: sitters ask, parents read and dismiss, booking that date resolves it"], "note": "Request Schedule is tested. The empty-state text is not." }
+  },
+  "SI-44": {
+    "3": { "match": "edit or create a new schedule", "tests": ["rls.test.mjs > appointments: parents book and edit in their own plan, members read, nothing moves, only parents delete", "rls.test.mjs > parent can create plans, tasks, care items, and contacts"] }
+  },
+  "SI-45": {
+    "1": { "match": "list of families", "tests": ["rls.test.mjs > several families: a sitter joins a second family by invite and reads both, and only both", "active-family.test.mjs > a sitter in two families: the first joined, unless one is remembered"] },
+    "2": { "match": "available for each child", "tests": ["children.test.mjs > fromRows: each child gets only its own per-child items, in the database's order", "rls.test.mjs > children (slice C): food, preferences, and instructions must name a child"] },
+    "3": { "match": "differ from child to child", "tests": ["children.test.mjs > fromRows: each child gets only its own per-child items, in the database's order", "children.test.mjs > flatten: family-wide lists name the child only when there are several, and data.child is the first"] }
+  },
+  "SI-58": {
+    "2": { "match": "logout", "tests": ["active-family.test.mjs > sign-out forgets every account's remembered family in both storages", "rls.test.mjs > delete_my_account removes the sole parent's household data and account"] },
+    "3": { "match": "view and edit their personal information", "tests": ["rls.test.mjs > parent profiles: parents own their details; members see a parent's phone only while it is shared", "rls.test.mjs > sitter profiles: sitters own their profile; parents get only shared fields of current sitters"] }
+  },
+  "SI-63": {
+    "1": { "match": "view and add entries", "tests": ["care-log-entries.test.mjs > a sitter adds a task-less entry about each child; the database stamps author, role, household, time, and name", "care-log-age.test.mjs > sessionEntries lists entries and task details oldest first, each with its child or task and time"] },
+    "2": { "match": "correct child and session", "tests": ["care-log-entries.test.mjs > a child of another family, an unknown child, or no child is refused", "care-log-entries.test.mjs > entries are accepted only while the shift's date is in the window, open or ended"] }
+  },
+  "SI-64": {
+    "2": { "match": "select the relevant child", "tests": ["care-log-age.test.mjs > validateEntry needs a child of the family (skipped with one child) and a note"] },
+    "3": { "match": "information required", "tests": ["care-log-age.test.mjs > validateEntry needs a child of the family (skipped with one child) and a note"] },
+    "4": { "match": "adds the new entry", "tests": ["care-log-entries.test.mjs > a sitter adds a task-less entry about each child; the database stamps author, role, household, time, and name"] }
+  },
+  "SI-65": {
+    "2": { "match": "chronological order", "tests": ["care-log-age.test.mjs > sessionEntries lists entries and task details oldest first, each with its child or task and time"] },
+    "3": { "match": "child, content, and time", "tests": ["care-log-age.test.mjs > sessionEntries lists entries and task details oldest first, each with its child or task and time", "care-log-age.test.mjs > sessionEntries tells a child with a blank name apart from a removed child"] },
+    "5": { "match": "multiple children", "tests": ["care-log-entries.test.mjs > a sitter adds a task-less entry about each child; the database stamps author, role, household, time, and name"] }
+  },
+  "SI-68": {
+    "2": { "match": "Switching households", "tests": ["active-family.test.mjs > this tab's choice wins over the device's", "active-family.test.mjs > a page load pins only its tab; an explicit choice also sets the device's default"] },
+    "3": { "match": "corresponds to the selected household", "tests": ["active-family.test.mjs > members holds only the shown family's roster; memberships holds all of mine", "rls.test.mjs > several families: the app's narrowed saves and flags queries return only the shown family"] }
+  },
+  "SI-69": {
+    "1": { "match": "most relevant upcoming schedule activity", "tests": ["next-activity.test.mjs > the earliest activity still ahead is next"] },
+    "3": { "match": "Primary Contact", "tests": ["rls.test.mjs > contacts: one primary per family, and only parents set it"] }
+  },
+  "SI-70": {
+    "1": { "match": "next upcoming scheduled activity", "tests": ["next-activity.test.mjs > the earliest activity still ahead is next", "next-activity.test.mjs > checked-off activities are skipped", "next-activity.test.mjs > order in the list does not matter, ties keep the list's order"] },
+    "4": { "match": "After an activity has passed", "tests": ["next-activity.test.mjs > an activity stays next through its minute, then the following one is shown"] },
+    "5": { "match": "no remaining activities", "tests": ["next-activity.test.mjs > nothing is next after the last activity, or with no timed activities"], "note": "Tested at the logic level. The empty-state text is not." }
+  },
+  "SI-72": {
+    "1": { "match": "only one designated Primary Contact", "tests": ["rls.test.mjs > contacts: one primary per family, and only parents set it", "rls.test.mjs > contacts: one update can hand primary to another contact, whichever row comes first"] }
+  },
+  "SI-74": {
+    "5": { "match": "delete the entire care session", "tests": ["rls.test.mjs > appointments: parents book and edit in their own plan, members read, nothing moves, only parents delete"] }
+  },
+  "SI-76": {
+    "5": { "match": "only allows valid times", "tests": ["schedule-dates.test.mjs > clockMinutes reads 24-hour and 12-hour times and rejects the rest"] }
+  },
+  "SI-79": {
+    "3": { "match": "removes the entire care session", "tests": ["rls.test.mjs > appointments: parents book and edit in their own plan, members read, nothing moves, only parents delete"] }
+  }
+}

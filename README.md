@@ -199,6 +199,10 @@ npm run db:env       # which stack this checkout uses, and its ports
 
 Local ports: API `55321`, Postgres `55322`, Studio `55323`, Mailpit `55324`.
 
+The `Tests` GitHub workflow runs all of these on every push and publishes the results, with each
+Linear story's acceptance criteria and the tests behind them, to the test dashboard on GitHub
+Pages. See `dashboard/README.md`.
+
 ### Parallel worktrees
 
 Every `npm run db:*` and `test:rls` goes through `tests/stack.sh`. In the main checkout it changes
